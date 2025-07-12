@@ -1,0 +1,310 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: hsl(0, 0%, 100%);
+  --foreground: hsl(20, 14.3%, 4.1%);
+  --muted: hsl(60, 4.8%, 95.9%);
+  --muted-foreground: hsl(25, 5.3%, 44.7%);
+  --popover: hsl(0, 0%, 100%);
+  --popover-foreground: hsl(20, 14.3%, 4.1%);
+  --card: hsl(0, 0%, 100%);
+  --card-foreground: hsl(20, 14.3%, 4.1%);
+  --border: hsl(20, 5.9%, 90%);
+  --input: hsl(20, 5.9%, 90%);
+  --primary: hsl(158, 93%, 20%);
+  --primary-foreground: hsl(211, 100%, 99%);
+  --secondary: hsl(217, 91%, 60%);
+  --secondary-foreground: hsl(24, 9.8%, 10%);
+  --accent: hsl(158, 84%, 39%);
+  --accent-foreground: hsl(24, 9.8%, 10%);
+  --destructive: hsl(0, 84.2%, 60.2%);
+  --destructive-foreground: hsl(60, 9.1%, 97.8%);
+  --ring: hsl(20, 14.3%, 4.1%);
+  --radius: 0.5rem;
+  --warning: hsl(38, 92%, 50%);
+  --warning-foreground: hsl(48, 96%, 89%);
+  --success: hsl(158, 84%, 39%);
+  --success-foreground: hsl(211, 100%, 99%);
+  --danger: hsl(0, 84.2%, 60.2%);
+  --danger-foreground: hsl(60, 9.1%, 97.8%);
+}
+
+.dark {
+  --background: hsl(240, 10%, 3.9%);
+  --foreground: hsl(0, 0%, 98%);
+  --muted: hsl(240, 3.7%, 15.9%);
+  --muted-foreground: hsl(240, 5%, 64.9%);
+  --popover: hsl(240, 10%, 3.9%);
+  --popover-foreground: hsl(0, 0%, 98%);
+  --card: hsl(240, 10%, 3.9%);
+  --card-foreground: hsl(0, 0%, 98%);
+  --border: hsl(240, 3.7%, 15.9%);
+  --input: hsl(240, 3.7%, 15.9%);
+  --primary: hsl(158, 93%, 20%);
+  --primary-foreground: hsl(211, 100%, 99%);
+  --secondary: hsl(217, 91%, 60%);
+  --secondary-foreground: hsl(0, 0%, 98%);
+  --accent: hsl(158, 84%, 39%);
+  --accent-foreground: hsl(0, 0%, 98%);
+  --destructive: hsl(0, 62.8%, 30.6%);
+  --destructive-foreground: hsl(0, 0%, 98%);
+  --ring: hsl(240, 4.9%, 83.9%);
+  --radius: 0.5rem;
+  --warning: hsl(38, 92%, 50%);
+  --warning-foreground: hsl(48, 96%, 89%);
+  --success: hsl(158, 84%, 39%);
+  --success-foreground: hsl(211, 100%, 99%);
+  --danger: hsl(0, 62.8%, 30.6%);
+  --danger-foreground: hsl(0, 0%, 98%);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply font-sans antialiased bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  .text-primary {
+    color: hsl(158, 93%, 20%);
+  }
+  
+  .text-secondary {
+    color: hsl(217, 91%, 60%);
+  }
+  
+  .text-accent {
+    color: hsl(158, 84%, 39%);
+  }
+  
+  .text-warning {
+    color: hsl(38, 92%, 50%);
+  }
+  
+  .text-danger {
+    color: hsl(0, 84.2%, 60.2%);
+  }
+  
+  .text-success {
+    color: hsl(158, 84%, 39%);
+  }
+  
+  .bg-primary {
+    background-color: hsl(158, 93%, 20%);
+  }
+  
+  .bg-secondary {
+    background-color: hsl(217, 91%, 60%);
+  }
+  
+  .bg-accent {
+    background-color: hsl(158, 84%, 39%);
+  }
+  
+  .bg-warning {
+    background-color: hsl(38, 92%, 50%);
+  }
+  
+  .bg-danger {
+    background-color: hsl(0, 84.2%, 60.2%);
+  }
+  
+  .bg-success {
+    background-color: hsl(158, 84%, 39%);
+  }
+  
+  .hover\:bg-primary\/90:hover {
+    background-color: hsl(158, 93%, 20%, 0.9);
+  }
+  
+  .hover\:bg-secondary\/90:hover {
+    background-color: hsl(217, 91%, 60%, 0.9);
+  }
+  
+  .hover\:bg-accent\/90:hover {
+    background-color: hsl(158, 84%, 39%, 0.9);
+  }
+  
+  .border-primary {
+    border-color: hsl(158, 93%, 20%);
+  }
+  
+  .border-secondary {
+    border-color: hsl(217, 91%, 60%);
+  }
+  
+  .border-accent {
+    border-color: hsl(158, 84%, 39%);
+  }
+  
+  .border-warning {
+    border-color: hsl(38, 92%, 50%);
+  }
+  
+  .border-danger {
+    border-color: hsl(0, 84.2%, 60.2%);
+  }
+  
+  .border-success {
+    border-color: hsl(158, 84%, 39%);
+  }
+}
+
+/* Financial App Specific Styles */
+.financial-card {
+  @apply bg-white rounded-xl shadow-sm border border-gray-200 transition-all duration-200 hover:shadow-md;
+}
+
+.transaction-item {
+  @apply flex items-center justify-between p-4 border-b border-gray-100 last:border-b-0 hover:bg-gray-50 transition-colors;
+}
+
+.category-icon {
+  @apply w-10 h-10 rounded-full flex items-center justify-center text-white font-medium;
+}
+
+.stat-card {
+  @apply bg-white rounded-xl p-6 shadow-sm border border-gray-200;
+}
+
+.chart-container {
+  @apply bg-white rounded-xl shadow-sm border border-gray-200;
+}
+
+.sidebar-nav-item {
+  @apply flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors duration-200;
+}
+
+.sidebar-nav-item.active {
+  @apply bg-primary text-white;
+}
+
+.sidebar-nav-item:not(.active) {
+  @apply text-gray-700 hover:bg-gray-100;
+}
+
+.mobile-nav-item {
+  @apply flex flex-col items-center justify-center p-2 text-xs transition-colors duration-200;
+}
+
+.mobile-nav-item.active {
+  @apply text-primary;
+}
+
+.mobile-nav-item:not(.active) {
+  @apply text-gray-500;
+}
+
+/* Loading States */
+.loading-spinner {
+  @apply animate-spin rounded-full border-2 border-gray-300 border-t-primary;
+}
+
+.loading-skeleton {
+  @apply animate-pulse bg-gray-200 rounded;
+}
+
+/* Form Styles */
+.form-input {
+  @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent;
+}
+
+.form-select {
+  @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent bg-white;
+}
+
+.form-textarea {
+  @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-none;
+}
+
+/* Modal Styles */
+.modal-overlay {
+  @apply fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50;
+}
+
+.modal-content {
+  @apply bg-white rounded-xl p-6 w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto;
+}
+
+/* WhatsApp Chat Styles */
+.chat-message {
+  @apply max-w-[80%] rounded-lg p-3 shadow-sm;
+}
+
+.chat-message.user {
+  @apply bg-green-500 text-white ml-auto;
+}
+
+.chat-message.assistant {
+  @apply bg-white border mr-auto;
+}
+
+.chat-input {
+  @apply flex-1 px-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent;
+}
+
+/* Button Variants */
+.btn-primary {
+  @apply bg-green-600 text-white hover:bg-green-700 focus:ring-2 focus:ring-green-500 focus:ring-offset-2;
+}
+
+.btn-secondary {
+  @apply bg-blue-600 text-white hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2;
+}
+
+.btn-success {
+  @apply bg-green-600 text-white hover:bg-green-700 focus:ring-2 focus:ring-green-500 focus:ring-offset-2;
+}
+
+.btn-warning {
+  @apply bg-yellow-600 text-white hover:bg-yellow-700 focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2;
+}
+
+.btn-danger {
+  @apply bg-red-600 text-white hover:bg-red-700 focus:ring-2 focus:ring-red-500 focus:ring-offset-2;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .sidebar-nav-item {
+    @apply text-center py-3;
+  }
+  
+  .stat-card {
+    @apply p-4;
+  }
+  
+  .chart-container {
+    @apply p-4;
+  }
+}
+
+/* Accessibility */
+.sr-only {
+  @apply absolute w-px h-px p-0 -m-px overflow-hidden whitespace-nowrap border-0;
+}
+
+.focus-visible {
+  @apply focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2;
+}
+
+/* Print Styles */
+@media print {
+  .no-print {
+    @apply hidden;
+  }
+  
+  .print-only {
+    @apply block;
+  }
+  
+  .chart-container {
+    @apply break-inside-avoid;
+  }
+}
