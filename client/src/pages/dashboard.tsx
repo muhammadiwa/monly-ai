@@ -35,33 +35,34 @@ export default function Dashboard() {
   // Redirect to login if not authenticated
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
+      console.log('Dashboard: User not authenticated, redirecting to auth');
       toast({
-        title: "Unauthorized",
-        description: "You are logged out. Logging in again...",
+        title: "Authentication Required",
+        description: "Please login to access the dashboard",
         variant: "destructive",
       });
       setTimeout(() => {
         window.location.href = "/auth";
-      }, 500);
+      }, 1000);
     }
   }, [isAuthenticated, isLoading, toast]);
 
   const { data: analyticsData, isLoading: analyticsLoading, refetch } = useQuery({
     queryKey: ["/api/analytics/dashboard"],
     retry: false,
-    enabled: isAuthenticated,
+    enabled: isAuthenticated && !isLoading, // Only run if authenticated
   });
 
   const { data: recentTransactions } = useQuery({
     queryKey: ["/api/transactions", { limit: 10 }],
     retry: false,
-    enabled: isAuthenticated,
+    enabled: isAuthenticated && !isLoading, // Only run if authenticated
   });
 
   const { data: budgets } = useQuery({
     queryKey: ["/api/budgets"],
     retry: false,
-    enabled: isAuthenticated,
+    enabled: isAuthenticated && !isLoading, // Only run if authenticated
   });
 
   const refreshData = () => {
