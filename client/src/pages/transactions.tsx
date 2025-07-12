@@ -4,9 +4,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import Sidebar from "@/components/layout/sidebar";
-import MobileHeader from "@/components/layout/mobile-header";
-import MobileNav from "@/components/layout/mobile-nav";
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,7 +29,6 @@ export default function Transactions() {
       setTimeout(() => {
         window.location.href = "/auth";
       }, 500);
-      return;
     }
   }, [isAuthenticated, isLoading, toast]);
 
@@ -72,9 +69,9 @@ export default function Transactions() {
     },
   });
 
-  const filteredTransactions = transactions?.filter((transaction: any) =>
-    transaction.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    transaction.category?.name.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredTransactions = (transactions as any[])?.filter((transaction: any) =>
+    transaction.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    transaction.category?.name?.toLowerCase().includes(searchTerm.toLowerCase())
   ) || [];
 
   if (isLoading || transactionsLoading) {
@@ -89,48 +86,43 @@ export default function Transactions() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Sidebar />
-      <MobileHeader />
-      
-      <div className="lg:pl-64">
-        <div className="px-4 py-6 sm:px-6 lg:px-8">
-          {/* Header */}
-          <div className="mb-8">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">Transactions</h1>
-                <p className="mt-1 text-sm text-gray-500">Manage your financial transactions</p>
-              </div>
-              <Button 
-                className="bg-primary hover:bg-primary/90"
-                onClick={() => setShowAddTransaction(true)}
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Add Transaction
-              </Button>
-            </div>
-
-            {/* Search and Filter */}
-            <div className="flex flex-col sm:flex-row gap-4">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                <Input
-                  placeholder="Search transactions..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-              <Button variant="outline" className="flex items-center gap-2">
-                <Filter className="w-4 h-4" />
-                Filter
-              </Button>
-            </div>
+    <div className="px-4 py-6 sm:px-6 lg:px-8">
+      {/* Header */}
+      <div className="mb-8">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Transactions</h1>
+            <p className="mt-1 text-sm text-gray-500">Manage your financial transactions</p>
           </div>
+          <Button 
+            className="bg-primary hover:bg-primary/90"
+            onClick={() => setShowAddTransaction(true)}
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Add Transaction
+          </Button>
+        </div>
 
-          {/* Transactions List */}
-          <Card>
+        {/* Search and Filter */}
+        <div className="flex flex-col sm:flex-row gap-4">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+            <Input
+              placeholder="Search transactions..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10"
+            />
+          </div>
+          <Button variant="outline" className="flex items-center gap-2">
+            <Filter className="w-4 h-4" />
+            Filter
+          </Button>
+        </div>
+      </div>
+
+      {/* Transactions List */}
+      <Card>
             <CardHeader>
               <CardTitle>All Transactions</CardTitle>
             </CardHeader>
@@ -196,10 +188,6 @@ export default function Transactions() {
               )}
             </CardContent>
           </Card>
-        </div>
-      </div>
-
-      <MobileNav />
       
       {/* Modals */}
       <AddTransactionModal 

@@ -54,10 +54,11 @@ export default function Auth() {
       
       // Force reload to ensure useAuth hook picks up the new token
       window.location.href = "/";
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Authentication error:", error);
       // Show error message to user
-      alert(error.message || 'Authentication failed');
+      const errorMessage = error instanceof Error ? error.message : 'Authentication failed';
+      alert(errorMessage);
     } finally {
       setIsLoading(false);
     }
