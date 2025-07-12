@@ -42,10 +42,17 @@ export default function Auth() {
         throw new Error(data.message || 'Authentication failed');
       }
       
-      // Store user in localStorage for demo
-      localStorage.setItem('demo-user', JSON.stringify(data.user));
+      // Store JWT token in localStorage
+      if (data.token) {
+        localStorage.setItem('auth-token', data.token);
+      }
       
-      // Redirect to dashboard
+      // Store user data
+      if (data.user) {
+        localStorage.setItem('auth-user', JSON.stringify(data.user));
+      }
+      
+      // Force reload to ensure useAuth hook picks up the new token
       window.location.href = "/";
     } catch (error) {
       console.error("Authentication error:", error);

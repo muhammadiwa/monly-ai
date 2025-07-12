@@ -1,85 +1,79 @@
 import {
-  pgTable,
+  sqliteTable,
   text,
-  varchar,
-  timestamp,
-  jsonb,
-  index,
-  serial,
-  decimal,
-  boolean,
   integer,
-} from "drizzle-orm/pg-core";
+  real,
+  blob,
+  index,
+} from "drizzle-orm/sqlite-core";
 import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
 // Session storage table.
-// (IMPORTANT) This table is mandatory for Replit Auth, don't drop it.
-export const sessions = pgTable(
+export const sessions = sqliteTable(
   "sessions",
   {
-    sid: varchar("sid").primaryKey(),
-    sess: jsonb("sess").notNull(),
-    expire: timestamp("expire").notNull(),
+    sid: text("sid").primaryKey(),
+    sess: text("sess").notNull(), // JSON as text in SQLite
+    expire: integer("expire").notNull(), // Unix timestamp
   },
   (table) => [index("IDX_session_expire").on(table.expire)],
 );
 
 // User storage table.
-// (IMPORTANT) This table is mandatory for Replit Auth, don't drop it.
-export const users = pgTable("users", {
-  id: varchar("id").primaryKey().notNull(),
-  email: varchar("email").unique(),
-  firstName: varchar("first_name"),
-  lastName: varchar("last_name"),
-  profileImageUrl: varchar("profile_image_url"),
-  password: varchar("password"), // For demo authentication
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
+export const users = sqliteTable("users", {
+  id: text("id").primaryKey().notNull(),
+  email: text("email").unique(),
+  firstName: text("first_name"),
+  lastName: text("last_name"),
+  profileImageUrl: text("profile_image_url"),
+  password: text("password"), // For demo authentication
+  createdAt: integer("created_at"), // Unix timestamp
+  updatedAt: integer("updated_at"), // Unix timestamp
 });
 
 // Categories table
-export const categories = pgTable("categories", {
-  id: serial("id").primaryKey(),
-  name: varchar("name", { length: 100 }).notNull(),
-  icon: varchar("icon", { length: 50 }).notNull(),
-  color: varchar("color", { length: 20 }).notNull(),
-  type: varchar("type", { length: 20 }).notNull(), // 'income' or 'expense'
-  isDefault: boolean("is_default").default(false),
-  userId: varchar("user_id").references(() => users.id),
-  createdAt: timestamp("created_at").defaultNow(),
+export const categories = sqliteTable("categories", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull(),
+  icon: text("icon").notNull(),
+  color: text("color").notNull(),
+  type: text("type").notNull(), // 'income' or 'expense'
+  isDefault: integer("is_default", { mode: 'boolean' }).default(false),
+  userId: text("user_id").references(() => users.id),
+  createdAt: integer("created_at"), // Unix timestamp
 });
 
 // Transactions table
-export const transactions = pgTable("transactions", {
-  id: serial("id").primaryKey(),
-  userId: varchar("user_id").references(() => users.id).notNull(),
+export const transactions = sqliteTable("transactions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: text("user_id").references(() => users.id).notNull(),
   categoryId: integer("category_id").references(() => categories.id).notNull(),
-  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
-  currency: varchar("currency", { length: 3 }).notNull().default("USD"),
-  description: varchar("description", { length: 500 }).notNull(),
-  type: varchar("type", { length: 20 }).notNull(), // 'income' or 'expense'
-  date: timestamp("date").notNull(),
-  receiptUrl: varchar("receipt_url"),
-  aiGenerated: boolean("ai_generated").default(false),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
+  amount: real("amount").notNull(), // Use real for decimal numbers in SQLite
+  currency: text("currency").notNull().default("USD"),
+  description: text("description").notNull(),
+  type: text("type").notNull(), // 'income' or 'expense'
+  date: integer("date").notNull(), // Unix timestamp
+  receiptUrl: text("receipt_url"),
+  aiGenerated: integer("ai_generated", { mode: 'boolean' }).default(false),
+  createdAt: integer("created_at"), // Unix timestamp
+  updatedAt: integer("updated_at"), // Unix timestamp
 });
 
 // Budgets table
-export const budgets = pgTable("budgets", {
-  id: serial("id").primaryKey(),
-  userId: varchar("user_id").references(() => users.id).notNull(),
+export const budgets = sqliteTable("budgets", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: text("user_id").references(() => users.id).notNull(),
   categoryId: integer("category_id").references(() => categories.id).notNull(),
-  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
-  currency: varchar("currency", { length: 3 }).notNull().default("USD"),
-  period: varchar("period", { length: 20 }).notNull(), // 'monthly', 'weekly', 'yearly'
-  startDate: timestamp("start_date").notNull(),
-  endDate: timestamp("end_date").notNull(),
-  isActive: boolean("is_active").default(true),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
+  amount: real("amount").notNull(), // Use real for decimal numbers in SQLite
+  currency: text("currency").notNull().default("USD"),
+  period: text("period").notNull(), // 'monthly', 'weekly', 'yearly'
+  startDate: integer("start_date").notNull(), // Unix timestamp
+  endDate: integer("end_date").notNull(), // Unix timestamp
+  isActive: integer("is_active", { mode: 'boolean' }).default(true),
+  createdAt: integer("created_at"), // Unix timestamp
+  updatedAt: integer("updated_at"), // Unix timestamp
 });
 
 // Relations

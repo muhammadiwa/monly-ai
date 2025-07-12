@@ -16,11 +16,19 @@ export async function apiRequest(
   const demoUserData = localStorage.getItem('demo-user');
   const demoUserId = demoUserData ? JSON.parse(demoUserData).id : null;
   
+  // Get auth token from localStorage
+  const authToken = localStorage.getItem('auth-token');
+  
   const headers: any = data ? { "Content-Type": "application/json" } : {};
   
   // Add demo user ID to headers if available
   if (demoUserId) {
     headers['x-demo-user-id'] = demoUserId;
+  }
+  
+  // Add Authorization header if token exists
+  if (authToken) {
+    headers['Authorization'] = `Bearer ${authToken}`;
   }
   
   const res = await fetch(url, {
@@ -44,11 +52,19 @@ export const getQueryFn: <T>(options: {
     const demoUserData = localStorage.getItem('demo-user');
     const demoUserId = demoUserData ? JSON.parse(demoUserData).id : null;
     
+    // Get auth token from localStorage
+    const authToken = localStorage.getItem('auth-token');
+    
     const headers: any = {};
     
     // Add demo user ID to headers if available
     if (demoUserId) {
       headers['x-demo-user-id'] = demoUserId;
+    }
+    
+    // Add Authorization header if token exists
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
     }
     
     const res = await fetch(queryKey.join("") as string, {

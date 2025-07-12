@@ -1,32 +1,156 @@
-import type { Express } from "express";
+import type { Express, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { setupAuth, isAuthenticated } from "./replitAuth";
 import { analyzeTransactionText, processReceiptImage, categorizeTransaction } from "./openai";
 import { insertTransactionSchema, insertBudgetSchema, insertCategorySchema } from "@shared/schema";
+import { requireAuth, optionalAuth, hashPassword, verifyPassword, generateToken, type AuthRequest } from "./auth";
 import multer from "multer";
 import { z } from "zod";
+import session from "express-session";
+import MemoryStore from "memorystore";
 
 const upload = multer({ storage: multer.memoryStorage() });
+const MemStore = MemoryStore(session);
+
+// Validation schemas
+const registerSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(6),
+  name: z.string().min(1),
+});
+
+const loginSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1),
+});
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Auth middleware
-  await setupAuth(app);
+  // Session middleware
+  app.use(session({
+    store: new MemStore({
+      checkPeriod: 86400000 // prune expired entries every 24h
+    }),
+    secret: process.env.SESSION_SECRET || 'fallback-secret',
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+    }
+  }));
 
   // Auth routes
-  app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
+  app.post('/api/auth/register', async (req: AuthRequest, res) => {
     try {
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
+      const validatedData = registerSchema.parse(req.body);
       
+      // Check if user already exists
+      const existingUser = await storage.getUserByEmail(validatedData.email);
+      if (existingUser) {
+        return res.status(400).json({ message: 'User already exists with this email' });
+      }
+
+      // Hash password
+      const hashedPassword = await hashPassword(validatedData.password);
+      
+      // Split name into firstName and lastName
+      const nameParts = validatedData.name.trim().split(' ');
+      const firstName = nameParts[0] || '';
+      const lastName = nameParts.slice(1).join(' ') || '';
+      
+      // Create user
+      const user = await storage.createDemoUser({
+        email: validatedData.email,
+        name: validatedData.name,
+        password: hashedPassword,
+      });
+
+      // Generate token
+      const token = generateToken({
+        id: user.id,
+        email: user.email || '',
+        firstName: user.firstName || undefined,
+        lastName: user.lastName || undefined,
+      });
+
+      res.status(201).json({
+        message: 'User registered successfully',
+        user: {
+          id: user.id,
+          email: user.email || '',
+          firstName: user.firstName,
+          lastName: user.lastName,
+        },
+        token,
+      });
+    } catch (error) {
+      console.error('Registration error:', error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: 'Invalid input data', errors: error.errors });
+      }
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.post('/api/auth/login', async (req: AuthRequest, res) => {
+    try {
+      const validatedData = loginSchema.parse(req.body);
+      
+      // Find user by email
+      const user = await storage.getUserByEmail(validatedData.email);
+      if (!user || !user.password) {
+        return res.status(401).json({ message: 'Invalid email or password' });
+      }
+
+      // Verify password
+      const isValidPassword = await verifyPassword(validatedData.password, user.password);
+      if (!isValidPassword) {
+        return res.status(401).json({ message: 'Invalid email or password' });
+      }
+
+      // Generate token
+      const token = generateToken({
+        id: user.id,
+        email: user.email || '',
+        firstName: user.firstName || undefined,
+        lastName: user.lastName || undefined,
+      });
+
+      res.json({
+        message: 'Login successful',
+        user: {
+          id: user.id,
+          email: user.email || '',
+          firstName: user.firstName,
+          lastName: user.lastName,
+        },
+        token,
+      });
+    } catch (error) {
+      console.error('Login error:', error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: 'Invalid input data', errors: error.errors });
+      }
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  });
+
+  app.get('/api/auth/user', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ message: 'User not authenticated' });
+      }
+
+      const user = await storage.getUser(req.user.id);
       if (!user) {
-        return res.status(404).json({ message: "User not found" });
+        return res.status(404).json({ message: 'User not found' });
       }
       
       // Check if user has categories, if not create defaults
-      const categories = await storage.getCategories(userId);
+      const categories = await storage.getCategories(req.user.id);
       if (categories.length === 0) {
-        await storage.initializeDefaultCategories(userId);
+        await storage.initializeDefaultCategories(req.user.id);
       }
       
       res.json(user);
@@ -36,88 +160,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Demo authentication routes
-  app.post('/api/auth/register', async (req, res) => {
+  // Categories routes
+  app.get('/api/categories', requireAuth, async (req: AuthRequest, res) => {
     try {
-      const { email, password, name } = req.body;
-      
-      // Check if user already exists
-      const existingUser = await storage.getUserByEmail(email);
-      if (existingUser) {
-        return res.status(400).json({ message: "User already exists" });
-      }
-      
-      // Create new user
-      const newUser = await storage.createDemoUser({
-        email,
-        name,
-        password, // In a real app, you'd hash this
-      });
-      
-      res.status(201).json({ 
-        message: "User created successfully", 
-        user: { id: newUser.id, email: newUser.email, firstName: newUser.firstName, lastName: newUser.lastName } 
-      });
-    } catch (error) {
-      console.error("Registration error:", error);
-      res.status(500).json({ message: "Registration failed" });
-    }
-  });
-
-  app.post('/api/auth/login', async (req, res) => {
-    try {
-      const { email, password } = req.body;
-      
-      // Find user by email
-      const user = await storage.getUserByEmail(email);
-      if (!user) {
-        return res.status(401).json({ message: "Invalid credentials" });
-      }
-      
-      // Check password (in a real app, you'd use bcrypt)
-      if (user.password !== password) {
-        return res.status(401).json({ message: "Invalid credentials" });
-      }
-      
-      // Initialize default categories for new users
-      await storage.initializeDefaultCategories(user.id);
-      
-      res.json({ 
-        message: "Login successful", 
-        user: { id: user.id, email: user.email, firstName: user.firstName, lastName: user.lastName } 
-      });
-    } catch (error) {
-      console.error("Login error:", error);
-      res.status(500).json({ message: "Login failed" });
-    }
-  });
-
-  // Demo authentication middleware
-  const demoAuth = async (req: any, res: any, next: any) => {
-    // Check if user is authenticated via Replit Auth
-    if (req.isAuthenticated && req.isAuthenticated()) {
-      return next();
-    }
-    
-    // Check for demo user in headers
-    const demoUserId = req.headers['x-demo-user-id'];
-    if (demoUserId) {
-      // Verify demo user exists in database
-      const user = await storage.getUser(demoUserId);
-      if (user) {
-        req.user = { claims: { sub: demoUserId } };
-        return next();
-      }
-    }
-    
-    return res.status(401).json({ message: "Unauthorized" });
-  };
-
-  // Category routes
-  app.get('/api/categories', demoAuth, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const categories = await storage.getCategories(userId);
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
+      const categories = await storage.getCategories(req.user.id);
       res.json(categories);
     } catch (error) {
       console.error("Error fetching categories:", error);
@@ -125,12 +172,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/categories', demoAuth, async (req: any, res) => {
+  app.post('/api/categories', requireAuth, async (req: AuthRequest, res: Response) => {
     try {
-      const userId = req.user.claims.sub;
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
       const categoryData = insertCategorySchema.parse({
         ...req.body,
-        userId,
+        userId: req.user.id,
       });
       
       const category = await storage.createCategory(categoryData);
@@ -142,11 +189,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Transaction routes
-  app.get('/api/transactions', demoAuth, async (req: any, res) => {
+  app.get('/api/transactions', requireAuth, async (req: AuthRequest, res: Response) => {
     try {
-      const userId = req.user.claims.sub;
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
       const limit = parseInt(req.query.limit as string) || 50;
-      const transactions = await storage.getTransactions(userId, limit);
+      const transactions = await storage.getTransactions(req.user.id, limit);
       res.json(transactions);
     } catch (error) {
       console.error("Error fetching transactions:", error);
@@ -154,13 +201,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/transactions', demoAuth, async (req: any, res) => {
+  app.post('/api/transactions', requireAuth, async (req: AuthRequest, res: Response) => {
     try {
-      const userId = req.user.claims.sub;
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
       const transactionData = insertTransactionSchema.parse({
         ...req.body,
-        userId,
-        date: new Date(req.body.date || Date.now()),
+        userId: req.user.id,
+        date: Math.floor((new Date(req.body.date || Date.now())).getTime() / 1000), // Convert to Unix timestamp
       });
       
       const transaction = await storage.createTransaction(transactionData);
@@ -171,12 +218,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put('/api/transactions/:id', isAuthenticated, async (req: any, res) => {
+  app.put('/api/transactions/:id', requireAuth, async (req: AuthRequest, res: Response) => {
     try {
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
       const id = parseInt(req.params.id);
       const updateData = {
         ...req.body,
-        date: req.body.date ? new Date(req.body.date) : undefined,
+        date: req.body.date ? Math.floor((new Date(req.body.date)).getTime() / 1000) : undefined,
       };
       
       const transaction = await storage.updateTransaction(id, updateData);
@@ -187,8 +235,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete('/api/transactions/:id', isAuthenticated, async (req: any, res) => {
+  app.delete('/api/transactions/:id', requireAuth, async (req: AuthRequest, res: Response) => {
     try {
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
       const id = parseInt(req.params.id);
       await storage.deleteTransaction(id);
       res.json({ message: "Transaction deleted successfully" });
@@ -199,10 +248,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // AI-powered transaction analysis
-  app.post('/api/transactions/analyze', demoAuth, async (req: any, res) => {
+  app.post('/api/transactions/analyze', requireAuth, async (req: AuthRequest, res: Response) => {
     try {
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
       const { text } = req.body;
-      const userId = req.user.claims.sub;
       
       if (!text) {
         return res.status(400).json({ message: "Text is required" });
@@ -211,14 +260,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const analysis = await analyzeTransactionText(text);
       
       // Find matching category
-      const categories = await storage.getCategories(userId);
+      const categories = await storage.getCategories(req.user.id);
       const matchingCategory = categories.find(c => 
         c.name.toLowerCase() === analysis.category.toLowerCase()
       );
       
       if (matchingCategory) {
         const transactionData = insertTransactionSchema.parse({
-          userId,
+          userId: req.user.id,
           categoryId: matchingCategory.id,
           amount: analysis.amount.toString(),
           currency: "USD",
@@ -240,9 +289,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // OCR receipt processing
-  app.post('/api/transactions/ocr', isAuthenticated, upload.single('receipt'), async (req: any, res) => {
+  app.post('/api/transactions/ocr', requireAuth, upload.single('receipt'), async (req: AuthRequest, res: Response) => {
     try {
-      const userId = req.user.claims.sub;
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
       
       if (!req.file) {
         return res.status(400).json({ message: "Receipt image is required" });
@@ -252,7 +301,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const ocrResult = await processReceiptImage(base64Image);
       
       const createdTransactions = [];
-      const categories = await storage.getCategories(userId);
+      const categories = await storage.getCategories(req.user.id);
       
       for (const analysis of ocrResult.transactions) {
         const matchingCategory = categories.find(c => 
@@ -261,13 +310,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         if (matchingCategory) {
           const transactionData = insertTransactionSchema.parse({
-            userId,
+            userId: req.user.id,
             categoryId: matchingCategory.id,
             amount: analysis.amount.toString(),
             currency: "USD",
             description: analysis.description,
             type: analysis.type,
-            date: new Date(),
+            date: Math.floor(Date.now() / 1000), // Convert to Unix timestamp
             aiGenerated: true,
           });
           
@@ -288,10 +337,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Budget routes
-  app.get('/api/budgets', isAuthenticated, async (req: any, res) => {
+  app.get('/api/budgets', requireAuth, async (req: AuthRequest, res: Response) => {
     try {
-      const userId = req.user.claims.sub;
-      const budgets = await storage.getBudgets(userId);
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
+      const budgets = await storage.getBudgets(req.user.id);
       res.json(budgets);
     } catch (error) {
       console.error("Error fetching budgets:", error);
@@ -299,14 +348,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/budgets', isAuthenticated, async (req: any, res) => {
+  app.post('/api/budgets', requireAuth, async (req: AuthRequest, res: Response) => {
     try {
-      const userId = req.user.claims.sub;
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
       const budgetData = insertBudgetSchema.parse({
         ...req.body,
-        userId,
-        startDate: new Date(req.body.startDate),
-        endDate: new Date(req.body.endDate),
+        userId: req.user.id,
+        startDate: Math.floor((new Date(req.body.startDate)).getTime() / 1000),
+        endDate: Math.floor((new Date(req.body.endDate)).getTime() / 1000),
       });
       
       const budget = await storage.createBudget(budgetData);
@@ -317,7 +366,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put('/api/budgets/:id', isAuthenticated, async (req: any, res) => {
+  app.put('/api/budgets/:id', requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       const id = parseInt(req.params.id);
       const updateData = {
@@ -334,7 +383,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete('/api/budgets/:id', isAuthenticated, async (req: any, res) => {
+  app.delete('/api/budgets/:id', requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       const id = parseInt(req.params.id);
       await storage.deleteBudget(id);
@@ -346,9 +395,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Analytics routes
-  app.get('/api/analytics/dashboard', isAuthenticated, async (req: any, res) => {
+  app.get('/api/analytics/dashboard', requireAuth, async (req: AuthRequest, res: Response) => {
     try {
-      const userId = req.user.claims.sub;
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
       const now = new Date();
       
       // Get current month stats
@@ -356,17 +405,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const currentYear = now.getFullYear();
       
       // Get last 6 months expenses
-      const monthlyExpenses = await storage.getMonthlyExpenses(userId, 6);
+      const monthlyExpenses = await storage.getMonthlyExpenses(req.user.id, 6);
       
       // Get current month category breakdown
       const startOfMonth = new Date(currentYear, currentMonth, 1);
       const endOfMonth = new Date(currentYear, currentMonth + 1, 0);
-      const categoryExpenses = await storage.getCategoryExpenses(userId, startOfMonth, endOfMonth);
+      const categoryExpenses = await storage.getCategoryExpenses(req.user.id, startOfMonth, endOfMonth);
       
       // Get totals
-      const totalBalance = await storage.getTotalBalance(userId);
-      const monthlyIncome = await storage.getMonthlyIncome(userId, currentYear, currentMonth);
-      const monthlyExpenseTotal = await storage.getMonthlyExpenseTotal(userId, currentYear, currentMonth);
+      const totalBalance = await storage.getTotalBalance(req.user.id);
+      const monthlyIncome = await storage.getMonthlyIncome(req.user.id, currentYear, currentMonth);
+      const monthlyExpenseTotal = await storage.getMonthlyExpenseTotal(req.user.id, currentYear, currentMonth);
       
       const dashboardData = {
         monthlyExpenses,
@@ -386,9 +435,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // WhatsApp chat route
-  app.post('/api/whatsapp/chat', isAuthenticated, async (req: any, res) => {
+  app.post('/api/whatsapp/chat', requireAuth, async (req: AuthRequest, res: Response) => {
     try {
-      const userId = req.user.claims.sub;
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
       const { message } = req.body;
       
       // Analyze the message for transaction data
@@ -396,7 +445,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       if (analysis.amount > 0) {
         // Try to find matching category
-        const categories = await storage.getCategories(userId);
+        const categories = await storage.getCategories(req.user.id);
         const matchingCategory = categories.find(c => 
           c.name.toLowerCase() === analysis.category.toLowerCase()
         );
@@ -404,13 +453,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (matchingCategory) {
           // Create transaction
           const transactionData = insertTransactionSchema.parse({
-            userId,
+            userId: req.user.id,
             categoryId: matchingCategory.id,
             amount: analysis.amount.toString(),
             currency: "USD",
             description: analysis.description,
             type: analysis.type,
-            date: new Date(),
+            date: Math.floor(Date.now() / 1000), // Convert to Unix timestamp
             aiGenerated: true,
           });
           
@@ -440,16 +489,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Additional analytics routes
-  app.get('/api/analytics/monthly/:year/:month', isAuthenticated, async (req: any, res) => {
+  app.get('/api/analytics/monthly/:year/:month', requireAuth, async (req: AuthRequest, res: Response) => {
     try {
-      const userId = req.user.claims.sub;
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
       const year = parseInt(req.params.year);
       const month = parseInt(req.params.month);
       
       const [income, expenses, categoryExpenses] = await Promise.all([
-        storage.getMonthlyIncome(userId, year, month),
-        storage.getMonthlyExpenseTotal(userId, year, month),
-        storage.getCategoryExpenses(userId, 
+        storage.getMonthlyIncome(req.user.id, year, month),
+        storage.getMonthlyExpenseTotal(req.user.id, year, month),
+        storage.getCategoryExpenses(req.user.id, 
           new Date(year, month - 1, 1), 
           new Date(year, month, 0)
         )
