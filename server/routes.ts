@@ -273,47 +273,96 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.user.claims.sub;
       const now = new Date();
+      
+      // Get current month stats
+      const currentMonth = now.getMonth();
       const currentYear = now.getFullYear();
-      const currentMonth = now.getMonth() + 1;
       
-      const [
+      // Get last 6 months expenses
+      const monthlyExpenses = await storage.getMonthlyExpenses(userId, 6);
+      
+      // Get current month category breakdown
+      const startOfMonth = new Date(currentYear, currentMonth, 1);
+      const endOfMonth = new Date(currentYear, currentMonth + 1, 0);
+      const categoryExpenses = await storage.getCategoryExpenses(userId, startOfMonth, endOfMonth);
+      
+      // Get totals
+      const totalBalance = await storage.getTotalBalance(userId);
+      const monthlyIncome = await storage.getMonthlyIncome(userId, currentYear, currentMonth);
+      const monthlyExpenseTotal = await storage.getMonthlyExpenseTotal(userId, currentYear, currentMonth);
+      
+      const dashboardData = {
+        monthlyExpenses,
+        categoryExpenses,
         totalBalance,
         monthlyIncome,
-        monthlyExpenses,
-        monthlyExpensesData,
-        categoryExpenses,
-        recentTransactions
-      ] = await Promise.all([
-        storage.getTotalBalance(userId),
-        storage.getMonthlyIncome(userId, currentYear, currentMonth),
-        storage.getMonthlyExpenseTotal(userId, currentYear, currentMonth),
-        storage.getMonthlyExpenses(userId, 6),
-        storage.getCategoryExpenses(userId, 
-          new Date(currentYear, currentMonth - 1, 1), 
-          new Date(currentYear, currentMonth, 0)
-        ),
-        storage.getTransactions(userId, 10)
-      ]);
+        monthlyExpenseTotal,
+        savingsRate: monthlyIncome > 0 ? ((monthlyIncome - monthlyExpenseTotal) / monthlyIncome * 100).toFixed(1) : 0,
+        transactionCount: monthlyExpenses.reduce((sum, month) => sum + (month.count || 0), 0),
+      };
       
-      res.json({
-        totalBalance,
-        monthlyIncome,
-        monthlyExpenses,
-        monthlyExpensesData,
-        categoryExpenses,
-        recentTransactions,
-        savingsGoal: {
-          target: 2000,
-          current: Math.max(0, monthlyIncome - monthlyExpenses),
-          percentage: Math.min(100, Math.max(0, ((monthlyIncome - monthlyExpenses) / 2000) * 100))
-        }
-      });
+      res.json(dashboardData);
     } catch (error) {
       console.error("Error fetching dashboard analytics:", error);
       res.status(500).json({ message: "Failed to fetch dashboard analytics" });
     }
   });
 
+  // WhatsApp chat route
+  app.post('/api/whatsapp/chat', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { message } = req.body;
+      
+      // Analyze the message for transaction data
+      const analysis = await analyzeTransactionText(message);
+      
+      if (analysis.amount > 0) {
+        // Try to find matching category
+        const categories = await storage.getCategories(userId);
+        const matchingCategory = categories.find(c => 
+          c.name.toLowerCase() === analysis.category.toLowerCase()
+        );
+        
+        if (matchingCategory) {
+          // Create transaction
+          const transactionData = insertTransactionSchema.parse({
+            userId,
+            categoryId: matchingCategory.id,
+            amount: analysis.amount.toString(),
+            currency: "USD",
+            description: analysis.description,
+            type: analysis.type,
+            date: new Date(),
+            aiGenerated: true,
+          });
+          
+          const transaction = await storage.createTransaction(transactionData);
+          
+          res.json({
+            message: `Transaction recorded: ${analysis.description} - $${analysis.amount} in ${analysis.category}`,
+            transaction,
+            analysis
+          });
+        } else {
+          res.json({
+            message: `I found a ${analysis.type} of $${analysis.amount} for ${analysis.description}, but couldn't find a matching category. Please create the category first.`,
+            analysis
+          });
+        }
+      } else {
+        res.json({
+          message: "I couldn't identify any transaction details in your message. Could you please be more specific about the amount and what you spent money on?",
+          analysis
+        });
+      }
+    } catch (error) {
+      console.error("Error processing WhatsApp message:", error);
+      res.status(500).json({ message: "Failed to process message" });
+    }
+  });
+
+  // Additional analytics routes
   app.get('/api/analytics/monthly/:year/:month', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;

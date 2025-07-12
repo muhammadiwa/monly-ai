@@ -56,8 +56,8 @@ export default function WhatsAppChatModal({
 
   const analyzeTextMutation = useMutation({
     mutationFn: async (text: string) => {
-      const response = await apiRequest("POST", "/api/transactions/analyze", {
-        text,
+      const response = await apiRequest("POST", "/api/whatsapp/chat", {
+        message: text,
       });
       return response.json();
     },
