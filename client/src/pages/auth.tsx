@@ -1,0 +1,263 @@
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ArrowRight, Mail, Lock, User, Eye, EyeOff } from "lucide-react";
+
+export default function Auth() {
+  const [isLogin, setIsLogin] = useState(true);
+  const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  
+  const [formData, setFormData] = useState({
+    email: "",
+    password: "",
+    name: "",
+    confirmPassword: ""
+  });
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    
+    try {
+      // Simulate authentication
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Create a mock user session for demo
+      const mockUser = {
+        id: "demo-user",
+        email: formData.email,
+        name: formData.name || "Demo User",
+        profileImageUrl: null
+      };
+      
+      // Store in localStorage for demo
+      localStorage.setItem('demo-user', JSON.stringify(mockUser));
+      
+      // Redirect to dashboard
+      window.location.href = "/";
+    } catch (error) {
+      console.error("Authentication error:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFormData({
+      ...formData,
+      [e.target.name]: e.target.value
+    });
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-blue-50 to-purple-50 flex items-center justify-center p-4">
+      {/* Animated Background */}
+      <div className="fixed inset-0 -z-10">
+        <div className="absolute top-20 left-20 w-72 h-72 bg-emerald-300 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-pulse"></div>
+        <div className="absolute top-40 right-20 w-72 h-72 bg-blue-300 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-pulse animation-delay-1000"></div>
+        <div className="absolute -bottom-32 left-40 w-72 h-72 bg-purple-300 rounded-full mix-blend-multiply filter blur-xl opacity-20 animate-pulse animation-delay-2000"></div>
+      </div>
+
+      <div className="w-full max-w-md">
+        {/* Header */}
+        <div className="text-center mb-8">
+          <div className="flex items-center justify-center space-x-2 mb-4">
+            <div className="w-12 h-12 bg-gradient-to-r from-emerald-600 to-blue-600 rounded-xl flex items-center justify-center shadow-lg">
+              <span className="text-white font-bold text-xl">M</span>
+            </div>
+            <span className="text-2xl font-bold bg-gradient-to-r from-emerald-600 to-blue-600 bg-clip-text text-transparent">
+              Monly AI
+            </span>
+          </div>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">
+            {isLogin ? "Welcome Back!" : "Get Started Free"}
+          </h1>
+          <p className="text-gray-600">
+            {isLogin ? "Sign in to your account" : "Create your account and start managing your finances"}
+          </p>
+        </div>
+
+        {/* Auth Form */}
+        <Card className="shadow-2xl border-0 bg-white/80 backdrop-blur-sm">
+          <CardHeader className="space-y-1">
+            <Tabs value={isLogin ? "login" : "register"} className="w-full">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="login" onClick={() => setIsLogin(true)}>
+                  Login
+                </TabsTrigger>
+                <TabsTrigger value="register" onClick={() => setIsLogin(false)}>
+                  Register
+                </TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="login" className="space-y-4">
+                <div className="text-center">
+                  <CardTitle className="text-2xl">Login</CardTitle>
+                  <CardDescription>
+                    Enter your email and password to access your account
+                  </CardDescription>
+                </div>
+              </TabsContent>
+              
+              <TabsContent value="register" className="space-y-4">
+                <div className="text-center">
+                  <CardTitle className="text-2xl">Create Account</CardTitle>
+                  <CardDescription>
+                    Sign up to start your financial journey with AI
+                  </CardDescription>
+                </div>
+              </TabsContent>
+            </Tabs>
+          </CardHeader>
+          
+          <CardContent>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {!isLogin && (
+                <div className="space-y-2">
+                  <Label htmlFor="name">Full Name</Label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                    <Input
+                      id="name"
+                      name="name"
+                      type="text"
+                      placeholder="Enter your full name"
+                      value={formData.name}
+                      onChange={handleInputChange}
+                      className="pl-10"
+                      required={!isLogin}
+                    />
+                  </div>
+                </div>
+              )}
+              
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                  <Input
+                    id="email"
+                    name="email"
+                    type="email"
+                    placeholder="Enter your email"
+                    value={formData.email}
+                    onChange={handleInputChange}
+                    className="pl-10"
+                    required
+                  />
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="password">Password</Label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                  <Input
+                    id="password"
+                    name="password"
+                    type={showPassword ? "text" : "password"}
+                    placeholder="Enter your password"
+                    value={formData.password}
+                    onChange={handleInputChange}
+                    className="pl-10 pr-10"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-3 h-4 w-4 text-gray-400 hover:text-gray-600"
+                  >
+                    {showPassword ? <EyeOff /> : <Eye />}
+                  </button>
+                </div>
+              </div>
+              
+              {!isLogin && (
+                <div className="space-y-2">
+                  <Label htmlFor="confirmPassword">Confirm Password</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                    <Input
+                      id="confirmPassword"
+                      name="confirmPassword"
+                      type="password"
+                      placeholder="Confirm your password"
+                      value={formData.confirmPassword}
+                      onChange={handleInputChange}
+                      className="pl-10"
+                      required={!isLogin}
+                    />
+                  </div>
+                </div>
+              )}
+              
+              {isLogin && (
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center">
+                    <input type="checkbox" className="mr-2" />
+                    <span className="text-sm text-gray-600">Remember me</span>
+                  </label>
+                  <Button variant="link" className="text-sm p-0 h-auto">
+                    Forgot password?
+                  </Button>
+                </div>
+              )}
+              
+              <Button
+                type="submit"
+                disabled={isLoading}
+                className="w-full bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-700 hover:to-blue-700 text-white shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-300"
+              >
+                {isLoading ? (
+                  <div className="flex items-center">
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                    Processing...
+                  </div>
+                ) : (
+                  <>
+                    {isLogin ? "Sign In" : "Create Account"}
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </>
+                )}
+              </Button>
+            </form>
+            
+            <div className="mt-6 text-center">
+              <p className="text-sm text-gray-600">
+                {isLogin ? "Don't have an account?" : "Already have an account?"}
+                <Button
+                  variant="link"
+                  className="ml-1 p-0 h-auto text-emerald-600 hover:text-emerald-700"
+                  onClick={() => setIsLogin(!isLogin)}
+                >
+                  {isLogin ? "Sign up" : "Sign in"}
+                </Button>
+              </p>
+            </div>
+            
+            <div className="mt-6 pt-6 border-t border-gray-200">
+              <p className="text-xs text-gray-500 text-center">
+                By continuing, you agree to our Terms of Service and Privacy Policy
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+        
+        {/* Back to Home */}
+        <div className="text-center mt-6">
+          <Button
+            variant="ghost"
+            onClick={() => window.location.href = "/"}
+            className="text-gray-600 hover:text-gray-900"
+          >
+            ← Back to Home
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}

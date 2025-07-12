@@ -15,7 +15,7 @@ import { User, Bell, Shield, Globe, CreditCard, LogOut } from "lucide-react";
 
 export default function Settings() {
   const { toast } = useToast();
-  const { user, isAuthenticated, isLoading } = useAuth();
+  const { user, isAuthenticated, isLoading, logout } = useAuth();
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -26,7 +26,7 @@ export default function Settings() {
         variant: "destructive",
       });
       setTimeout(() => {
-        window.location.href = "/api/login";
+        window.location.href = "/auth";
       }, 500);
       return;
     }
@@ -240,7 +240,7 @@ export default function Settings() {
                   </div>
                   <Button 
                     variant="outline" 
-                    onClick={() => window.location.href = '/api/logout'}
+                    onClick={logout}
                   >
                     Sign Out
                   </Button>

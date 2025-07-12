@@ -103,7 +103,7 @@ export default function WhatsAppChatModal({
           variant: "destructive",
         });
         setTimeout(() => {
-          window.location.href = "/api/login";
+          window.location.href = "/auth";
         }, 500);
         return;
       }
