@@ -12,9 +12,20 @@ export async function apiRequest(
   url: string,
   data?: unknown | undefined,
 ): Promise<Response> {
+  // Get demo user ID from localStorage
+  const demoUserData = localStorage.getItem('demo-user');
+  const demoUserId = demoUserData ? JSON.parse(demoUserData).id : null;
+  
+  const headers: any = data ? { "Content-Type": "application/json" } : {};
+  
+  // Add demo user ID to headers if available
+  if (demoUserId) {
+    headers['x-demo-user-id'] = demoUserId;
+  }
+  
   const res = await fetch(url, {
     method,
-    headers: data ? { "Content-Type": "application/json" } : {},
+    headers,
     body: data ? JSON.stringify(data) : undefined,
     credentials: "include",
   });
@@ -29,8 +40,20 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
-    const res = await fetch(queryKey.join("/") as string, {
+    // Get demo user ID from localStorage
+    const demoUserData = localStorage.getItem('demo-user');
+    const demoUserId = demoUserData ? JSON.parse(demoUserData).id : null;
+    
+    const headers: any = {};
+    
+    // Add demo user ID to headers if available
+    if (demoUserId) {
+      headers['x-demo-user-id'] = demoUserId;
+    }
+    
+    const res = await fetch(queryKey.join("") as string, {
       credentials: "include",
+      headers,
     });
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {

@@ -18,10 +18,20 @@ function Router() {
 
   return (
     <Switch>
-      {isLoading || !isAuthenticated ? (
+      <Route path="/auth" component={Auth} />
+      {isLoading ? (
+        <Route path="*">
+          <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+            <div className="text-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+              <p className="text-gray-600">Loading...</p>
+            </div>
+          </div>
+        </Route>
+      ) : !isAuthenticated ? (
         <>
           <Route path="/" component={Landing} />
-          <Route path="/auth" component={Auth} />
+          <Route component={NotFound} />
         </>
       ) : (
         <>
@@ -30,9 +40,9 @@ function Router() {
           <Route path="/budgets" component={Budgets} />
           <Route path="/reports" component={Reports} />
           <Route path="/settings" component={Settings} />
+          <Route component={NotFound} />
         </>
       )}
-      <Route component={NotFound} />
     </Switch>
   );
 }

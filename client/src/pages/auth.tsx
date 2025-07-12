@@ -23,24 +23,34 @@ export default function Auth() {
     setIsLoading(true);
     
     try {
-      // Simulate authentication
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
+      const payload = isLogin 
+        ? { email: formData.email, password: formData.password }
+        : { email: formData.email, password: formData.password, name: formData.name };
       
-      // Create a mock user session for demo
-      const mockUser = {
-        id: "demo-user",
-        email: formData.email,
-        name: formData.name || "Demo User",
-        profileImageUrl: null
-      };
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
       
-      // Store in localStorage for demo
-      localStorage.setItem('demo-user', JSON.stringify(mockUser));
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.message || 'Authentication failed');
+      }
+      
+      // Store user in localStorage for demo
+      localStorage.setItem('demo-user', JSON.stringify(data.user));
       
       // Redirect to dashboard
       window.location.href = "/";
     } catch (error) {
       console.error("Authentication error:", error);
+      // Show error message to user
+      alert(error.message || 'Authentication failed');
     } finally {
       setIsLoading(false);
     }

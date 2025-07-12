@@ -36,8 +36,85 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Demo authentication routes
+  app.post('/api/auth/register', async (req, res) => {
+    try {
+      const { email, password, name } = req.body;
+      
+      // Check if user already exists
+      const existingUser = await storage.getUserByEmail(email);
+      if (existingUser) {
+        return res.status(400).json({ message: "User already exists" });
+      }
+      
+      // Create new user
+      const newUser = await storage.createDemoUser({
+        email,
+        name,
+        password, // In a real app, you'd hash this
+      });
+      
+      res.status(201).json({ 
+        message: "User created successfully", 
+        user: { id: newUser.id, email: newUser.email, firstName: newUser.firstName, lastName: newUser.lastName } 
+      });
+    } catch (error) {
+      console.error("Registration error:", error);
+      res.status(500).json({ message: "Registration failed" });
+    }
+  });
+
+  app.post('/api/auth/login', async (req, res) => {
+    try {
+      const { email, password } = req.body;
+      
+      // Find user by email
+      const user = await storage.getUserByEmail(email);
+      if (!user) {
+        return res.status(401).json({ message: "Invalid credentials" });
+      }
+      
+      // Check password (in a real app, you'd use bcrypt)
+      if (user.password !== password) {
+        return res.status(401).json({ message: "Invalid credentials" });
+      }
+      
+      // Initialize default categories for new users
+      await storage.initializeDefaultCategories(user.id);
+      
+      res.json({ 
+        message: "Login successful", 
+        user: { id: user.id, email: user.email, firstName: user.firstName, lastName: user.lastName } 
+      });
+    } catch (error) {
+      console.error("Login error:", error);
+      res.status(500).json({ message: "Login failed" });
+    }
+  });
+
+  // Demo authentication middleware
+  const demoAuth = async (req: any, res: any, next: any) => {
+    // Check if user is authenticated via Replit Auth
+    if (req.isAuthenticated && req.isAuthenticated()) {
+      return next();
+    }
+    
+    // Check for demo user in headers
+    const demoUserId = req.headers['x-demo-user-id'];
+    if (demoUserId) {
+      // Verify demo user exists in database
+      const user = await storage.getUser(demoUserId);
+      if (user) {
+        req.user = { claims: { sub: demoUserId } };
+        return next();
+      }
+    }
+    
+    return res.status(401).json({ message: "Unauthorized" });
+  };
+
   // Category routes
-  app.get('/api/categories', isAuthenticated, async (req: any, res) => {
+  app.get('/api/categories', demoAuth, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const categories = await storage.getCategories(userId);
@@ -48,7 +125,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/categories', isAuthenticated, async (req: any, res) => {
+  app.post('/api/categories', demoAuth, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const categoryData = insertCategorySchema.parse({
@@ -65,7 +142,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Transaction routes
-  app.get('/api/transactions', isAuthenticated, async (req: any, res) => {
+  app.get('/api/transactions', demoAuth, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const limit = parseInt(req.query.limit as string) || 50;
@@ -77,7 +154,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/transactions', isAuthenticated, async (req: any, res) => {
+  app.post('/api/transactions', demoAuth, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const transactionData = insertTransactionSchema.parse({
@@ -122,7 +199,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // AI-powered transaction analysis
-  app.post('/api/transactions/analyze', isAuthenticated, async (req: any, res) => {
+  app.post('/api/transactions/analyze', demoAuth, async (req: any, res) => {
     try {
       const { text } = req.body;
       const userId = req.user.claims.sub;
