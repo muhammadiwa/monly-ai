@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { ChartLine, BarChart3, CreditCard, PieChart, MessageSquare, Settings, LogOut } from "lucide-react";
+import { ChartLine, BarChart3, CreditCard, PieChart, Settings, LogOut } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
 
@@ -54,14 +54,14 @@ export default function Sidebar() {
         <div className="flex items-center">
           <img 
             className="h-10 w-10 rounded-full object-cover" 
-            src={user?.profileImageUrl || "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3&ixid=MnwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8&auto=format&fit=crop&w=64&h=64"}
+            src={(user as any)?.profileImageUrl || "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3&ixid=MnwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8&auto=format&fit=crop&w=64&h=64"}
             alt="User avatar"
           />
           <div className="ml-3">
             <p className="text-sm font-medium text-gray-700">
-              {user?.firstName} {user?.lastName}
+              {(user as any)?.firstName} {(user as any)?.lastName}
             </p>
-            <p className="text-xs text-gray-500">{user?.email}</p>
+            <p className="text-xs text-gray-500">{(user as any)?.email}</p>
           </div>
         </div>
         <button 

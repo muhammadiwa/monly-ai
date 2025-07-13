@@ -1,10 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import Sidebar from "@/components/layout/sidebar";
-import MobileHeader from "@/components/layout/mobile-header";
-import MobileNav from "@/components/layout/mobile-nav";
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -26,7 +24,6 @@ export default function Budgets() {
       setTimeout(() => {
         window.location.href = "/auth";
       }, 500);
-      return;
     }
   }, [isAuthenticated, isLoading, toast]);
 
@@ -48,25 +45,20 @@ export default function Budgets() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Sidebar />
-      <MobileHeader />
-      
-      <div className="lg:pl-64">
-        <div className="px-4 py-6 sm:px-6 lg:px-8">
-          {/* Header */}
-          <div className="mb-8">
-            <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">Budgets</h1>
-                <p className="mt-1 text-sm text-gray-500">Set and track your spending goals</p>
-              </div>
-              <Button className="bg-primary hover:bg-primary/90">
-                <Plus className="w-4 h-4 mr-2" />
-                Create Budget
-              </Button>
-            </div>
+    <div className="px-4 py-6 sm:px-6 lg:px-8">
+      {/* Header */}
+      <div className="mb-8">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Budgets</h1>
+            <p className="mt-1 text-sm text-gray-500">Set and track your spending goals</p>
           </div>
+          <Button className="bg-primary hover:bg-primary/90">
+            <Plus className="w-4 h-4 mr-2" />
+            Create Budget
+          </Button>
+        </div>
+      </div>
 
           {/* Budget Overview */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
@@ -115,7 +107,7 @@ export default function Budgets() {
               <CardTitle>Budget Categories</CardTitle>
             </CardHeader>
             <CardContent>
-              {!budgets || budgets.length === 0 ? (
+              {!(budgets as any[]) || (budgets as any[]).length === 0 ? (
                 <div className="text-center py-12">
                   <Target className="mx-auto h-12 w-12 text-gray-400 mb-4" />
                   <p className="text-gray-500 mb-4">No budgets set yet</p>
@@ -133,9 +125,15 @@ export default function Budgets() {
                     const percentage = (item.spent / item.budget) * 100;
                     const isOverBudget = percentage > 100;
                     const isNearLimit = percentage > 80;
+                    let progressBgClass = 'bg-gray-200';
+                    if (isOverBudget) {
+                      progressBgClass = 'bg-red-100';
+                    } else if (isNearLimit) {
+                      progressBgClass = 'bg-yellow-100';
+                    }
                     
                     return (
-                      <div key={index} className="space-y-2">
+                      <div key={`${item.category}-${index}`} className="space-y-2">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center space-x-3">
                             <div className={`w-3 h-3 rounded-full ${item.color}`}></div>
@@ -162,7 +160,7 @@ export default function Budgets() {
                         </div>
                         <Progress 
                           value={Math.min(percentage, 100)} 
-                          className={`h-2 ${isOverBudget ? 'bg-red-100' : isNearLimit ? 'bg-yellow-100' : 'bg-gray-200'}`}
+                          className={`h-2 ${progressBgClass}`}
                         />
                         <div className="flex justify-between text-xs text-gray-500">
                           <span>Remaining: ${Math.max(0, item.budget - item.spent)}</span>
@@ -175,10 +173,6 @@ export default function Budgets() {
               )}
             </CardContent>
           </Card>
-        </div>
-      </div>
-
-      <MobileNav />
     </div>
   );
 }

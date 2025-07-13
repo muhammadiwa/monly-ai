@@ -3,7 +3,6 @@ import {
   text,
   integer,
   real,
-  blob,
   index,
 } from "drizzle-orm/sqlite-core";
 import { relations } from "drizzle-orm";

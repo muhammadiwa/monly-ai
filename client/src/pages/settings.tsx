@@ -1,9 +1,7 @@
 import { useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import Sidebar from "@/components/layout/sidebar";
-import MobileHeader from "@/components/layout/mobile-header";
-import MobileNav from "@/components/layout/mobile-nav";
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -11,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { User, Bell, Shield, Globe, CreditCard, LogOut } from "lucide-react";
+import { User, Bell, Shield, CreditCard, LogOut } from "lucide-react";
 
 export default function Settings() {
   const { toast } = useToast();
@@ -28,7 +26,6 @@ export default function Settings() {
       setTimeout(() => {
         window.location.href = "/auth";
       }, 500);
-      return;
     }
   }, [isAuthenticated, isLoading, toast]);
 
@@ -44,54 +41,49 @@ export default function Settings() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Sidebar />
-      <MobileHeader />
-      
-      <div className="lg:pl-64">
-        <div className="px-4 py-6 sm:px-6 lg:px-8">
-          {/* Header */}
-          <div className="mb-8">
-            <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
-            <p className="mt-1 text-sm text-gray-500">Manage your account preferences and settings</p>
-          </div>
+    <div className="px-4 py-6 sm:px-6 lg:px-8">
+      {/* Header */}
+      <div className="mb-8">
+        <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
+        <p className="mt-1 text-sm text-gray-500">Manage your account preferences and settings</p>
+      </div>
 
-          <div className="max-w-4xl space-y-6">
-            {/* Profile Settings */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <User className="h-5 w-5" />
-                  Profile Settings
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center space-x-4">
-                  <img 
-                    src={user?.profileImageUrl || "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3&ixid=MnwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8&auto=format&fit=crop&w=64&h=64"} 
-                    alt="Profile" 
+      <div className="max-w-4xl space-y-6">
+        {/* Profile Settings */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <User className="h-5 w-5" />
+              Profile Settings
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center space-x-4">
+              <img 
+                src={(user as any)?.profileImageUrl || "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-4.0.3&ixid=MnwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8&auto=format&fit=crop&w=64&h=64"} 
+                alt="Profile" 
                     className="h-16 w-16 rounded-full object-cover"
                   />
                   <div>
-                    <h3 className="font-medium">{user?.firstName} {user?.lastName}</h3>
-                    <p className="text-sm text-gray-500">{user?.email}</p>
+                    <h3 className="font-medium">{(user as any)?.firstName} {(user as any)?.lastName}</h3>
+                    <p className="text-sm text-gray-500">{(user as any)?.email}</p>
                   </div>
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="firstName">First Name</Label>
-                    <Input id="firstName" defaultValue={user?.firstName || ""} />
+                    <Input id="firstName" defaultValue={(user as any)?.firstName || ""} />
                   </div>
                   <div>
                     <Label htmlFor="lastName">Last Name</Label>
-                    <Input id="lastName" defaultValue={user?.lastName || ""} />
+                    <Input id="lastName" defaultValue={(user as any)?.lastName || ""} />
                   </div>
                 </div>
                 
                 <div>
                   <Label htmlFor="email">Email</Label>
-                  <Input id="email" defaultValue={user?.email || ""} type="email" />
+                  <Input id="email" defaultValue={(user as any)?.email || ""} type="email" />
                 </div>
                 
                 <Button>Save Changes</Button>
@@ -258,10 +250,6 @@ export default function Settings() {
               </CardContent>
             </Card>
           </div>
-        </div>
-      </div>
-
-      <MobileNav />
     </div>
   );
 }

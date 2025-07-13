@@ -10,21 +10,12 @@ async function throwIfResNotOk(res: Response) {
 export async function apiRequest(
   method: string,
   url: string,
-  data?: unknown | undefined,
+  data?: unknown,
 ): Promise<Response> {
-  // Get demo user ID from localStorage
-  const demoUserData = localStorage.getItem('demo-user');
-  const demoUserId = demoUserData ? JSON.parse(demoUserData).id : null;
-  
   // Get auth token from localStorage
   const authToken = localStorage.getItem('auth-token');
   
   const headers: any = data ? { "Content-Type": "application/json" } : {};
-  
-  // Add demo user ID to headers if available
-  if (demoUserId) {
-    headers['x-demo-user-id'] = demoUserId;
-  }
   
   // Add Authorization header if token exists
   if (authToken) {
@@ -48,26 +39,17 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
-    // Get demo user ID from localStorage
-    const demoUserData = localStorage.getItem('demo-user');
-    const demoUserId = demoUserData ? JSON.parse(demoUserData).id : null;
-    
     // Get auth token from localStorage
     const authToken = localStorage.getItem('auth-token');
     
     const headers: any = {};
-    
-    // Add demo user ID to headers if available
-    if (demoUserId) {
-      headers['x-demo-user-id'] = demoUserId;
-    }
     
     // Add Authorization header if token exists
     if (authToken) {
       headers['Authorization'] = `Bearer ${authToken}`;
     }
     
-    const res = await fetch(queryKey.join("") as string, {
+    const res = await fetch(queryKey.join(""), {
       credentials: "include",
       headers,
     });

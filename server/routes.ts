@@ -1,9 +1,9 @@
 import type { Express, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { analyzeTransactionText, processReceiptImage, categorizeTransaction } from "./openai";
+import { analyzeTransactionText, processReceiptImage } from "./openai";
 import { insertTransactionSchema, insertBudgetSchema, insertCategorySchema } from "@shared/schema";
-import { requireAuth, optionalAuth, hashPassword, verifyPassword, generateToken, type AuthRequest } from "./auth";
+import { requireAuth, hashPassword, verifyPassword, generateToken, type AuthRequest } from "./auth";
 import multer from "multer";
 import { z } from "zod";
 import session from "express-session";
@@ -54,11 +54,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Hash password
       const hashedPassword = await hashPassword(validatedData.password);
       
-      // Split name into firstName and lastName
-      const nameParts = validatedData.name.trim().split(' ');
-      const firstName = nameParts[0] || '';
-      const lastName = nameParts.slice(1).join(' ') || '';
-      
       // Create user
       const user = await storage.createDemoUser({
         email: validatedData.email,
@@ -99,7 +94,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Find user by email
       const user = await storage.getUserByEmail(validatedData.email);
-      if (!user || !user.password) {
+      if (!user?.password) {
         return res.status(401).json({ message: 'Invalid email or password' });
       }
 
