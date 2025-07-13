@@ -5,12 +5,42 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY || process.env.OPENAI_KEY || "default_key"
 });
 
+// Helper function to get currency symbol
+function getCurrencySymbol(currency: string): string {
+  const symbols: Record<string, string> = {
+    'USD': '$',
+    'EUR': '€',
+    'GBP': '£',
+    'JPY': '¥',
+    'IDR': 'Rp',
+    'CNY': '¥',
+    'KRW': '₩',
+    'SGD': 'S$',
+    'MYR': 'RM',
+    'THB': '฿',
+    'VND': '₫'
+  };
+  return symbols[currency] || currency;
+}
+
 export interface TransactionAnalysis {
   amount: number;
   description: string;
   category: string;
   type: "income" | "expense";
   confidence: number;
+  suggestedNewCategory?: {
+    name: string;
+    icon: string;
+    color: string;
+    type: "income" | "expense";
+  };
+}
+
+export interface UserPreferences {
+  defaultCurrency: string;
+  language: string;
+  autoCategorize: boolean;
 }
 
 export interface OCRResult {
@@ -19,7 +49,11 @@ export interface OCRResult {
   confidence: number;
 }
 
-export async function analyzeTransactionText(text: string, availableCategories: any[] = []): Promise<TransactionAnalysis> {
+export async function analyzeTransactionText(
+  text: string, 
+  availableCategories: any[] = [], 
+  userPreferences?: UserPreferences
+): Promise<TransactionAnalysis> {
   try {
     // Build categories list from database
     const categoryList = availableCategories.length > 0 
@@ -36,31 +70,57 @@ export async function analyzeTransactionText(text: string, availableCategories: 
           - Investment (income)
           - Freelance (income)`;
 
+    // Set language and currency from preferences
+    const language = userPreferences?.language === 'id' ? 'Indonesian' : 'English';
+    const currency = userPreferences?.defaultCurrency || 'USD';
+    const currencySymbol = getCurrencySymbol(currency);
+    const autoCategorize = userPreferences?.autoCategorize ?? true;
+
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
       messages: [
         {
           role: "system",
-          content: `You are a financial transaction analyzer. Extract transaction details from user messages.
+          content: `You are a financial transaction analyzer. Extract transaction details from user messages in ${language}.
           
           Available categories:
           ${categoryList}
           
-          IMPORTANT FORMATTING RULES:
-          1. Format description with proper title case (e.g., "my salary" → "Monthly Salary", "lunch at mcdonald's" → "Lunch at McDonald's")
-          2. Use proper capitalization for brand names (McDonald's, Starbucks, etc.)
-          3. Make descriptions clear and concise
-          4. For income: use professional terms like "Monthly Salary", "Freelance Payment", "Investment Return"
-          5. For expenses: be specific like "Lunch at McDonald's", "Gas Station Fill-up", "Grocery Shopping"
+          Currency: ${currency} (${currencySymbol})
+          Auto-categorization: ${autoCategorize ? 'enabled' : 'disabled'}
           
-          EXAMPLES:
+          IMPORTANT FORMATTING RULES:
+          1. Respond in ${language}
+          2. Format amounts in ${currency} currency
+          3. Format description with proper title case
+          4. Use proper capitalization for brand names
+          5. Make descriptions clear and concise
+          
+          ${autoCategorize ? `
+          AUTO-CATEGORIZATION ENABLED:
+          - If no existing category matches, suggest a new category with:
+            * Appropriate name for the transaction type
+            * Suitable emoji icon
+            * Appropriate color (hex code)
+            * Correct type (income/expense)
+          - Return suggestedNewCategory object when needed
+          ` : `
+          AUTO-CATEGORIZATION DISABLED:
+          - Only use existing categories from the list above
+          - If no category matches exactly, use "Other"
+          - Do not suggest new categories
+          `}
+          
+          EXAMPLES for ${language}:
+          ${language === 'Indonesian' ? `
+          - "gaji bulan ini 5000000" → {"amount": 5000000, "description": "Gaji Bulanan", "category": "Salary", "type": "income", "confidence": 1}
+          - "makan siang di mcdonald 75000" → {"amount": 75000, "description": "Makan Siang di McDonald's", "category": "Food & Dining", "type": "expense", "confidence": 0.95}
+          ` : `
           - "my salary $1000" → {"amount": 1000, "description": "Monthly Salary", "category": "Salary", "type": "income", "confidence": 1}
           - "lunch at mcdonald's $25" → {"amount": 25, "description": "Lunch at McDonald's", "category": "Food & Dining", "type": "expense", "confidence": 0.95}
-          - "i paid gas $50" → {"amount": 50, "description": "Gas Station Fill-up", "category": "Transportation", "type": "expense", "confidence": 0.9}
-          - "grocery shopping $75" → {"amount": 75, "description": "Grocery Shopping", "category": "Shopping", "type": "expense", "confidence": 0.9}
+          `}
           
-          Return JSON with: amount (number), description (string), category (string), type ("income" or "expense"), confidence (0-1).
-          If multiple transactions are mentioned, return the first/main one.`,
+          Return JSON with: amount (number), description (string), category (string), type ("income" or "expense"), confidence (0-1)${autoCategorize ? ', suggestedNewCategory (object, if needed)' : ''}.`,
         },
         {
           role: "user",
@@ -78,6 +138,7 @@ export async function analyzeTransactionText(text: string, availableCategories: 
       category: result.category || "Other",
       type: result.type || "expense",
       confidence: Math.max(0, Math.min(1, parseFloat(result.confidence || "0.8"))),
+      suggestedNewCategory: result.suggestedNewCategory
     };
   } catch (error) {
     console.error("Failed to analyze transaction text:", error);
@@ -85,7 +146,11 @@ export async function analyzeTransactionText(text: string, availableCategories: 
   }
 }
 
-export async function processReceiptImage(base64Image: string, availableCategories: any[] = []): Promise<OCRResult> {
+export async function processReceiptImage(
+  base64Image: string, 
+  availableCategories: any[] = [], 
+  userPreferences?: UserPreferences
+): Promise<OCRResult> {
   try {
     // Format categories for AI
     const categoryList = availableCategories.length > 0 
@@ -99,6 +164,12 @@ export async function processReceiptImage(base64Image: string, availableCategori
 - Education
 - Other`;
 
+    // Set language and currency from preferences
+    const language = userPreferences?.language === 'id' ? 'Indonesian' : 'English';
+    const currency = userPreferences?.defaultCurrency || 'USD';
+    const currencySymbol = getCurrencySymbol(currency);
+    const autoCategorize = userPreferences?.autoCategorize ?? true;
+
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
       messages: [
@@ -107,33 +178,51 @@ export async function processReceiptImage(base64Image: string, availableCategori
           content: [
             {
               type: "text",
-              text: `Analyze this receipt image and extract transaction information. 
+              text: `Analyze this receipt image and extract transaction information in ${language}. 
               
               Available categories:
               ${categoryList}
               
+              Currency: ${currency} (${currencySymbol})
+              Auto-categorization: ${autoCategorize ? 'enabled' : 'disabled'}
+              
               Instructions:
               1. Extract the merchant name, total amount, and date if visible
-              2. Create clear, professional descriptions (e.g., "Lunch at McDonald's", "Grocery Shopping at Walmart")
-              3. Choose the most appropriate category from the list above
-              4. All transactions should be "expense" type unless clearly income
-              5. Set confidence based on image clarity and text readability
+              2. Convert amounts to ${currency} if needed
+              3. Create clear, professional descriptions in ${language}
+              4. Choose the most appropriate category from the list above
+              5. All transactions should be "expense" type unless clearly income
+              6. Set confidence based on image clarity and text readability
+              
+              ${autoCategorize ? `
+              AUTO-CATEGORIZATION ENABLED:
+              - If no existing category matches, suggest a new category with appropriate name, icon (emoji), color (hex), and type
+              ` : `
+              AUTO-CATEGORIZATION DISABLED:
+              - Only use existing categories, use "Other" if no match
+              `}
               
               Return JSON with:
               - text: extracted text from receipt (merchant, items, total)
-              - transactions: array of {amount, description, category, type, confidence}
+              - transactions: array of {amount, description, category, type, confidence${autoCategorize ? ', suggestedNewCategory (if needed)' : ''}}
               - confidence: overall confidence (0-1)
               
               Example format:
               {
-                "text": "BreadTalk Receipt - Total: 43,500",
+                "text": "BreadTalk Receipt - Total: ${currencySymbol}43.50",
                 "transactions": [
                   {
                     "amount": 43.5,
-                    "description": "Bakery Items at BreadTalk",
+                    "description": "${language === 'Indonesian' ? 'Roti dari BreadTalk' : 'Bakery Items at BreadTalk'}",
                     "category": "Food & Dining", 
                     "type": "expense",
-                    "confidence": 0.9
+                    "confidence": 0.9${autoCategorize ? `,
+                    "suggestedNewCategory": {
+                      "name": "Bakery",
+                      "icon": "🍞",
+                      "color": "#F59E0B",
+                      "type": "expense"
+                    }` : ''}
                   }
                 ],
                 "confidence": 0.9

@@ -10,6 +10,24 @@ import session from "express-session";
 import MemoryStore from "memorystore";
 import OpenAI from "openai";
 
+// Helper function to get currency symbol
+function getCurrencySymbol(currency: string): string {
+  const symbols: Record<string, string> = {
+    'USD': '$',
+    'EUR': '€',
+    'GBP': '£',
+    'JPY': '¥',
+    'IDR': 'Rp',
+    'CNY': '¥',
+    'KRW': '₩',
+    'SGD': 'S$',
+    'MYR': 'RM',
+    'THB': '฿',
+    'VND': '₫'
+  };
+  return symbols[currency] || currency;
+}
+
 const openai = new OpenAI({ 
   apiKey: process.env.OPENAI_API_KEY || process.env.OPENAI_KEY || "default_key"
 });
@@ -432,26 +450,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Receipt image is required" });
       }
       
+      // Get user's categories and preferences for AI analysis
+      const categories = await storage.getCategories(req.user.id);
+      const userPreferences = await storage.getUserPreferences(req.user.id);
+      
+      // Create preferences object for AI analysis
+      const aiPreferences = {
+        defaultCurrency: userPreferences?.defaultCurrency || 'USD',
+        language: userPreferences?.language || 'en',
+        autoCategorize: userPreferences?.autoCategorize || false
+      };
+      
       const base64Image = req.file.buffer.toString('base64');
-      const ocrResult = await processReceiptImage(base64Image);
+      const ocrResult = await processReceiptImage(base64Image, categories, aiPreferences);
       
       const createdTransactions = [];
-      const categories = await storage.getCategories(req.user.id);
+      const newCategoriesCreated = [];
       
       for (const analysis of ocrResult.transactions) {
-        const matchingCategory = categories.find(c => 
+        // Find matching category (case-insensitive)
+        let matchingCategory = categories.find(c => 
           c.name.toLowerCase() === analysis.category.toLowerCase()
         );
+        
+        // Auto-categorization: create new category if none exists and auto-categorize is enabled
+        if (!matchingCategory && userPreferences?.autoCategorize && analysis.suggestedNewCategory) {
+          console.log('Creating new category from OCR:', analysis.suggestedNewCategory);
+          
+          try {
+            const newCategory = await storage.createCategory({
+              name: analysis.suggestedNewCategory.name,
+              icon: analysis.suggestedNewCategory.icon,
+              color: analysis.suggestedNewCategory.color,
+              type: analysis.suggestedNewCategory.type,
+              userId: req.user.id,
+              isDefault: false
+            });
+            
+            matchingCategory = newCategory;
+            newCategoriesCreated.push(newCategory);
+            console.log('New category created from OCR:', newCategory);
+          } catch (categoryError) {
+            console.error('Failed to create new category from OCR:', categoryError);
+          }
+        }
+        
+        // Fallback to "Other" category if still no match
+        if (!matchingCategory) {
+          matchingCategory = categories.find(c => c.name.toLowerCase() === 'other');
+        }
         
         if (matchingCategory) {
           const transactionData = insertTransactionSchema.parse({
             userId: req.user.id,
             categoryId: matchingCategory.id,
             amount: analysis.amount.toString(),
-            currency: "USD",
+            currency: userPreferences?.defaultCurrency || "USD",
             description: analysis.description,
             type: analysis.type,
-            date: Date.now(), // Use milliseconds timestamp
+            date: Date.now(),
             aiGenerated: true,
           });
           
@@ -460,14 +517,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
       
+      const currencySymbol = getCurrencySymbol(userPreferences?.defaultCurrency || 'USD');
+      const successMessage = userPreferences?.language === 'id'
+        ? `Dibuat ${createdTransactions.length} transaksi dari struk`
+        : `Created ${createdTransactions.length} transactions from receipt`;
+      
       res.json({ 
         ocrResult, 
         createdTransactions,
-        message: `Created ${createdTransactions.length} transactions from receipt`
+        newCategoriesCreated: newCategoriesCreated.length > 0 ? newCategoriesCreated : undefined,
+        message: successMessage
       });
     } catch (error) {
       console.error("Error processing receipt:", error);
-      res.status(500).json({ message: "Failed to process receipt" });
+      
+      // Try to get user preferences for error message language
+      let errorMessage = "Failed to process receipt";
+      try {
+        const userPreferences = await storage.getUserPreferences(req.user!.id);
+        errorMessage = userPreferences?.language === 'id'
+          ? "Gagal memproses struk"
+          : "Failed to process receipt";
+      } catch (prefError) {
+        console.error("Error getting user preferences for error message:", prefError);
+      }
+      
+      res.status(500).json({ message: errorMessage });
     }
   });
 
@@ -666,43 +741,89 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log('Analyzing message with OpenAI:', message);
       
-      // Get user's categories first
-      const categories = await storage.getCategories(req.user!.id);
+      // Get user's categories and preferences
+      const [categories, userPreferences] = await Promise.all([
+        storage.getCategories(req.user!.id),
+        storage.getUserPreferences(req.user!.id)
+      ]);
       
-      // Use existing AI analysis function with categories
-      const analysis = await analyzeTransactionText(message, categories);
+      // Create a simplified preferences object for OpenAI
+      const aiPreferences = userPreferences ? {
+        defaultCurrency: userPreferences.defaultCurrency,
+        language: userPreferences.language,
+        autoCategorize: userPreferences.autoCategorize || false
+      } : undefined;
+      
+      // Use existing AI analysis function with categories and preferences
+      const analysis = await analyzeTransactionText(message, categories, aiPreferences);
       console.log('AI Analysis result:', analysis);
       
       if (analysis.confidence > 0.7) {
-        // Create transaction directly for high confidence
-        const categories = await storage.getCategories(req.user!.id);
-        const matchingCategory = categories.find(c => 
+        // Find matching category or create new one if auto-categorize is enabled
+        let matchingCategory = categories.find(c => 
           c.name.toLowerCase() === analysis.category.toLowerCase()
         );
+        
+        // Auto-categorization: create new category if none exists and auto-categorize is enabled
+        if (!matchingCategory && userPreferences?.autoCategorize && analysis.suggestedNewCategory) {
+          console.log('Creating new category:', analysis.suggestedNewCategory);
+          
+          try {
+            const newCategory = await storage.createCategory({
+              name: analysis.suggestedNewCategory.name,
+              icon: analysis.suggestedNewCategory.icon,
+              color: analysis.suggestedNewCategory.color,
+              type: analysis.suggestedNewCategory.type,
+              userId: req.user!.id,
+              isDefault: false
+            });
+            
+            matchingCategory = newCategory;
+            console.log('New category created:', newCategory);
+          } catch (categoryError) {
+            console.error('Failed to create new category:', categoryError);
+          }
+        }
+        
+        // Fallback to "Other" category if still no match
+        if (!matchingCategory) {
+          matchingCategory = categories.find(c => c.name.toLowerCase() === 'other');
+        }
         
         if (matchingCategory) {
           const validatedData = insertTransactionSchema.parse({
             userId: req.user!.id,
             categoryId: matchingCategory.id,
             amount: analysis.amount,
-            currency: "USD",
+            currency: userPreferences?.defaultCurrency || "USD",
             description: analysis.description,
             type: analysis.type,
-            date: Date.now(), // Use milliseconds timestamp
+            date: Date.now(),
             aiGenerated: true,
           });
 
           const transaction = await storage.createTransaction(validatedData);
           
+          const currencySymbol = getCurrencySymbol(userPreferences?.defaultCurrency || 'USD');
+          const successMessage = userPreferences?.language === 'id' 
+            ? `Berhasil! Saya telah membuat transaksi ${analysis.type}: "${analysis.description}" sebesar ${currencySymbol}${analysis.amount}. 💰`
+            : `Great! I've created a ${analysis.type} transaction: "${analysis.description}" for ${currencySymbol}${analysis.amount}. 💰`;
+          
           return res.json({
             success: true,
             transaction,
-            message: `Great! I've created a ${analysis.type} transaction: "${analysis.description}" for $${analysis.amount}. 💰`
+            message: successMessage,
+            newCategoryCreated: analysis.suggestedNewCategory ? true : false
           });
         } else {
+          const currencySymbol = getCurrencySymbol(userPreferences?.defaultCurrency || 'USD');
+          const errorMessage = userPreferences?.language === 'id'
+            ? `Saya menemukan ${analysis.type} sebesar ${currencySymbol}${analysis.amount} untuk "${analysis.description}", tetapi tidak dapat menemukan kategori yang cocok.`
+            : `I found a ${analysis.type} of ${currencySymbol}${analysis.amount} for "${analysis.description}", but couldn't find a matching category.`;
+            
           return res.json({
             success: false,
-            message: `I found a ${analysis.type} of $${analysis.amount} for "${analysis.description}", but couldn't find a matching category "${analysis.category}". Please create this category first or be more specific.`
+            message: errorMessage
           });
         }
       } else {
@@ -737,6 +858,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         size: req.file.size
       });
       
+      // Get user preferences first for language-aware transcription
+      const userPreferences = await storage.getUserPreferences(req.user!.id);
+      
       // Create a proper file-like object for OpenAI Whisper
       const audioFile = new File([req.file.buffer], req.file.originalname || 'audio.webm', { 
         type: req.file.mimetype || 'audio/webm' 
@@ -746,7 +870,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const transcription = await openai.audio.transcriptions.create({
         file: audioFile,
         model: 'whisper-1',
-        language: 'en', // or 'id' for Indonesian
+        language: userPreferences?.language || 'en', // Use user's preferred language
         response_format: 'text',
         temperature: 0.2,
       });
@@ -755,25 +879,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log('Transcribed text:', transcribedText);
 
       if (!transcribedText || transcribedText.length === 0) {
+        const noAudioMessage = userPreferences?.language === 'id'
+          ? "🎤 Saya tidak dapat mendengar dengan jelas. Silakan coba berbicara lebih jelas dan pastikan mikrofon Anda berfungsi."
+          : "🎤 I couldn't hear anything clearly. Please try speaking more clearly and ensure your microphone is working.";
+          
         return res.json({
           success: false,
           transcription: transcribedText,
-          message: "🎤 I couldn't hear anything clearly. Please try speaking more clearly and ensure your microphone is working."
+          message: noAudioMessage
         });
       }
 
       // Get user's categories for AI analysis
       const categories = await storage.getCategories(req.user!.id);
       
-      // Analyze the transcribed text
-      const analysis = await analyzeTransactionText(transcribedText, categories);
+      // Create preferences object for AI analysis
+      const aiPreferences = {
+        defaultCurrency: userPreferences?.defaultCurrency || 'USD',
+        language: userPreferences?.language || 'en',
+        autoCategorize: userPreferences?.autoCategorize || false
+      };
+      
+      // Analyze the transcribed text with user preferences
+      const analysis = await analyzeTransactionText(transcribedText, categories, aiPreferences);
       console.log('Voice analysis result:', analysis);
 
       if (analysis.confidence > 0.6) {
         // Create transaction directly for reasonable confidence
-        const matchingCategory = categories.find(c => 
+        let matchingCategory = categories.find(c => 
           c.name.toLowerCase() === analysis.category.toLowerCase()
         );
+        
+        // Auto-categorization: create new category if none exists and auto-categorize is enabled
+        if (!matchingCategory && userPreferences?.autoCategorize && analysis.suggestedNewCategory) {
+          console.log('Creating new category from voice:', analysis.suggestedNewCategory);
+          
+          try {
+            const newCategory = await storage.createCategory({
+              name: analysis.suggestedNewCategory.name,
+              icon: analysis.suggestedNewCategory.icon,
+              color: analysis.suggestedNewCategory.color,
+              type: analysis.suggestedNewCategory.type,
+              userId: req.user!.id,
+              isDefault: false
+            });
+            
+            matchingCategory = newCategory;
+            console.log('New category created from voice:', newCategory);
+          } catch (categoryError) {
+            console.error('Failed to create new category from voice:', categoryError);
+          }
+        }
+        
+        // Fallback to "Other" category if still no match
+        if (!matchingCategory) {
+          matchingCategory = categories.find(c => c.name.toLowerCase() === 'other');
+        }
         
         if (matchingCategory && analysis.amount > 0) {
           try {
@@ -781,7 +942,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               userId: req.user!.id,
               categoryId: matchingCategory.id,
               amount: parseFloat(analysis.amount.toString()),
-              currency: "USD",
+              currency: userPreferences?.defaultCurrency || "USD",
               description: analysis.description,
               type: analysis.type,
               date: Date.now(),
@@ -791,43 +952,76 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const transaction = await storage.createTransaction(validatedData);
             console.log('Created transaction from voice:', transaction);
             
+            const currencySymbol = getCurrencySymbol(userPreferences?.defaultCurrency || 'USD');
+            const successMessage = userPreferences?.language === 'id'
+              ? `🎤 Saya mendengar: "${transcribedText}"\n\n✅ Dibuat ${analysis.type}: "${analysis.description}" sebesar ${currencySymbol}${analysis.amount}\n\nTransaksi berhasil ditambahkan! 🎉`
+              : `🎤 I heard: "${transcribedText}"\n\n✅ Created ${analysis.type}: "${analysis.description}" for ${currencySymbol}${analysis.amount}\n\nTransaction added successfully! 🎉`;
+            
             return res.json({
               success: true,
               transaction,
               transcription: transcribedText,
               analysisResult: analysis,
-              message: `🎤 I heard: "${transcribedText}"\n\n✅ Created ${analysis.type}: "${analysis.description}" for $${analysis.amount}\n\nTransaction added successfully! 🎉`
+              message: successMessage,
+              newCategoryCreated: analysis.suggestedNewCategory ? true : false
             });
           } catch (validationError) {
             console.error('Transaction validation error:', validationError);
+            const currencySymbol = getCurrencySymbol(userPreferences?.defaultCurrency || 'USD');
+            const errorMessage = userPreferences?.language === 'id'
+              ? `🎤 Saya mendengar: "${transcribedText}"\n\n❌ Saya memahami Anda ingin mencatat ${analysis.type} sebesar ${currencySymbol}${analysis.amount} untuk "${analysis.description}", tetapi terjadi kesalahan saat membuat transaksi. Silakan coba lagi.`
+              : `🎤 I heard: "${transcribedText}"\n\n❌ I understood you want to record a ${analysis.type} of ${currencySymbol}${analysis.amount} for "${analysis.description}", but there was an error creating the transaction. Please try again.`;
+              
             return res.json({
               success: false,
               transcription: transcribedText,
               analysisResult: analysis,
-              message: `🎤 I heard: "${transcribedText}"\n\n❌ I understood you want to record a ${analysis.type} of $${analysis.amount} for "${analysis.description}", but there was an error creating the transaction. Please try again.`
+              message: errorMessage
             });
           }
         } else {
+          const currencySymbol = getCurrencySymbol(userPreferences?.defaultCurrency || 'USD');
+          const categoryErrorMessage = userPreferences?.language === 'id'
+            ? `🎤 Saya mendengar: "${transcribedText}"\n\n🤔 Saya menemukan ${analysis.type} sebesar ${currencySymbol}${analysis.amount} untuk "${analysis.description}", tetapi tidak dapat menemukan kategori yang cocok "${analysis.category}" di akun Anda. Pastikan Anda memiliki kategori yang tepat.`
+            : `🎤 I heard: "${transcribedText}"\n\n🤔 I found a ${analysis.type} of ${currencySymbol}${analysis.amount} for "${analysis.description}", but couldn't find a matching category "${analysis.category}" in your account. Please make sure you have the right categories set up.`;
+            
           return res.json({
             success: false,
             transcription: transcribedText,
             analysisResult: analysis,
-            message: `🎤 I heard: "${transcribedText}"\n\n🤔 I found a ${analysis.type} of $${analysis.amount} for "${analysis.description}", but couldn't find a matching category "${analysis.category}" in your account. Please make sure you have the right categories set up.`
+            message: categoryErrorMessage
           });
         }
       } else {
+        const currencySymbol = getCurrencySymbol(userPreferences?.defaultCurrency || 'USD');
+        const lowConfidenceMessage = userPreferences?.language === 'id'
+          ? `🎤 Saya mendengar: "${transcribedText}"\n\n🤔 Saya rasa Anda mungkin menyebutkan ${analysis.type} sebesar ${currencySymbol}${analysis.amount} untuk "${analysis.description}", tetapi saya tidak yakin sepenuhnya. Bisakah Anda coba lagi dengan detail yang lebih jelas?`
+          : `🎤 I heard: "${transcribedText}"\n\n🤔 I think you might be mentioning a ${analysis.type} of ${currencySymbol}${analysis.amount} for "${analysis.description}", but I'm not completely sure. Could you please try again with more details?`;
+          
         return res.json({
           success: false,
           transcription: transcribedText,
           analysisResult: analysis,
-          message: `🎤 I heard: "${transcribedText}"\n\n🤔 I think you might be mentioning a ${analysis.type} of $${analysis.amount} for "${analysis.description}", but I'm not completely sure. Could you please try again with more details?`
+          message: lowConfidenceMessage
         });
       }
     } catch (error) {
       console.error("Error processing voice message:", error);
+      
+      // Try to get user preferences for error message language
+      let errorMessage = "Sorry, I couldn't process your voice message. Please try again.";
+      try {
+        const userPreferences = await storage.getUserPreferences(req.user!.id);
+        errorMessage = userPreferences?.language === 'id'
+          ? "Maaf, saya tidak dapat memproses pesan suara Anda. Silakan coba lagi."
+          : "Sorry, I couldn't process your voice message. Please try again.";
+      } catch (prefError) {
+        console.error("Error getting user preferences for error message:", prefError);
+      }
+      
       res.status(500).json({ 
         success: false,
-        message: "Sorry, I couldn't process your voice message. Please try again.",
+        message: errorMessage,
         error: error instanceof Error ? error.message : String(error)
       });
     }
@@ -844,24 +1038,60 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log('Processing image receipt...');
       
-      // Get user's categories for AI analysis
+      // Get user's categories and preferences for AI analysis
       const categories = await storage.getCategories(req.user!.id);
+      const userPreferences = await storage.getUserPreferences(req.user!.id);
+      
+      // Create preferences object for AI analysis
+      const aiPreferences = {
+        defaultCurrency: userPreferences?.defaultCurrency || 'USD',
+        language: userPreferences?.language || 'en',
+        autoCategorize: userPreferences?.autoCategorize || false
+      };
 
-      // Use receipt processing function with dynamic categories
+      // Use receipt processing function with dynamic categories and user preferences
       const base64Image = req.file.buffer.toString('base64');
-      const result = await processReceiptImage(base64Image, categories);
+      const result = await processReceiptImage(base64Image, categories, aiPreferences);
       
       console.log('Image analysis result:', result);
       
       if (result.transactions && result.transactions.length > 0) {
         // Create transactions from the image
         const createdTransactions = [];
+        const newCategoriesCreated = [];
         
         for (const analysis of result.transactions) {
           // Find matching category (case-insensitive)
-          const matchingCategory = categories.find(c => 
+          let matchingCategory = categories.find(c => 
             c.name.toLowerCase() === analysis.category.toLowerCase()
           );
+          
+          // Auto-categorization: create new category if none exists and auto-categorize is enabled
+          if (!matchingCategory && userPreferences?.autoCategorize && analysis.suggestedNewCategory) {
+            console.log('Creating new category from image:', analysis.suggestedNewCategory);
+            
+            try {
+              const newCategory = await storage.createCategory({
+                name: analysis.suggestedNewCategory.name,
+                icon: analysis.suggestedNewCategory.icon,
+                color: analysis.suggestedNewCategory.color,
+                type: analysis.suggestedNewCategory.type,
+                userId: req.user!.id,
+                isDefault: false
+              });
+              
+              matchingCategory = newCategory;
+              newCategoriesCreated.push(newCategory);
+              console.log('New category created from image:', newCategory);
+            } catch (categoryError) {
+              console.error('Failed to create new category from image:', categoryError);
+            }
+          }
+          
+          // Fallback to "Other" category if still no match
+          if (!matchingCategory) {
+            matchingCategory = categories.find(c => c.name.toLowerCase() === 'other');
+          }
           
           if (matchingCategory && analysis.amount > 0) {
             try {
@@ -869,7 +1099,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 userId: req.user!.id,
                 categoryId: matchingCategory.id,
                 amount: parseFloat(analysis.amount.toString()),
-                currency: "USD",
+                currency: userPreferences?.defaultCurrency || "USD",
                 description: analysis.description,
                 type: analysis.type || 'expense',
                 date: Date.now(),
@@ -889,31 +1119,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
         
         if (createdTransactions.length > 0) {
+          const currencySymbol = getCurrencySymbol(userPreferences?.defaultCurrency || 'USD');
+          const successMessage = userPreferences?.language === 'id'
+            ? `📸 Sempurna! Saya menganalisis struk Anda dan menemukan ${createdTransactions.length} transaksi:\n\n${createdTransactions.map(t => `✅ ${t.description} - ${currencySymbol}${t.amount}`).join('\n')}\n\nSemua transaksi telah ditambahkan ke akun Anda! 🎉`
+            : `📸 Perfect! I analyzed your receipt and found ${createdTransactions.length} transaction${createdTransactions.length > 1 ? 's' : ''}:\n\n${createdTransactions.map(t => `✅ ${t.description} - ${currencySymbol}${t.amount}`).join('\n')}\n\nAll transactions have been added to your account! 🎉`;
+            
           return res.json({
             success: true,
             transactions: createdTransactions,
             analysisResult: result,
-            message: `📸 Perfect! I analyzed your receipt and found ${createdTransactions.length} transaction${createdTransactions.length > 1 ? 's' : ''}:\n\n${createdTransactions.map(t => `✅ ${t.description} - $${t.amount}`).join('\n')}\n\nAll transactions have been added to your account! 🎉`
+            message: successMessage,
+            newCategoriesCreated: newCategoriesCreated.length > 0 ? newCategoriesCreated : undefined
           });
         } else {
+          const currencySymbol = getCurrencySymbol(userPreferences?.defaultCurrency || 'USD');
+          const noMatchMessage = userPreferences?.language === 'id'
+            ? `📸 Saya dapat melihat beberapa detail transaksi di struk Anda, tetapi tidak dapat mencocokkannya dengan kategori yang ada. Ini yang saya temukan:\n\n${result.transactions.map(t => `• ${t.description} - ${currencySymbol}${t.amount} (${t.category})`).join('\n')}\n\nPastikan Anda memiliki kategori yang tepat di akun Anda.`
+            : `📸 I could see some transaction details in your receipt, but couldn't match them to your existing categories. Here's what I found:\n\n${result.transactions.map(t => `• ${t.description} - ${currencySymbol}${t.amount} (${t.category})`).join('\n')}\n\nPlease make sure you have the right categories set up in your account.`;
+            
           return res.json({
             success: false,
             analysisResult: result,
-            message: `📸 I could see some transaction details in your receipt, but couldn't match them to your existing categories. Here's what I found:\n\n${result.transactions.map(t => `• ${t.description} - $${t.amount} (${t.category})`).join('\n')}\n\nPlease make sure you have the right categories set up in your account.`
+            message: noMatchMessage
           });
         }
       } else {
+        const noDetailsMessage = userPreferences?.language === 'id'
+          ? "📸 Saya tidak dapat menemukan detail transaksi yang jelas dalam gambar ini. Pastikan itu adalah struk yang jelas dengan jumlah dan informasi pedagang yang terlihat. Coba ambil foto dalam pencahayaan yang baik dan pastikan teksnya dapat dibaca."
+          : "📸 I couldn't find any clear transaction details in this image. Please make sure it's a clear receipt with visible amounts and merchant information. Try taking the photo in good lighting and ensure the text is readable.";
+          
         return res.json({
           success: false,
           analysisResult: result,
-          message: "📸 I couldn't find any clear transaction details in this image. Please make sure it's a clear receipt with visible amounts and merchant information. Try taking the photo in good lighting and ensure the text is readable."
+          message: noDetailsMessage
         });
       }
     } catch (error) {
       console.error("Error processing image:", error);
+      
+      // Try to get user preferences for error message language
+      let errorMessage = "Sorry, I couldn't process that image. Please try uploading a clearer receipt.";
+      try {
+        const userPreferences = await storage.getUserPreferences(req.user!.id);
+        errorMessage = userPreferences?.language === 'id'
+          ? "Maaf, saya tidak dapat memproses gambar itu. Silakan coba unggah struk yang lebih jelas."
+          : "Sorry, I couldn't process that image. Please try uploading a clearer receipt.";
+      } catch (prefError) {
+        console.error("Error getting user preferences for error message:", prefError);
+      }
+      
       res.status(500).json({ 
         success: false,
-        message: "Sorry, I couldn't process that image. Please try uploading a clearer receipt.",
+        message: errorMessage,
         error: error instanceof Error ? error.message : String(error)
       });
     }
