@@ -357,10 +357,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/transactions', requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
+      
+      // Parse dan normalize tanggal ke Unix timestamp (seconds)
+      let dateTimestamp;
+      if (req.body.date) {
+        const dateObj = new Date(req.body.date);
+        dateTimestamp = Math.floor(dateObj.getTime() / 1000);
+      } else {
+        dateTimestamp = Math.floor(Date.now() / 1000);
+      }
+      
       const transactionData = insertTransactionSchema.parse({
         ...req.body,
         userId: req.user.id,
-        date: Math.floor((new Date(req.body.date || Date.now())).getTime() / 1000), // Convert to Unix timestamp
+        date: dateTimestamp,
       });
       
       const transaction = await storage.createTransaction(transactionData);
@@ -375,10 +385,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
       const id = parseInt(req.params.id);
-      const updateData = {
-        ...req.body,
-        date: req.body.date ? Math.floor((new Date(req.body.date)).getTime() / 1000) : undefined,
-      };
+      
+      // Parse dan normalize tanggal ke Unix timestamp (seconds) jika ada
+      let updateData = { ...req.body };
+      if (req.body.date) {
+        const dateObj = new Date(req.body.date);
+        updateData.date = Math.floor(dateObj.getTime() / 1000);
+      }
       
       const transaction = await storage.updateTransaction(id, updateData);
       res.json(transaction);
@@ -578,12 +591,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put('/api/budgets/:id', requireAuth, async (req: AuthRequest, res: Response) => {
     try {
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
       const id = parseInt(req.params.id);
-      const updateData = {
-        ...req.body,
-        startDate: req.body.startDate ? new Date(req.body.startDate) : undefined,
-        endDate: req.body.endDate ? new Date(req.body.endDate) : undefined,
-      };
+      
+      // Parse dan normalize tanggal ke Unix timestamp (seconds) jika ada
+      let updateData = { ...req.body };
+      if (req.body.startDate) {
+        updateData.startDate = Math.floor((new Date(req.body.startDate)).getTime() / 1000);
+      }
+      if (req.body.endDate) {
+        updateData.endDate = Math.floor((new Date(req.body.endDate)).getTime() / 1000);
+      }
       
       const budget = await storage.updateBudget(id, updateData);
       res.json(budget);
@@ -595,6 +613,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete('/api/budgets/:id', requireAuth, async (req: AuthRequest, res: Response) => {
     try {
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
       const id = parseInt(req.params.id);
       await storage.deleteBudget(id);
       res.json({ message: "Budget deleted successfully" });

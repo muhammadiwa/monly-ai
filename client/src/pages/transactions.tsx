@@ -194,6 +194,16 @@ export default function Transactions() {
     }
     
     return matchesSearch && matchesCategory && matchesType && matchesDate;
+  })?.sort((a: any, b: any) => {
+    // Sort by transaction date from newest to oldest
+    try {
+      const dateA = parseTransactionDate(a.date);
+      const dateB = parseTransactionDate(b.date);
+      return dateB.getTime() - dateA.getTime(); // Newest first
+    } catch (error) {
+      console.warn('Date sorting error:', error);
+      return 0;
+    }
   }) || [];
 
   // Debug logging (moved after filteredTransactions definition)
@@ -210,29 +220,44 @@ export default function Transactions() {
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedTransactions = filteredTransactions.slice(startIndex, startIndex + itemsPerPage);
 
-  // Chart data preparation
-  const chartData = filteredTransactions.reduce((acc: any[], transaction: any) => {
-    const date = new Date(transaction.date).toLocaleDateString('en-US', { 
+  // Chart data preparation - sort by date first
+  const chartDataMap = new Map();
+  
+  // Group transactions by date
+  filteredTransactions.forEach(transaction => {
+    const transactionDate = parseTransactionDate(transaction.date);
+    const dateKey = transactionDate.toISOString().split('T')[0]; // YYYY-MM-DD format for sorting
+    const displayDate = transactionDate.toLocaleDateString('en-US', { 
       month: 'short', 
       day: 'numeric' 
     });
     
-    const existingEntry = acc.find(entry => entry.date === date);
-    if (existingEntry) {
-      if (transaction.type === 'income') {
-        existingEntry.income += transaction.amount;
-      } else {
-        existingEntry.expense += transaction.amount;
-      }
-    } else {
-      acc.push({
-        date,
-        income: transaction.type === 'income' ? transaction.amount : 0,
-        expense: transaction.type === 'expense' ? transaction.amount : 0,
+    if (!chartDataMap.has(dateKey)) {
+      chartDataMap.set(dateKey, {
+        date: displayDate,
+        dateKey: dateKey,
+        income: 0,
+        expense: 0,
       });
     }
-    return acc;
-  }, []).slice(-7); // Show last 7 days
+    
+    const entry = chartDataMap.get(dateKey);
+    if (transaction.type === 'income') {
+      entry.income += transaction.amount;
+    } else {
+      entry.expense += transaction.amount;
+    }
+  });
+  
+  // Convert to array and sort by date, then take last 7 days
+  const chartData = Array.from(chartDataMap.values())
+    .sort((a, b) => a.dateKey.localeCompare(b.dateKey))
+    .slice(-7)
+    .map(item => ({
+      date: item.date,
+      income: item.income,
+      expense: item.expense,
+    }));
 
   // Calculate totals for current filtered data
   const totalIncome = filteredTransactions
@@ -601,7 +626,7 @@ export default function Transactions() {
                                 {transaction.category?.name || 'Uncategorized'}
                               </Badge>
                               <span className="hidden sm:inline">
-                                {new Date(transaction.date).toLocaleDateString('en-US', {
+                                {parseTransactionDate(transaction.date).toLocaleDateString('en-US', {
                                   month: 'short',
                                   day: 'numeric'
                                 })}
@@ -759,7 +784,7 @@ export default function Transactions() {
                         }`}>
                           {transactionToDelete.category?.name || 'Uncategorized'}
                         </Badge>
-                        <span>📅 {new Date(transactionToDelete.date).toLocaleDateString('en-US')}</span>
+                        <span>📅 {parseTransactionDate(transactionToDelete.date).toLocaleDateString('en-US')}</span>
                       </div>
                     </div>
                     <div className={`text-right font-bold text-lg ${

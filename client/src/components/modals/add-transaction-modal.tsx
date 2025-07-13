@@ -107,6 +107,14 @@ export default function AddTransactionModal({
     }
   }, [isOpen, form]);
 
+  // Helper function untuk parsing tanggal (same as in transactions.tsx)
+  const parseTransactionDate = (date: string | number): Date => {
+    if (typeof date === 'number') {
+      return date > 9999999999 ? new Date(date) : new Date(date * 1000);
+    }
+    return new Date(date);
+  };
+
   // Update form when editing transaction changes
   useEffect(() => {
     if (editingTransaction && isEditing) {
@@ -118,7 +126,7 @@ export default function AddTransactionModal({
         categoryId: editingTransaction.categoryId?.toString() || "",
         type: transactionType,
         date: editingTransaction.date ? 
-          new Date(editingTransaction.date).toISOString().split('T')[0] : 
+          parseTransactionDate(editingTransaction.date).toISOString().split('T')[0] : 
           new Date().toISOString().split('T')[0],
       });
     }
