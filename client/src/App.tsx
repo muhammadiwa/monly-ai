@@ -10,6 +10,7 @@ import Landing from "@/pages/landing";
 import Auth from "@/pages/auth";
 import Dashboard from "@/pages/dashboard";
 import Transactions from "@/pages/transactions";
+import Categories from "@/pages/categories";
 import Budgets from "@/pages/budgets";
 import Reports from "@/pages/reports";
 import Settings from "@/pages/settings";
@@ -46,6 +47,7 @@ function Router() {
           <Switch>
             <Route path="/" component={Dashboard} />
             <Route path="/transactions" component={Transactions} />
+            <Route path="/categories" component={Categories} />
             <Route path="/budgets" component={Budgets} />
             <Route path="/reports" component={Reports} />
             <Route path="/settings" component={Settings} />

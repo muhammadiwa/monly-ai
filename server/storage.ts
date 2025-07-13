@@ -29,8 +29,9 @@ export interface IStorage {
   // Category operations
   getCategories(userId: string): Promise<Category[]>;
   createCategory(category: InsertCategory): Promise<Category>;
+  getCategoryById(id: number, userId: string): Promise<Category | undefined>;
   updateCategory(id: number, category: Partial<InsertCategory>): Promise<Category>;
-  deleteCategory(id: number): Promise<void>;
+  deleteCategory(id: number, userId: string): Promise<void>;
   initializeDefaultCategories(userId: string): Promise<void>;
 
   // Transaction operations
@@ -40,6 +41,7 @@ export interface IStorage {
     startDate: Date,
     endDate: Date
   ): Promise<TransactionWithCategory[]>;
+  getTransactionsByCategory(categoryId: number, userId: string): Promise<TransactionWithCategory[]>;
   createTransaction(transaction: InsertTransaction): Promise<Transaction>;
   updateTransaction(id: number, transaction: Partial<InsertTransaction>): Promise<Transaction>;
   deleteTransaction(id: number): Promise<void>;
@@ -129,23 +131,33 @@ export class DatabaseStorage implements IStorage {
     return updatedCategory;
   }
 
-  async deleteCategory(id: number): Promise<void> {
-    await db.delete(categories).where(eq(categories.id, id));
+  async getCategoryById(id: number, userId: string): Promise<Category | undefined> {
+    const [category] = await db
+      .select()
+      .from(categories)
+      .where(and(eq(categories.id, id), eq(categories.userId, userId)));
+    return category;
+  }
+
+  async deleteCategory(id: number, userId: string): Promise<void> {
+    await db
+      .delete(categories)
+      .where(and(eq(categories.id, id), eq(categories.userId, userId)));
   }
 
   async initializeDefaultCategories(userId: string): Promise<void> {
     const defaultCategories = [
-      { name: "Food & Dining", icon: "fas fa-utensils", color: "#059669", type: "expense" },
-      { name: "Transportation", icon: "fas fa-car", color: "#3B82F6", type: "expense" },
-      { name: "Shopping", icon: "fas fa-shopping-bag", color: "#F59E0B", type: "expense" },
-      { name: "Entertainment", icon: "fas fa-film", color: "#EF4444", type: "expense" },
-      { name: "Bills & Utilities", icon: "fas fa-file-invoice-dollar", color: "#8B5CF6", type: "expense" },
-      { name: "Healthcare", icon: "fas fa-heart", color: "#EC4899", type: "expense" },
-      { name: "Education", icon: "fas fa-graduation-cap", color: "#06B6D4", type: "expense" },
-      { name: "Other", icon: "fas fa-ellipsis-h", color: "#6B7280", type: "expense" },
-      { name: "Salary", icon: "fas fa-dollar-sign", color: "#10B981", type: "income" },
-      { name: "Investment", icon: "fas fa-chart-line", color: "#059669", type: "income" },
-      { name: "Freelance", icon: "fas fa-laptop", color: "#3B82F6", type: "income" },
+      { name: "Food & Dining", icon: "🍽️", color: "#059669", type: "expense" },
+      { name: "Transportation", icon: "🚗", color: "#3B82F6", type: "expense" },
+      { name: "Shopping", icon: "🛒", color: "#F59E0B", type: "expense" },
+      { name: "Entertainment", icon: "🎬", color: "#EF4444", type: "expense" },
+      { name: "Bills & Utilities", icon: "🧾", color: "#8B5CF6", type: "expense" },
+      { name: "Healthcare", icon: "🏥", color: "#EC4899", type: "expense" },
+      { name: "Education", icon: "📚", color: "#06B6D4", type: "expense" },
+      { name: "Other", icon: "📦", color: "#6B7280", type: "expense" },
+      { name: "Salary", icon: "💰", color: "#10B981", type: "income" },
+      { name: "Investment", icon: "📈", color: "#059669", type: "income" },
+      { name: "Freelance", icon: "💻", color: "#3B82F6", type: "income" },
     ];
 
     for (const category of defaultCategories) {
@@ -185,8 +197,27 @@ export class DatabaseStorage implements IStorage {
       .where(
         and(
           eq(transactions.userId, userId),
-          gte(transactions.date, startDate),
-          lte(transactions.date, endDate)
+          gte(transactions.date, startDate.getTime()),
+          lte(transactions.date, endDate.getTime())
+        )
+      )
+      .orderBy(desc(transactions.date));
+      
+    return results.map(row => ({
+      ...row.transactions,
+      category: row.categories
+    }));
+  }
+
+  async getTransactionsByCategory(categoryId: number, userId: string): Promise<TransactionWithCategory[]> {
+    const results = await db
+      .select()
+      .from(transactions)
+      .leftJoin(categories, eq(transactions.categoryId, categories.id))
+      .where(
+        and(
+          eq(transactions.userId, userId),
+          eq(transactions.categoryId, categoryId)
         )
       )
       .orderBy(desc(transactions.date));

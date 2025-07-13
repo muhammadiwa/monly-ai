@@ -183,6 +183,58 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.put('/api/categories/:id', requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
+      const categoryId = parseInt(req.params.id);
+      
+      // Verify category belongs to user
+      const existingCategory = await storage.getCategoryById(categoryId, req.user.id);
+      if (!existingCategory) {
+        return res.status(404).json({ message: 'Category not found' });
+      }
+      
+      const categoryData = insertCategorySchema.parse({
+        ...req.body,
+        userId: req.user.id,
+      });
+      
+      const updatedCategory = await storage.updateCategory(categoryId, categoryData);
+      res.json(updatedCategory);
+    } catch (error) {
+      console.error("Error updating category:", error);
+      res.status(500).json({ message: "Failed to update category" });
+    }
+  });
+
+  app.delete('/api/categories/:id', requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
+      const categoryId = parseInt(req.params.id);
+      
+      // Verify category belongs to user
+      const existingCategory = await storage.getCategoryById(categoryId, req.user.id);
+      if (!existingCategory) {
+        return res.status(404).json({ message: 'Category not found' });
+      }
+      
+      // Check if category is used in transactions
+      const transactions = await storage.getTransactionsByCategory(categoryId, req.user.id);
+      if (transactions.length > 0) {
+        return res.status(400).json({ 
+          message: 'Cannot delete category that is used in transactions',
+          usedInTransactions: transactions.length
+        });
+      }
+      
+      await storage.deleteCategory(categoryId, req.user.id);
+      res.json({ message: 'Category deleted successfully' });
+    } catch (error) {
+      console.error("Error deleting category:", error);
+      res.status(500).json({ message: "Failed to delete category" });
+    }
+  });
+
   // Transaction routes
   app.get('/api/transactions', requireAuth, async (req: AuthRequest, res: Response) => {
     try {
