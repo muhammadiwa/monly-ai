@@ -23,7 +23,6 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -31,8 +30,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Upload, Brain, Loader2, Camera, Mic } from "lucide-react";
+import { TrendingUp, TrendingDown, Calendar, DollarSign, Tag, FileText, Loader2 } from "lucide-react";
 
 const transactionSchema = z.object({
   description: z.string().min(1, "Description is required"),
@@ -42,7 +43,6 @@ const transactionSchema = z.object({
   ),
   categoryId: z.string().min(1, "Category is required"),
   type: z.enum(["income", "expense"]),
-  currency: z.string().default("USD"),
   date: z.string().min(1, "Date is required"),
 });
 
@@ -61,10 +61,7 @@ export default function AddTransactionModal({
   editingTransaction,
   isEditing = false,
 }: AddTransactionModalProps) {
-  const [receiptFile, setReceiptFile] = useState<File | null>(null);
-  const [aiText, setAiText] = useState("");
-  const [isProcessingReceipt, setIsProcessingReceipt] = useState(false);
-  const [isAnalyzingText, setIsAnalyzingText] = useState(false);
+  const [activeTab, setActiveTab] = useState<"income" | "expense">("expense");
   const { toast } = useToast();
 
   // Helper function for better toast notifications
@@ -88,37 +85,38 @@ export default function AddTransactionModal({
   const form = useForm<TransactionFormData>({
     resolver: zodResolver(transactionSchema),
     defaultValues: {
-      description: editingTransaction?.description || "",
-      amount: editingTransaction?.amount?.toString() || "",
-      categoryId: editingTransaction?.categoryId?.toString() || "",
-      type: editingTransaction?.type || "expense",
-      currency: editingTransaction?.currency || "USD",
-      date: editingTransaction?.date ? 
-        new Date(editingTransaction.date).toISOString().split('T')[0] : 
-        new Date().toISOString().split('T')[0],
+      description: "",
+      amount: "",
+      categoryId: "",
+      type: "expense",
+      date: new Date().toISOString().split('T')[0],
     },
   });
 
-  // Reset states when modal is closed
+  // Reset form when modal opens/closes
   useEffect(() => {
     if (!isOpen) {
-      setReceiptFile(null);
-      setAiText("");
-      setIsProcessingReceipt(false);
-      setIsAnalyzingText(false);
-      form.reset();
+      form.reset({
+        description: "",
+        amount: "",
+        categoryId: "",
+        type: "expense",
+        date: new Date().toISOString().split('T')[0],
+      });
+      setActiveTab("expense");
     }
   }, [isOpen, form]);
 
   // Update form when editing transaction changes
   useEffect(() => {
     if (editingTransaction && isEditing) {
+      const transactionType = editingTransaction.type || "expense";
+      setActiveTab(transactionType);
       form.reset({
         description: editingTransaction.description || "",
         amount: editingTransaction.amount?.toString() || "",
         categoryId: editingTransaction.categoryId?.toString() || "",
-        type: editingTransaction.type || "expense",
-        currency: editingTransaction.currency || "USD",
+        type: transactionType,
         date: editingTransaction.date ? 
           new Date(editingTransaction.date).toISOString().split('T')[0] : 
           new Date().toISOString().split('T')[0],
@@ -126,10 +124,47 @@ export default function AddTransactionModal({
     }
   }, [editingTransaction, isEditing, form]);
 
+  // Watch the active tab and update form type
+  useEffect(() => {
+    form.setValue("type", activeTab);
+    form.setValue("categoryId", ""); // Reset category when switching tabs
+  }, [activeTab, form]);
+
   const { data: categories } = useQuery({
     queryKey: ["/api/categories"],
     enabled: isOpen,
   });
+
+  const { data: userPreferences } = useQuery({
+    queryKey: ["/api/user/preferences"],
+    enabled: isOpen,
+  });
+
+  // Filter categories based on active tab (transaction type)
+  const filteredCategories = categories?.filter((category: any) => 
+    category.type === activeTab
+  ) || [];
+
+  // Helper function to get currency symbol
+  const getCurrencySymbol = (currency: string) => {
+    const symbols: Record<string, string> = {
+      'USD': '$',
+      'EUR': '€',
+      'GBP': '£',
+      'JPY': '¥',
+      'IDR': 'Rp',
+      'CNY': '¥',
+      'KRW': '₩',
+      'SGD': 'S$',
+      'MYR': 'RM',
+      'THB': '฿',
+      'VND': '₫'
+    };
+    return symbols[currency] || currency;
+  };
+
+  const userCurrency = userPreferences?.defaultCurrency || 'USD';
+  const currencySymbol = getCurrencySymbol(userCurrency);
 
   const transactionMutation = useMutation({
     mutationFn: async (data: TransactionFormData) => {
@@ -137,6 +172,7 @@ export default function AddTransactionModal({
         ...data,
         amount: parseFloat(data.amount),
         categoryId: parseInt(data.categoryId),
+        currency: userCurrency, // Use user's preferred currency
         date: new Date(data.date).toISOString(),
       };
       
@@ -149,18 +185,38 @@ export default function AddTransactionModal({
       }
     },
     onSuccess: (data) => {
+      // Invalidate multiple related queries to ensure UI updates
       queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
       queryClient.invalidateQueries({ queryKey: ["/api/analytics/dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/categories"] });
+      
+      // Force immediate refetch with fresh data
+      queryClient.refetchQueries({ 
+        queryKey: ["/api/transactions"],
+        type: 'all' 
+      });
       
       const transactionName = form.getValues('description');
       if (isEditing) {
-        showToast('success', '🔄 Transaction Updated!', `"${transactionName}" has been successfully updated`);
+        showToast('success', '🔄 Transaction Updated!', `"${transactionName}" has been successfully updated and will appear in your transaction list`);
       } else {
         showToast('success', '✨ Transaction Created!', `"${transactionName}" has been successfully added`);
       }
       
-      form.reset();
-      onClose();
+      // Reset form and close modal
+      form.reset({
+        description: "",
+        amount: "",
+        categoryId: "",
+        type: "expense",
+        date: new Date().toISOString().split('T')[0],
+      });
+      setActiveTab("expense");
+      
+      // Small delay to ensure data is refreshed before closing
+      setTimeout(() => {
+        onClose();
+      }, 100);
     },
     onError: (error) => {
       if (isUnauthorizedError(error)) {
@@ -177,393 +233,353 @@ export default function AddTransactionModal({
     },
   });
 
-  const analyzeTextMutation = useMutation({
-    mutationFn: async (text: string) => {
-      const response = await apiRequest("POST", "/api/transactions/analyze", {
-        text,
-      });
-      return response.json();
-    },
-    onSuccess: (data) => {
-      setIsAnalyzingText(false);
-      if (data.transaction) {
-        toast({
-          title: "🤖 Transaction Created Successfully",
-          description: `AI automatically analyzed and created transaction for ${data.transaction.description}`,
-          className: "bg-green-50 border-green-200",
-        });
-        queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/analytics/dashboard"] });
-        form.reset();
-        setAiText("");
-        onClose();
-      } else if (data.analysis) {
-        // Fill form with AI analysis
-        const analysis = data.analysis;
-        form.setValue("description", analysis.description);
-        form.setValue("amount", analysis.amount.toString());
-        form.setValue("type", analysis.type);
-        
-        // Find matching category
-        const matchingCategory = categories?.find((cat: any) => 
-          cat.name.toLowerCase() === analysis.category.toLowerCase()
-        );
-        if (matchingCategory) {
-          form.setValue("categoryId", matchingCategory.id.toString());
-        }
-        
-        toast({
-          title: "🧠 AI Analysis Complete",
-          description: `Smart analysis filled transaction details: ${analysis.description} - ${analysis.amount}`,
-          className: "bg-blue-50 border-blue-200",
-        });
-      }
-    },
-    onError: (error) => {
-      setIsAnalyzingText(false);
-      if (isUnauthorizedError(error)) {
-        toast({
-          title: "🔐 Unauthorized Access",
-          description: "Session expired. Redirecting to login...",
-          variant: "destructive",
-          className: "bg-red-50 border-red-200",
-        });
-        setTimeout(() => {
-          window.location.href = "/auth";
-        }, 500);
-        return;
-      }
-      toast({
-        title: "🚫 AI Analysis Failed",
-        description: "Unable to analyze transaction with AI. Please try again or enter manually.",
-        variant: "destructive",
-        className: "bg-red-50 border-red-200",
-      });
-    },
-  });
-
-  const processReceiptMutation = useMutation({
-    mutationFn: async (file: File) => {
-      const formData = new FormData();
-      formData.append("receipt", file);
-      
-      const response = await fetch("/api/transactions/ocr", {
-        method: "POST",
-        body: formData,
-        credentials: "include",
-      });
-      
-      if (!response.ok) {
-        throw new Error("Failed to process receipt");
-      }
-      
-      return response.json();
-    },
-    onSuccess: (data) => {
-      setIsProcessingReceipt(false);
-      if (data.createdTransactions && data.createdTransactions.length > 0) {
-        showToast('success', '📄 Receipt Processed Successfully', 
-          `Created ${data.createdTransactions.length} transaction${data.createdTransactions.length > 1 ? 's' : ''} from receipt`);
-        queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/analytics/dashboard"] });
-        form.reset();
-        setReceiptFile(null);
-        onClose();
-      } else {
-        showToast('warning', '📄 Receipt Analyzed', 'Receipt processed but no valid transactions were found');
-      }
-    },
-    onError: (error) => {
-      setIsProcessingReceipt(false);
-      showToast('error', '🚫 Receipt Processing Failed', 'Unable to process receipt. Please try again or enter manually');
-    },
-  });
-
-  const handleReceiptUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      setReceiptFile(file);
-      setIsProcessingReceipt(true);
-      processReceiptMutation.mutate(file);
-    }
-  };
-
-  const handleAiAnalysis = () => {
-    if (!aiText.trim()) {
-      showToast('error', '📝 Text Required', 'Please enter some text to analyze');
-      return;
-    }
-    
-    setIsAnalyzingText(true);
-    analyzeTextMutation.mutate(aiText);
-  };
-
   const onSubmit = (data: TransactionFormData) => {
     transactionMutation.mutate(data);
   };
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <div className="bg-primary/10 p-2 rounded-full">
-              {isEditing ? (
-                <span className="text-lg">✏️</span>
-              ) : (
-                <span className="text-lg">➕</span>
-              )}
-            </div>
-            {isEditing ? 'Edit Transaction' : 'Add Transaction'}
+      <DialogContent className="sm:max-w-[600px] max-h-[95vh] overflow-hidden bg-white/95 backdrop-blur-xl border-white/20 rounded-3xl shadow-2xl">
+        <DialogHeader className="text-center pb-2">
+          <div className="mx-auto w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center mb-4 shadow-lg">
+            {isEditing ? (
+              <span className="text-white text-2xl">✏️</span>
+            ) : (
+              <span className="text-white text-2xl">💰</span>
+            )}
+          </div>
+          <DialogTitle className="text-2xl font-bold bg-gradient-to-r from-slate-900 via-blue-900 to-indigo-900 bg-clip-text text-transparent">
+            {isEditing ? 'Edit Transaction' : 'Add New Transaction'}
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="text-slate-600 text-base">
             {isEditing 
-              ? 'Update transaction details or use AI to re-analyze text/receipts'
-              : 'Create a new transaction manually or use AI to analyze text/receipts'
+              ? 'Update your transaction details'
+              : 'Track your income and expenses manually'
             }
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-6">
-          {/* AI Text Analysis */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <Brain className="h-4 w-4 text-primary" />
-              <span className="text-sm font-medium">AI Analysis</span>
-              <Badge variant="secondary" className="text-xs">Smart</Badge>
-            </div>
-            <div className="flex gap-2">
-              <Textarea
-                placeholder="Describe your transaction... (e.g., 'I spent $25 on lunch at McDonald's')"
-                value={aiText}
-                onChange={(e) => setAiText(e.target.value)}
-                className="flex-1"
-                rows={2}
-              />
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleAiAnalysis}
-                disabled={isAnalyzingText || analyzeTextMutation.isPending}
-                className="self-start"
+        <div className="space-y-6 overflow-y-auto max-h-[calc(95vh-200px)] px-1">
+          {/* Transaction Type Tabs */}
+          <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "income" | "expense")} className="w-full">
+            <TabsList className="grid w-full grid-cols-2 bg-slate-100 rounded-2xl p-1">
+              <TabsTrigger 
+                value="expense" 
+                className="flex items-center gap-2 rounded-xl data-[state=active]:bg-gradient-to-r data-[state=active]:from-red-500 data-[state=active]:to-pink-600 data-[state=active]:text-white data-[state=active]:shadow-lg transition-all duration-200"
               >
-                {isAnalyzingText || analyzeTextMutation.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Brain className="h-4 w-4" />
-                )}
-              </Button>
-            </div>
-          </div>
-
-          {/* Receipt Upload */}
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <Camera className="h-4 w-4 text-primary" />
-              <span className="text-sm font-medium">Receipt Upload</span>
-              <Badge variant="secondary" className="text-xs">OCR</Badge>
-            </div>
-            <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-primary transition-colors">
-              <Upload className="h-8 w-8 text-gray-400 mx-auto mb-2" />
-              <p className="text-sm text-gray-600 mb-2">
-                {receiptFile ? receiptFile.name : "Drag and drop or click to upload receipt"}
-              </p>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleReceiptUpload}
-                className="hidden"
-                id="receipt-upload"
-                disabled={isProcessingReceipt || processReceiptMutation.isPending}
-              />
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => document.getElementById("receipt-upload")?.click()}
-                disabled={isProcessingReceipt || processReceiptMutation.isPending}
-                className="mt-2"
+                <TrendingDown className="w-4 h-4" />
+                <span className="font-medium">Expense</span>
+              </TabsTrigger>
+              <TabsTrigger 
+                value="income"
+                className="flex items-center gap-2 rounded-xl data-[state=active]:bg-gradient-to-r data-[state=active]:from-emerald-500 data-[state=active]:to-green-600 data-[state=active]:text-white data-[state=active]:shadow-lg transition-all duration-200"
               >
-                {isProcessingReceipt || processReceiptMutation.isPending ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                    Processing...
-                  </>
-                ) : (
-                  <>
-                    <Upload className="h-4 w-4 mr-2" />
-                    Choose File
-                  </>
-                )}
-              </Button>
-            </div>
-          </div>
+                <TrendingUp className="w-4 h-4" />
+                <span className="font-medium">Income</span>
+              </TabsTrigger>
+            </TabsList>
 
-          {/* Manual Form */}
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-              <FormField
-                control={form.control}
-                name="description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Description</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Enter transaction description" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="amount"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Amount</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          placeholder="0.00"
-                          {...field}
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 pt-4">
+                <TabsContent value="expense" className="mt-0 space-y-6">
+                  <Card className="bg-gradient-to-br from-red-50 to-pink-50 border-red-200 shadow-sm">
+                    <CardContent className="p-6">
+                      <div className="flex items-center gap-3 mb-4">
+                        <div className="w-10 h-10 bg-gradient-to-br from-red-500 to-pink-600 rounded-full flex items-center justify-center">
+                          <TrendingDown className="w-5 h-5 text-white" />
+                        </div>
+                        <div>
+                          <h3 className="font-semibold text-red-700">Expense Transaction</h3>
+                          <p className="text-sm text-red-600">Record money you've spent</p>
+                        </div>
+                      </div>
+                      
+                      {/* Form Fields for Expense */}
+                      <div className="space-y-4">
+                        <FormField
+                          control={form.control}
+                          name="description"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel className="flex items-center gap-2 text-slate-700 font-medium">
+                                <FileText className="w-4 h-4" />
+                                Description
+                              </FormLabel>
+                              <FormControl>
+                                <Input 
+                                  placeholder="What did you spend on? (e.g., Lunch at restaurant)" 
+                                  {...field} 
+                                  className="bg-white/70 border-red-200 focus:border-red-400 focus:ring-red-200 rounded-xl"
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
                         />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
 
-                <FormField
-                  control={form.control}
-                  name="currency"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Currency</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select currency" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="USD">USD</SelectItem>
-                          <SelectItem value="EUR">EUR</SelectItem>
-                          <SelectItem value="IDR">IDR</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <FormField
+                            control={form.control}
+                            name="amount"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel className="flex items-center gap-2 text-slate-700 font-medium">
+                                  <DollarSign className="w-4 h-4" />
+                                  Amount
+                                </FormLabel>
+                                <FormControl>
+                                  <div className="relative">
+                                    <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-500 font-medium">
+                                      {currencySymbol}
+                                    </span>
+                                    <Input
+                                      type="number"
+                                      step="0.01"
+                                      placeholder="0.00"
+                                      {...field}
+                                      className="pl-8 bg-white/70 border-red-200 focus:border-red-400 focus:ring-red-200 rounded-xl"
+                                    />
+                                  </div>
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
 
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={form.control}
-                  name="type"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Type</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select type" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="expense">Expense</SelectItem>
-                          <SelectItem value="income">Income</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                          <FormField
+                            control={form.control}
+                            name="date"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel className="flex items-center gap-2 text-slate-700 font-medium">
+                                  <Calendar className="w-4 h-4" />
+                                  Date
+                                </FormLabel>
+                                <FormControl>
+                                  <Input 
+                                    type="date" 
+                                    {...field} 
+                                    className="bg-white/70 border-red-200 focus:border-red-400 focus:ring-red-200 rounded-xl"
+                                  />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        </div>
 
-                <FormField
-                  control={form.control}
-                  name="categoryId"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Category</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select category" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {categories?.map((category: any) => (
-                            <SelectItem key={category.id} value={category.id.toString()}>
-                              <div className="flex items-center gap-2">
-                                <i className={`${category.icon} text-sm`} />
-                                {category.name}
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
+                        <FormField
+                          control={form.control}
+                          name="categoryId"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel className="flex items-center gap-2 text-slate-700 font-medium">
+                                <Tag className="w-4 h-4" />
+                                Category
+                              </FormLabel>
+                              <Select onValueChange={field.onChange} value={field.value}>
+                                <FormControl>
+                                  <SelectTrigger className="bg-white/70 border-red-200 focus:border-red-400 focus:ring-red-200 rounded-xl">
+                                    <SelectValue placeholder="Select expense category" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent className="rounded-xl">
+                                  {filteredCategories.map((category: any) => (
+                                    <SelectItem key={category.id} value={category.id.toString()}>
+                                      <div className="flex items-center gap-3">
+                                        <span className="text-lg">{category.icon}</span>
+                                        <span>{category.name}</span>
+                                      </div>
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
 
-              <FormField
-                control={form.control}
-                name="date"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Date</FormLabel>
-                    <FormControl>
-                      <Input type="date" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                <TabsContent value="income" className="mt-0 space-y-6">
+                  <Card className="bg-gradient-to-br from-emerald-50 to-green-50 border-emerald-200 shadow-sm">
+                    <CardContent className="p-6">
+                      <div className="flex items-center gap-3 mb-4">
+                        <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-green-600 rounded-full flex items-center justify-center">
+                          <TrendingUp className="w-5 h-5 text-white" />
+                        </div>
+                        <div>
+                          <h3 className="font-semibold text-emerald-700">Income Transaction</h3>
+                          <p className="text-sm text-emerald-600">Record money you've received</p>
+                        </div>
+                      </div>
+                      
+                      {/* Form Fields for Income */}
+                      <div className="space-y-4">
+                        <FormField
+                          control={form.control}
+                          name="description"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel className="flex items-center gap-2 text-slate-700 font-medium">
+                                <FileText className="w-4 h-4" />
+                                Description
+                              </FormLabel>
+                              <FormControl>
+                                <Input 
+                                  placeholder="Where did this income come from? (e.g., Salary, Freelance work)" 
+                                  {...field} 
+                                  className="bg-white/70 border-emerald-200 focus:border-emerald-400 focus:ring-emerald-200 rounded-xl"
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
 
-              <div className="flex space-x-3 pt-4">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={onClose}
-                  className="flex-1"
-                  disabled={transactionMutation.isPending}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="submit"
-                  className="flex-1 bg-primary hover:bg-primary/90"
-                  disabled={transactionMutation.isPending}
-                >
-                  {transactionMutation.isPending ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                      {isEditing ? 'Updating...' : 'Creating...'}
-                    </>
-                  ) : (
-                    <>
-                      {isEditing ? (
-                        <>
-                          <span className="mr-2">✏️</span>
-                          Update Transaction
-                        </>
-                      ) : (
-                        <>
-                          <span className="mr-2">➕</span>
-                          Add Transaction
-                        </>
-                      )}
-                    </>
-                  )}
-                </Button>
-              </div>
-            </form>
-          </Form>
+                        <div className="grid grid-cols-2 gap-4">
+                          <FormField
+                            control={form.control}
+                            name="amount"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel className="flex items-center gap-2 text-slate-700 font-medium">
+                                  <DollarSign className="w-4 h-4" />
+                                  Amount
+                                </FormLabel>
+                                <FormControl>
+                                  <div className="relative">
+                                    <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-500 font-medium">
+                                      {currencySymbol}
+                                    </span>
+                                    <Input
+                                      type="number"
+                                      step="0.01"
+                                      placeholder="0.00"
+                                      {...field}
+                                      className="pl-8 bg-white/70 border-emerald-200 focus:border-emerald-400 focus:ring-emerald-200 rounded-xl"
+                                    />
+                                  </div>
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+
+                          <FormField
+                            control={form.control}
+                            name="date"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel className="flex items-center gap-2 text-slate-700 font-medium">
+                                  <Calendar className="w-4 h-4" />
+                                  Date
+                                </FormLabel>
+                                <FormControl>
+                                  <Input 
+                                    type="date" 
+                                    {...field} 
+                                    className="bg-white/70 border-emerald-200 focus:border-emerald-400 focus:ring-emerald-200 rounded-xl"
+                                  />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+
+                        <FormField
+                          control={form.control}
+                          name="categoryId"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel className="flex items-center gap-2 text-slate-700 font-medium">
+                                <Tag className="w-4 h-4" />
+                                Category
+                              </FormLabel>
+                              <Select onValueChange={field.onChange} value={field.value}>
+                                <FormControl>
+                                  <SelectTrigger className="bg-white/70 border-emerald-200 focus:border-emerald-400 focus:ring-emerald-200 rounded-xl">
+                                    <SelectValue placeholder="Select income category" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent className="rounded-xl">
+                                  {filteredCategories.map((category: any) => (
+                                    <SelectItem key={category.id} value={category.id.toString()}>
+                                      <div className="flex items-center gap-3">
+                                        <span className="text-lg">{category.icon}</span>
+                                        <span>{category.name}</span>
+                                      </div>
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+
+                {/* Action Buttons */}
+                <div className="flex gap-3 pt-4 border-t border-slate-200">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={onClose}
+                    className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300 rounded-xl py-3 font-medium"
+                    disabled={transactionMutation.isPending}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    className={`flex-1 text-white border-0 rounded-xl py-3 font-medium shadow-lg transform hover:scale-105 transition-all duration-200 ${
+                      activeTab === 'income' 
+                        ? 'bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700'
+                        : 'bg-gradient-to-r from-red-500 to-pink-600 hover:from-red-600 hover:to-pink-700'
+                    }`}
+                    disabled={transactionMutation.isPending}
+                  >
+                    {transactionMutation.isPending ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        {isEditing ? 'Updating...' : 'Creating...'}
+                      </>
+                    ) : (
+                      <>
+                        {isEditing ? (
+                          <>
+                            <span className="mr-2">✏️</span>
+                            Update Transaction
+                          </>
+                        ) : (
+                          <>
+                            <span className="mr-2">{activeTab === 'income' ? '💰' : '💸'}</span>
+                            Add {activeTab === 'income' ? 'Income' : 'Expense'}
+                          </>
+                        )}
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </form>
+            </Form>
+          </Tabs>
+
+          {/* Currency Information */}
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+            <div className="flex items-center gap-2 text-blue-700">
+              <DollarSign className="w-4 h-4" />
+              <span className="text-sm font-medium">
+                Currency: {currencySymbol} ({userCurrency}) - Based on your preference
+              </span>
+            </div>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

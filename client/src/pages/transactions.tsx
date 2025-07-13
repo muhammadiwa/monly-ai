@@ -29,8 +29,8 @@ export default function Transactions() {
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [selectedType, setSelectedType] = useState<string>("all");
   const [dateRange, setDateRange] = useState({
-    start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
-    end: new Date().toISOString().split('T')[0]
+    start: new Date(new Date().getFullYear() - 1, 0, 1).toISOString().split('T')[0], // Last year from January
+    end: new Date(new Date().getFullYear() + 1, 11, 31).toISOString().split('T')[0] // Next year until December
   });
   
   // Pagination states
@@ -75,6 +75,8 @@ export default function Transactions() {
     queryKey: ["/api/transactions"],
     retry: false,
     enabled: isAuthenticated,
+    staleTime: 0, // Always fetch fresh data
+    cacheTime: 0, // Don't cache old data
   });
 
   const { data: categories } = useQuery({
@@ -124,21 +126,80 @@ export default function Transactions() {
 
   // Filter and process transactions
   const filteredTransactions = (transactions as any[])?.filter((transaction: any) => {
+    // Add safety checks
+    if (!transaction) return false;
+    
     const matchesSearch = transaction.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          transaction.category?.name?.toLowerCase().includes(searchTerm.toLowerCase());
     
     const matchesCategory = selectedCategory === "all" || transaction.category?.name === selectedCategory;
     const matchesType = selectedType === "all" || transaction.type === selectedType;
     
-    const transactionDate = new Date(transaction.date);
-    const startDate = new Date(dateRange.start);
-    const endDate = new Date(dateRange.end);
-    endDate.setHours(23, 59, 59, 999); // Include the entire end date
-    
-    const matchesDate = transactionDate >= startDate && transactionDate <= endDate;
+    // More robust date filtering with multiple format support
+    let matchesDate = true;
+    try {
+      let transactionDate;
+      
+      // Handle different date formats from database
+      if (typeof transaction.date === 'number') {
+        // Handle timestamp (both milliseconds and seconds)
+        if (transaction.date > 9999999999) {
+          // Milliseconds timestamp
+          transactionDate = new Date(transaction.date);
+        } else {
+          // Seconds timestamp - convert to milliseconds
+          transactionDate = new Date(transaction.date * 1000);
+        }
+      } else if (typeof transaction.date === 'string') {
+        // Handle string dates
+        transactionDate = new Date(transaction.date);
+      } else {
+        // Fallback - try direct conversion
+        transactionDate = new Date(transaction.date);
+      }
+      
+      // Create filter date range
+      const startDate = new Date(dateRange.start);
+      const endDate = new Date(dateRange.end);
+      endDate.setHours(23, 59, 59, 999); // Include the entire end date
+      
+      // Debug log for problematic dates
+      if (isNaN(transactionDate.getTime())) {
+        console.warn('Invalid transaction date:', transaction.date, 'for transaction:', transaction.description);
+        matchesDate = true; // Include transaction if date is invalid
+      } else {
+        // Only filter by date if valid dates are provided
+        if (!isNaN(startDate.getTime()) && !isNaN(endDate.getTime())) {
+          matchesDate = transactionDate >= startDate && transactionDate <= endDate;
+          
+          // Debug log for date filtering
+          if (!matchesDate) {
+            console.log('Transaction filtered out by date:', {
+              description: transaction.description,
+              transactionDate: transactionDate.toISOString(),
+              startDate: startDate.toISOString(),
+              endDate: endDate.toISOString(),
+              originalDate: transaction.date
+            });
+          }
+        }
+      }
+    } catch (error) {
+      console.warn('Date filtering error:', error);
+      matchesDate = true; // Include transaction if date parsing fails
+    }
     
     return matchesSearch && matchesCategory && matchesType && matchesDate;
   }) || [];
+
+  // Debug logging (moved after filteredTransactions definition)
+  useEffect(() => {
+    if (transactions) {
+      console.log('Transactions data updated:', transactions.length, 'transactions');
+      console.log('Current date range:', dateRange);
+      console.log('Filtered transactions:', filteredTransactions.length, 'transactions');
+    }
+  }, [transactions, dateRange, filteredTransactions.length]);
 
   // Pagination
   const totalPages = Math.ceil(filteredTransactions.length / itemsPerPage);
@@ -437,7 +498,15 @@ export default function Transactions() {
           <div>
             <Card className="bg-white/70 backdrop-blur-xl shadow-xl border-white/20">
               <CardHeader className="p-4 sm:p-6">
-                <CardTitle className="text-lg sm:text-xl font-semibold text-slate-900">Transactions</CardTitle>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-lg sm:text-xl font-semibold text-slate-900">Transactions</CardTitle>
+                  {transactionsLoading && (
+                    <div className="flex items-center gap-2 text-blue-600">
+                      <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                      <span className="text-sm">Refreshing...</span>
+                    </div>
+                  )}
+                </div>
               </CardHeader>
               <CardContent className="p-4 sm:p-6 pt-0">
                 {paginatedTransactions.length === 0 ? (
@@ -592,6 +661,11 @@ export default function Transactions() {
           onClose={() => {
             setShowEditTransaction(false);
             setEditingTransaction(null);
+            // Reset pagination to page 1 to ensure edited transaction is visible
+            setCurrentPage(1);
+            // Force refresh transactions data after edit
+            queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
+            queryClient.refetchQueries({ queryKey: ["/api/transactions"] });
           }}
           editingTransaction={editingTransaction}
           isEditing={true}
