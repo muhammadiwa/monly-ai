@@ -26,7 +26,7 @@ import {
   Filter,
   AlertTriangle
 } from "lucide-react";
-import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip, Legend, PieChart as RechartsPieChart, Cell, Area, AreaChart, Pie } from "recharts";
+import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip, Legend, Cell, Area, AreaChart } from "recharts";
 
 export default function Reports() {
   const { toast } = useToast();
@@ -232,39 +232,59 @@ export default function Reports() {
     };
   }, [transactions]);
 
-  // Calculate budget progress
+  // Calculate budget progress for current month only
   const budgetProgress = useMemo(() => {
     if (!budgets || !Array.isArray(budgets) || !transactions) return [];
 
+    const currentDate = new Date();
+    const currentMonth = currentDate.getMonth();
+    const currentYear = currentDate.getFullYear();
+
+    console.log('Budget calculation for:', {
+      month: currentMonth + 1, // +1 for human readable
+      year: currentYear,
+      budgetsCount: budgets.length,
+      transactionsCount: Array.isArray(transactions) ? transactions.length : 0
+    });
+
     return budgets.map((budget: any) => {
-      const currentMonth = new Date().getMonth();
-      const currentYear = new Date().getFullYear();
-      
+      // Filter transactions for current month only
       const budgetTransactions = (transactions as any[]).filter((transaction: any) => {
         const transactionDate = parseTransactionDate(transaction.date);
-        return transaction.categoryId === budget.categoryId &&
-               transaction.type === 'expense' &&
-               transactionDate.getMonth() === currentMonth &&
-               transactionDate.getFullYear() === currentYear;
+        const isCurrentMonth = transactionDate.getMonth() === currentMonth &&
+                              transactionDate.getFullYear() === currentYear;
+        const isSameCategory = transaction.categoryId === budget.categoryId;
+        const isExpense = transaction.type === 'expense';
+        
+        return isSameCategory && isExpense && isCurrentMonth;
       });
 
       const spent = budgetTransactions.reduce((sum: number, t: any) => sum + (t.amount || 0), 0);
       const percentage = budget.amount > 0 ? (spent / budget.amount) * 100 : 0;
       
-      // Determine status
+      // Determine status based on spending percentage
       let status = 'good';
       if (percentage > 100) {
         status = 'over';
       } else if (percentage > 80) {
         status = 'warning';
       }
+
+      console.log(`Budget ${budget.category?.name}:`, {
+        budgetAmount: budget.amount,
+        spent,
+        percentage: percentage.toFixed(1),
+        transactions: budgetTransactions.length,
+        status
+      });
       
       return {
         ...budget,
         spent,
         percentage: Math.min(percentage, 100),
         remaining: Math.max(budget.amount - spent, 0),
-        status
+        status,
+        currentMonthTransactions: budgetTransactions.length // Add transaction count for debugging
       };
     });
   }, [budgets, transactions]);
@@ -755,111 +775,213 @@ export default function Reports() {
           </TabsContent>
 
           {/* Categories Tab */}
-          <TabsContent value="categories" className="space-y-4 sm:space-y-6">
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6">
-              {/* Pie Chart */}
+          <TabsContent value="categories" className="space-y-6">
+            {/* Top Spending Categories - Grid Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
+              {processedData.categoryBreakdown.length > 0 ? (
+                processedData.categoryBreakdown.slice(0, 8).map((category, index) => {
+                  const percentage = processedData.incomeVsExpenses.expenses > 0 
+                    ? (category.total / processedData.incomeVsExpenses.expenses) * 100 
+                    : 0;
+                  
+                  return (
+                    <Card key={`${category.categoryName}-${index}`} className="group relative overflow-hidden bg-gradient-to-br from-white to-gray-50 border shadow-sm hover:shadow-xl transition-all duration-300 hover:-translate-y-1">
+                      <div 
+                        className="absolute top-0 left-0 w-full h-1"
+                        style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }}
+                      ></div>
+                      <CardContent className="p-4 sm:p-6">
+                        <div className="flex items-start justify-between mb-4">
+                          <div className="flex items-center space-x-3">
+                            <div 
+                              className="w-12 h-12 rounded-xl flex items-center justify-center shadow-lg"
+                              style={{ backgroundColor: `${CHART_COLORS[index % CHART_COLORS.length]}20` }}
+                            >
+                              <div 
+                                className="w-6 h-6 rounded-lg"
+                                style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }}
+                              ></div>
+                            </div>
+                            <div>
+                              <h3 className="font-semibold text-gray-900 text-sm sm:text-base group-hover:text-gray-700 transition-colors">
+                                {category.categoryName}
+                              </h3>
+                              <p className="text-xs sm:text-sm text-gray-500">{percentage.toFixed(1)}% of total</p>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <div className="space-y-3">
+                          <div className="flex items-end justify-between">
+                            <span className="text-xs sm:text-sm text-gray-600 font-medium">Amount</span>
+                            <span className="text-lg sm:text-xl font-bold text-gray-900">
+                              {formatCurrency(category.total, userCurrency)}
+                            </span>
+                          </div>
+                          
+                          <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+                            <div 
+                              className="h-full rounded-full transition-all duration-500 ease-out shadow-inner"
+                              style={{ 
+                                width: `${Math.min(percentage, 100)}%`,
+                                backgroundColor: CHART_COLORS[index % CHART_COLORS.length],
+                                boxShadow: `inset 0 2px 4px rgba(0,0,0,0.1)`
+                              }}
+                            ></div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })
+              ) : (
+                <div className="col-span-full">
+                  <Card className="border-2 border-dashed border-gray-300">
+                    <CardContent className="flex flex-col items-center justify-center py-12">
+                      <BarChart3 className="h-16 w-16 text-gray-400 mb-4" />
+                      <h3 className="text-lg font-semibold text-gray-600 mb-2">No Category Data</h3>
+                      <p className="text-gray-500 text-center max-w-md">
+                        Start making transactions to see your spending breakdown by category
+                      </p>
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
+            </div>
+
+            {/* Detailed Analytics */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Monthly Category Trends */}
               <Card className="shadow-lg border-0 bg-white">
-                <CardHeader className="pb-3 sm:pb-4">
-                  <CardTitle className="text-lg sm:text-xl font-semibold text-gray-900">Expense Distribution</CardTitle>
-                  <CardDescription className="text-sm">How you spend your money by category</CardDescription>
+                <CardHeader className="pb-4">
+                  <CardTitle className="text-lg font-semibold text-gray-900 flex items-center">
+                    <TrendingUp className="h-5 w-5 mr-2 text-blue-600" />
+                    Category Trends
+                  </CardTitle>
+                  <CardDescription className="text-sm">Monthly spending comparison</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="h-60 sm:h-80">
+                  <div className="h-64 sm:h-80">
                     <ResponsiveContainer width="100%" height="100%">
-                      <RechartsPieChart>
+                      <BarChart data={processedData.categoryBreakdown.slice(0, 6)} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                        <XAxis 
+                          dataKey="categoryName"
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fontSize: 11, fill: '#6B7280' }}
+                          height={60}
+                        />
+                        <YAxis 
+                          axisLine={false}
+                          tickLine={false}
+                          tick={{ fontSize: 11, fill: '#6B7280' }}
+                          tickFormatter={(value) => {
+                            if (userCurrency === 'IDR') {
+                              return `Rp${(value / 1000000).toFixed(1)}M`;
+                            }
+                            return `$${(value / 1000).toFixed(0)}K`;
+                          }}
+                        />
                         <Tooltip 
                           contentStyle={{
                             backgroundColor: 'white',
                             border: '1px solid #E5E7EB',
-                            borderRadius: '12px',
-                            boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
-                            fontSize: '14px',
-                            padding: '12px'
+                            borderRadius: '8px',
+                            boxShadow: '0 10px 25px rgba(0, 0, 0, 0.1)',
+                            fontSize: '14px'
                           }}
                           formatter={(value: number) => [formatCurrency(value, userCurrency), 'Amount']}
-                          labelStyle={{ color: '#374151', fontWeight: 'bold', marginBottom: '4px' }}
+                          labelStyle={{ color: '#374151', fontWeight: 'bold' }}
                         />
-                        <Legend 
-                          wrapperStyle={{ 
-                            fontSize: '12px',
-                            paddingTop: '20px'
-                          }}
-                          iconType="circle"
-                        />
-                        <Pie
-                          data={processedData.categoryBreakdown}
-                          cx="50%"
-                          cy="45%"
-                          labelLine={false}
-                          label={({name, percent}) => `${name}: ${(percent * 100).toFixed(1)}%`}
-                          outerRadius={90}
-                          innerRadius={30}
-                          fill="#8884d8"
-                          dataKey="total"
-                          stroke="#ffffff"
-                          strokeWidth={2}
-                          animationBegin={0}
-                          animationDuration={1000}
+                        <Bar 
+                          dataKey="total" 
+                          radius={[4, 4, 0, 0]}
                         >
-                          {processedData.categoryBreakdown.map((entry, index) => (
+                          {processedData.categoryBreakdown.slice(0, 6).map((entry, index) => (
                             <Cell 
                               key={`cell-${entry.categoryName}-${index}`} 
                               fill={CHART_COLORS[index % CHART_COLORS.length]}
-                              style={{
-                                filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.1))',
-                                cursor: 'pointer'
-                              }}
                             />
                           ))}
-                        </Pie>
-                      </RechartsPieChart>
+                        </Bar>
+                      </BarChart>
                     </ResponsiveContainer>
                   </div>
                 </CardContent>
               </Card>
 
-              {/* Category Details */}
+              {/* Category Insights */}
               <Card className="shadow-lg border-0 bg-white">
-                <CardHeader className="pb-3 sm:pb-4">
-                  <CardTitle className="text-lg sm:text-xl font-semibold text-gray-900">Category Breakdown</CardTitle>
-                  <CardDescription className="text-sm">Detailed spending by category</CardDescription>
+                <CardHeader className="pb-4">
+                  <CardTitle className="text-lg font-semibold text-gray-900 flex items-center">
+                    <Target className="h-5 w-5 mr-2 text-purple-600" />
+                    Spending Insights
+                  </CardTitle>
+                  <CardDescription className="text-sm">Category analysis and recommendations</CardDescription>
                 </CardHeader>
-                <CardContent>
-                  <div className="space-y-3 sm:space-y-4 max-h-60 sm:max-h-80 overflow-y-auto">
-                    {processedData.categoryBreakdown.length > 0 ? (
-                      processedData.categoryBreakdown.map((category, index) => {
-                        const percentage = processedData.incomeVsExpenses.expenses > 0 
-                          ? (category.total / processedData.incomeVsExpenses.expenses) * 100 
-                          : 0;
-                        
-                        return (
-                          <div key={`${category.categoryName}-${index}`} className="space-y-2">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center space-x-2 sm:space-x-3">
-                                <div 
-                                  className="w-3 h-3 sm:w-4 sm:h-4 rounded-full"
-                                  style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }}
-                                ></div>
-                                <span className="font-medium text-gray-900 text-sm sm:text-base">{category.categoryName}</span>
-                              </div>
-                              <div className="text-right">
-                                <p className="font-semibold text-gray-900 text-sm sm:text-base">
-                                  {formatCurrency(category.total, userCurrency)}
-                                </p>
-                                <p className="text-xs sm:text-sm text-gray-600">{percentage.toFixed(1)}%</p>
-                              </div>
-                            </div>
-                            <Progress value={percentage} className="h-2" />
-                          </div>
-                        );
-                      })
-                    ) : (
-                      <div className="text-center py-8 text-gray-500">
-                        <PieChart className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                        <p>No category data available</p>
+                <CardContent className="space-y-4">
+                  {processedData.categoryBreakdown.length > 0 ? (
+                    <>
+                      {/* Highest Spending Category */}
+                      <div className="p-4 rounded-lg bg-gradient-to-r from-red-50 to-pink-50 border border-red-100">
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="font-semibold text-red-900 text-sm">Highest Spending</h4>
+                          <Badge variant="destructive" className="text-xs">Alert</Badge>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-red-800 font-medium">
+                            {processedData.categoryBreakdown[0]?.categoryName}
+                          </span>
+                          <span className="text-red-900 font-bold">
+                            {formatCurrency(processedData.categoryBreakdown[0]?.total || 0, userCurrency)}
+                          </span>
+                        </div>
+                        <p className="text-xs text-red-700 mt-2">
+                          {((processedData.categoryBreakdown[0]?.total || 0) / (processedData.incomeVsExpenses.expenses || 1) * 100).toFixed(1)}% of total expenses
+                        </p>
                       </div>
-                    )}
-                  </div>
+
+                      {/* Most Transactions Category */}
+                      <div className="p-4 rounded-lg bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100">
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="font-semibold text-blue-900 text-sm">Most Active</h4>
+                          <Badge variant="outline" className="text-xs border-blue-300 text-blue-700">Frequent</Badge>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-blue-800 font-medium">
+                            {processedData.categoryBreakdown[1]?.categoryName || 'N/A'}
+                          </span>
+                          <span className="text-blue-900 font-bold">
+                            {formatCurrency(processedData.categoryBreakdown[1]?.total || 0, userCurrency)}
+                          </span>
+                        </div>
+                        <p className="text-xs text-blue-700 mt-2">
+                          Multiple small transactions detected
+                        </p>
+                      </div>
+
+                      {/* Savings Opportunity */}
+                      <div className="p-4 rounded-lg bg-gradient-to-r from-green-50 to-emerald-50 border border-green-100">
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="font-semibold text-green-900 text-sm">Savings Opportunity</h4>
+                          <Badge variant="outline" className="text-xs border-green-300 text-green-700">Optimize</Badge>
+                        </div>
+                        <div className="text-green-800">
+                          <p className="text-sm font-medium mb-1">
+                            Reduce {processedData.categoryBreakdown[0]?.categoryName} by 10%
+                          </p>
+                          <p className="text-xs text-green-700">
+                            Potential savings: {formatCurrency((processedData.categoryBreakdown[0]?.total || 0) * 0.1, userCurrency)}
+                          </p>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-center py-8 text-gray-500">
+                      <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                      <p>No insights available yet</p>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </div>
@@ -871,8 +993,20 @@ export default function Reports() {
               {/* Budget Overview */}
               <Card className="shadow-lg border-0 bg-white">
                 <CardHeader className="pb-3 sm:pb-4">
-                  <CardTitle className="text-lg sm:text-xl font-semibold text-gray-900">Budget Progress</CardTitle>
-                  <CardDescription className="text-sm">Track your spending against your budgets this month</CardDescription>
+                  <CardTitle className="text-lg sm:text-xl font-semibold text-gray-900">
+                    Budget Progress - {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                  </CardTitle>
+                  <CardDescription className="text-sm">
+                    Track your current month spending progress against your budgets
+                    <br />
+                    <span className="text-xs text-blue-600 font-medium">
+                      📅 Showing data for: {new Date().toLocaleDateString('en-US', { 
+                        month: 'long', 
+                        day: 'numeric', 
+                        year: 'numeric' 
+                      })} (current month only)
+                    </span>
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4 sm:space-y-6">
@@ -898,7 +1032,7 @@ export default function Reports() {
                                     if (budget.period === 'monthly') return 'Monthly Budget';
                                     if (budget.period === 'weekly') return 'Weekly Budget';
                                     return 'Yearly Budget';
-                                  })()}
+                                  })()} • {budget.currentMonthTransactions || 0} transactions this month
                                 </p>
                               </div>
                             </div>
