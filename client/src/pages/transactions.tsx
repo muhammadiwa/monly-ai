@@ -9,8 +9,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Trash2, Edit, Search, Filter, Plus, DollarSign } from "lucide-react";
+import { Trash2, Edit, Search, Filter, Plus, DollarSign, Calendar, ChevronLeft, ChevronRight, Download } from "lucide-react";
+import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip, Legend } from "recharts";
 import AddTransactionModal from "@/components/modals/add-transaction-modal";
 
 export default function Transactions() {
@@ -22,6 +24,18 @@ export default function Transactions() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [transactionToDelete, setTransactionToDelete] = useState<any>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  
+  // Filter states
+  const [selectedCategory, setSelectedCategory] = useState<string>("all");
+  const [selectedType, setSelectedType] = useState<string>("all");
+  const [dateRange, setDateRange] = useState({
+    start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
+    end: new Date().toISOString().split('T')[0]
+  });
+  
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 5;
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -62,6 +76,107 @@ export default function Transactions() {
     retry: false,
     enabled: isAuthenticated,
   });
+
+  const { data: categories } = useQuery({
+    queryKey: ["/api/categories"],
+    retry: false,
+    enabled: isAuthenticated,
+  });
+
+  const { data: userPreferences } = useQuery({
+    queryKey: ["/api/user/preferences"],
+    retry: false,
+    enabled: isAuthenticated,
+  });
+
+  // Helper function to get currency symbol
+  const getCurrencySymbol = (currency: string) => {
+    const symbols: Record<string, string> = {
+      'USD': '$',
+      'EUR': '€',
+      'GBP': '£',
+      'JPY': '¥',
+      'IDR': 'Rp',
+      'CNY': '¥',
+      'KRW': '₩',
+      'SGD': 'S$',
+      'MYR': 'RM',
+      'THB': '฿',
+      'VND': '₫'
+    };
+    return symbols[currency] || currency;
+  };
+
+  // Get user's preferred currency
+  const userCurrency = userPreferences?.defaultCurrency || 'USD';
+  const userCurrencySymbol = getCurrencySymbol(userCurrency);
+
+  // Helper function to format amount with currency
+  const formatAmount = (amount: number, currency?: string) => {
+    const currencyToUse = currency || userCurrency;
+    const symbol = getCurrencySymbol(currencyToUse);
+    
+    if (currencyToUse === 'IDR') {
+      return `${symbol}${amount.toLocaleString('id-ID')}`;
+    }
+    return `${symbol}${amount.toLocaleString('en-US')}`;
+  };
+
+  // Filter and process transactions
+  const filteredTransactions = (transactions as any[])?.filter((transaction: any) => {
+    const matchesSearch = transaction.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         transaction.category?.name?.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    const matchesCategory = selectedCategory === "all" || transaction.category?.name === selectedCategory;
+    const matchesType = selectedType === "all" || transaction.type === selectedType;
+    
+    const transactionDate = new Date(transaction.date);
+    const startDate = new Date(dateRange.start);
+    const endDate = new Date(dateRange.end);
+    endDate.setHours(23, 59, 59, 999); // Include the entire end date
+    
+    const matchesDate = transactionDate >= startDate && transactionDate <= endDate;
+    
+    return matchesSearch && matchesCategory && matchesType && matchesDate;
+  }) || [];
+
+  // Pagination
+  const totalPages = Math.ceil(filteredTransactions.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const paginatedTransactions = filteredTransactions.slice(startIndex, startIndex + itemsPerPage);
+
+  // Chart data preparation
+  const chartData = filteredTransactions.reduce((acc: any[], transaction: any) => {
+    const date = new Date(transaction.date).toLocaleDateString('en-US', { 
+      month: 'short', 
+      day: 'numeric' 
+    });
+    
+    const existingEntry = acc.find(entry => entry.date === date);
+    if (existingEntry) {
+      if (transaction.type === 'income') {
+        existingEntry.income += transaction.amount;
+      } else {
+        existingEntry.expense += transaction.amount;
+      }
+    } else {
+      acc.push({
+        date,
+        income: transaction.type === 'income' ? transaction.amount : 0,
+        expense: transaction.type === 'expense' ? transaction.amount : 0,
+      });
+    }
+    return acc;
+  }, []).slice(-7); // Show last 7 days
+
+  // Calculate totals for current filtered data
+  const totalIncome = filteredTransactions
+    .filter(t => t.type === 'income')
+    .reduce((sum, t) => sum + t.amount, 0);
+  
+  const totalExpense = filteredTransactions
+    .filter(t => t.type === 'expense')
+    .reduce((sum, t) => sum + t.amount, 0);
 
   const deleteTransactionMutation = useMutation({
     mutationFn: async (id: number) => {
@@ -105,10 +220,21 @@ export default function Transactions() {
     }
   };
 
-  const filteredTransactions = (transactions as any[])?.filter((transaction: any) =>
-    transaction.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    transaction.category?.name?.toLowerCase().includes(searchTerm.toLowerCase())
-  ) || [];
+  // Reset pagination when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedCategory, selectedType, dateRange]);
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+  };
+
+  const getUniqueCategories = () => {
+    const uniqueCategories = Array.from(
+      new Set((transactions as any[])?.map(t => t.category?.name).filter(Boolean))
+    );
+    return uniqueCategories;
+  };
 
   if (isLoading || transactionsLoading) {
     return (
@@ -122,207 +248,441 @@ export default function Transactions() {
   }
 
   return (
-    <div className="px-4 py-6 sm:px-6 lg:px-8">
-      {/* Header */}
-      <div className="mb-8">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Transactions</h1>
-            <p className="mt-1 text-sm text-gray-500">Manage your financial transactions</p>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100">
+      <div className="w-full px-4 py-6 sm:px-6 lg:px-8">
+        {/* Modern Header */}
+        <div className="mb-6">
+          <div className="bg-white/70 backdrop-blur-xl rounded-2xl sm:rounded-3xl p-4 sm:p-6 lg:p-8 shadow-xl border border-white/20">
+            <div className="flex flex-col space-y-4 lg:flex-row lg:items-center lg:justify-between lg:space-y-0 mb-6">
+              <div className="space-y-2">
+                <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold bg-gradient-to-r from-slate-900 via-blue-900 to-indigo-900 bg-clip-text text-transparent">
+                  💰 Transaction Data
+                </h1>
+                <p className="text-slate-600 text-sm sm:text-base lg:text-lg">Manage all your income and expense transactions</p>
+              </div>
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                <Button variant="outline" className="flex items-center justify-center gap-2 bg-white/50 backdrop-blur border-white/30 rounded-xl sm:rounded-2xl hover:bg-white/80 px-4 sm:px-6 py-2 sm:py-3">
+                  <Download className="w-4 h-4" />
+                  <span className="hidden sm:inline">Export</span>
+                </Button>
+                <Button 
+                  className="bg-gradient-to-r from-emerald-500 to-blue-600 hover:from-emerald-600 hover:to-blue-700 text-white px-4 sm:px-8 py-2 sm:py-3 rounded-xl sm:rounded-2xl shadow-lg transform hover:scale-105 transition-all duration-200"
+                  onClick={() => setShowAddTransaction(true)}
+                >
+                  <Plus className="w-4 sm:w-5 h-4 sm:h-5 mr-2" />
+                  <span className="hidden sm:inline">Add Transaction</span>
+                  <span className="sm:hidden">Add</span>
+                </Button>
+              </div>
+            </div>
+
+            {/* Filters Section */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
+              {/* Search */}
+              <div className="relative sm:col-span-2 xl:col-span-2">
+                <Search className="absolute left-3 sm:left-4 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 sm:w-5 h-4 sm:h-5" />
+                <Input
+                  placeholder="Search transactions..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10 sm:pl-12 pr-4 py-2 sm:py-3 bg-white/50 backdrop-blur border-white/30 rounded-xl sm:rounded-2xl focus:bg-white/80 focus:border-blue-300 focus:ring-blue-200 text-slate-700 placeholder:text-slate-400"
+                />
+              </div>
+
+              {/* Category Filter */}
+              <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                <SelectTrigger className="bg-white/50 backdrop-blur border-white/30 rounded-xl sm:rounded-2xl focus:bg-white/80 focus:border-blue-300 py-2 sm:py-3">
+                  <SelectValue placeholder="Category" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Categories</SelectItem>
+                  {getUniqueCategories().map((category) => (
+                    <SelectItem key={category} value={category}>
+                      {category}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              {/* Type Filter */}
+              <Select value={selectedType} onValueChange={setSelectedType}>
+                <SelectTrigger className="bg-white/50 backdrop-blur border-white/30 rounded-xl sm:rounded-2xl focus:bg-white/80 focus:border-blue-300 py-2 sm:py-3">
+                  <SelectValue placeholder="Type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Types</SelectItem>
+                  <SelectItem value="income">Income</SelectItem>
+                  <SelectItem value="expense">Expense</SelectItem>
+                </SelectContent>
+              </Select>
+
+              {/* Date Range */}
+              <div className="sm:col-span-2 xl:col-span-1 space-y-2 xl:space-y-0 xl:flex xl:items-center xl:gap-2">
+                <Input
+                  type="date"
+                  value={dateRange.start}
+                  onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
+                  className="bg-white/50 backdrop-blur border-white/30 rounded-xl sm:rounded-2xl focus:bg-white/80 focus:border-blue-300 text-slate-700 py-2 sm:py-3"
+                />
+                <span className="hidden xl:inline text-slate-500 text-sm">to</span>
+                <Input
+                  type="date"
+                  value={dateRange.end}
+                  onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
+                  className="bg-white/50 backdrop-blur border-white/30 rounded-xl sm:rounded-2xl focus:bg-white/80 focus:border-blue-300 text-slate-700 py-2 sm:py-3"
+                />
+              </div>
+            </div>
+
+            {/* Summary Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mt-6 sm:mt-8">
+              <Card className="bg-gradient-to-br from-emerald-50 to-green-100 border-emerald-200">
+                <CardContent className="p-4 sm:p-6">
+                  <div className="flex items-center justify-between">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-emerald-600 text-xs sm:text-sm font-medium">Income</p>
+                      <p className="text-lg sm:text-2xl font-bold text-emerald-700 truncate">
+                        {formatAmount(totalIncome)}
+                      </p>
+                    </div>
+                    <div className="w-10 sm:w-12 h-10 sm:h-12 bg-emerald-500 rounded-full flex items-center justify-center flex-shrink-0 ml-3">
+                      <span className="text-white text-lg sm:text-xl">💹</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-gradient-to-br from-red-50 to-pink-100 border-red-200">
+                <CardContent className="p-4 sm:p-6">
+                  <div className="flex items-center justify-between">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-red-600 text-xs sm:text-sm font-medium">Expenses</p>
+                      <p className="text-lg sm:text-2xl font-bold text-red-700 truncate">
+                        {formatAmount(totalExpense)}
+                      </p>
+                    </div>
+                    <div className="w-10 sm:w-12 h-10 sm:h-12 bg-red-500 rounded-full flex items-center justify-center flex-shrink-0 ml-3">
+                      <span className="text-white text-lg sm:text-xl">💸</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="bg-gradient-to-br from-blue-50 to-indigo-100 border-blue-200 sm:col-span-2 lg:col-span-1">
+                <CardContent className="p-4 sm:p-6">
+                  <div className="flex items-center justify-between">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-blue-600 text-xs sm:text-sm font-medium">Balance</p>
+                      <p className={`text-lg sm:text-2xl font-bold truncate ${totalIncome - totalExpense >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                        {formatAmount(totalIncome - totalExpense)}
+                      </p>
+                    </div>
+                    <div className="w-10 sm:w-12 h-10 sm:h-12 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0 ml-3">
+                      <span className="text-white text-lg sm:text-xl">💰</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
           </div>
-          <Button 
-            className="bg-primary hover:bg-primary/90"
-            onClick={() => setShowAddTransaction(true)}
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Add Transaction
-          </Button>
         </div>
 
-        {/* Search and Filter */}
-        <div className="flex flex-col sm:flex-row gap-4">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-            <Input
-              placeholder="Search transactions..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
-            />
-          </div>
-          <Button variant="outline" className="flex items-center gap-2">
-            <Filter className="w-4 h-4" />
-            Filter
-          </Button>
-        </div>
-      </div>
-
-      {/* Transactions List */}
-      <Card>
-            <CardHeader>
-              <CardTitle>All Transactions</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {filteredTransactions.length === 0 ? (
-                <div className="text-center py-12">
-                  <p className="text-gray-500 mb-4">No transactions found</p>
-                  <Button onClick={() => setShowAddTransaction(true)}>
-                    Add your first transaction
-                  </Button>
+        {/* Chart and Transaction Details */}
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 sm:gap-8">
+          {/* Chart Section */}
+          <div className="xl:col-span-2">
+            <Card className="bg-white/70 backdrop-blur-xl shadow-xl border-white/20">
+              <CardHeader className="p-4 sm:p-6">
+                <CardTitle className="text-lg sm:text-xl font-semibold text-slate-900">Transaction Chart</CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 sm:p-6 pt-0">
+                <div className="h-60 sm:h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={chartData}>
+                      <XAxis 
+                        dataKey="date" 
+                        fontSize={12}
+                        tick={{ fontSize: 12 }}
+                      />
+                      <YAxis 
+                        fontSize={12}
+                        tick={{ fontSize: 12 }}
+                        tickFormatter={(value) => formatAmount(value).replace(/\d+/, (match) => 
+                          parseInt(match) > 1000 ? `${Math.round(parseInt(match) / 1000)}K` : match
+                        )}
+                      />
+                      <Tooltip 
+                        formatter={(value: any, name: string) => [
+                          formatAmount(value), 
+                          name === 'income' ? 'Income' : 'Expense'
+                        ]}
+                        contentStyle={{
+                          backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                          border: 'none',
+                          borderRadius: '12px',
+                          boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)'
+                        }}
+                      />
+                      <Legend />
+                      <Bar dataKey="income" fill="#10B981" name="income" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="expense" fill="#EF4444" name="expense" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
                 </div>
-              ) : (
-                <div className="space-y-4">
-                  {filteredTransactions.map((transaction: any) => (
-                    <div
-                      key={transaction.id}
-                      className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors"
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Transactions List */}
+          <div>
+            <Card className="bg-white/70 backdrop-blur-xl shadow-xl border-white/20">
+              <CardHeader className="p-4 sm:p-6">
+                <CardTitle className="text-lg sm:text-xl font-semibold text-slate-900">Transactions</CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 sm:p-6 pt-0">
+                {paginatedTransactions.length === 0 ? (
+                  <div className="text-center py-8 sm:py-12">
+                    <DollarSign className="w-10 sm:w-12 h-10 sm:h-12 text-slate-400 mx-auto mb-4" />
+                    <p className="text-slate-500 mb-4 text-sm sm:text-base">No transactions found</p>
+                    <Button 
+                      onClick={() => setShowAddTransaction(true)}
+                      className="bg-gradient-to-r from-emerald-500 to-blue-600 hover:from-emerald-600 hover:to-blue-700 text-white px-4 sm:px-6 py-2 rounded-xl"
                     >
-                      <div className="flex items-center space-x-4">
-                        <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center">
-                          <span className="text-xl">
-                            {transaction.category?.icon || '💰'}
-                          </span>
-                        </div>
-                        <div>
-                          <p className="font-medium text-gray-900">{transaction.description}</p>
-                          <div className="flex items-center space-x-2 mt-1">
-                            <Badge variant="outline" className={`${
-                              transaction.type === 'income' 
-                                ? 'border-green-200 bg-green-50 text-green-700' 
-                                : 'border-red-200 bg-red-50 text-red-700'
-                            }`}>
-                              {transaction.category?.name || 'Uncategorized'}
-                            </Badge>
-                            <span className="text-xs text-gray-500">
-                              {new Date(transaction.date).toLocaleDateString('en-US', {
-                                month: 'short',
-                                day: 'numeric',
-                                year: 'numeric'
-                              })}
+                      Add Transaction
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-3 sm:space-y-4">
+                    {paginatedTransactions.map((transaction: any) => (
+                      <div
+                        key={transaction.id}
+                        className="flex items-center justify-between p-3 sm:p-4 border border-slate-200 rounded-xl hover:bg-slate-50/50 transition-colors"
+                      >
+                        <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+                          <div className={`w-8 sm:w-10 h-8 sm:h-10 rounded-lg flex items-center justify-center text-sm sm:text-lg flex-shrink-0 ${
+                            transaction.type === 'income' 
+                              ? 'bg-emerald-100' 
+                              : 'bg-red-100'
+                          }`}>
+                            <span>
+                              {transaction.category?.icon || (transaction.type === 'income' ? '💰' : '💸')}
                             </span>
-                            {transaction.aiGenerated && (
-                              <Badge variant="secondary" className="text-xs bg-purple-100 text-purple-700">
-                                🤖 AI
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-slate-900 truncate text-sm sm:text-base">
+                              {transaction.description}
+                            </p>
+                            <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
+                              <Badge 
+                                variant="outline" 
+                                className={`border-0 text-xs px-2 py-0.5 ${
+                                  transaction.type === 'income' 
+                                    ? 'bg-emerald-100 text-emerald-700' 
+                                    : 'bg-red-100 text-red-700'
+                                }`}
+                              >
+                                {transaction.category?.name || 'Uncategorized'}
                               </Badge>
-                            )}
+                              <span className="hidden sm:inline">
+                                {new Date(transaction.date).toLocaleDateString('en-US', {
+                                  month: 'short',
+                                  day: 'numeric'
+                                })}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="text-right flex-shrink-0 ml-2">
+                          <p className={`font-semibold text-sm sm:text-base ${
+                            transaction.type === 'income' ? 'text-emerald-600' : 'text-red-600'
+                          }`}>
+                            {transaction.type === 'income' ? '+' : '-'}{formatAmount(transaction.amount, transaction.currency)}
+                          </p>
+                          <div className="flex items-center gap-1 mt-1 justify-end">
+                            <Button 
+                              variant="ghost" 
+                              size="sm"
+                              onClick={() => handleEdit(transaction)}
+                              className="h-6 w-6 p-0 hover:bg-blue-100 hover:text-blue-600"
+                            >
+                              <Edit className="w-3 h-3" />
+                            </Button>
+                            <Button 
+                              variant="ghost" 
+                              size="sm"
+                              onClick={() => handleDelete(transaction)}
+                              className="h-6 w-6 p-0 hover:bg-red-100 hover:text-red-600"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </Button>
                           </div>
                         </div>
                       </div>
-                      <div className="flex items-center space-x-4">
-                        <p className={`font-semibold ${
-                          transaction.type === 'income' ? 'text-green-600' : 'text-red-600'
-                        }`}>
-                          {transaction.type === 'income' ? '+' : '-'}${transaction.amount}
+                    ))}
+
+                    {/* Pagination */}
+                    {totalPages > 1 && (
+                      <div className="flex flex-col sm:flex-row items-center justify-between pt-4 border-t border-slate-200 gap-3">
+                        <p className="text-xs sm:text-sm text-slate-600 order-2 sm:order-1">
+                          Showing {startIndex + 1}-{Math.min(startIndex + itemsPerPage, filteredTransactions.length)} of {filteredTransactions.length}
                         </p>
-                        <div className="flex items-center space-x-2">
-                          <Button 
-                            variant="ghost" 
+                        <div className="flex items-center gap-1 sm:gap-2 order-1 sm:order-2">
+                          <Button
+                            variant="outline"
                             size="sm"
-                            onClick={() => handleEdit(transaction)}
-                            className="hover:bg-blue-50 hover:text-blue-600"
+                            onClick={() => handlePageChange(currentPage - 1)}
+                            disabled={currentPage === 1}
+                            className="h-7 sm:h-8 w-7 sm:w-8 p-0"
                           >
-                            <Edit className="w-4 h-4" />
+                            <ChevronLeft className="w-3 sm:w-4 h-3 sm:h-4" />
                           </Button>
-                          <Button 
-                            variant="ghost" 
+                          
+                          {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                            let page;
+                            if (totalPages <= 5) {
+                              page = i + 1;
+                            } else if (currentPage <= 3) {
+                              page = i + 1;
+                            } else if (currentPage >= totalPages - 2) {
+                              page = totalPages - 4 + i;
+                            } else {
+                              page = currentPage - 2 + i;
+                            }
+                            
+                            return (
+                              <Button
+                                key={page}
+                                variant={currentPage === page ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => handlePageChange(page)}
+                                className="h-7 sm:h-8 w-7 sm:w-8 p-0 text-xs"
+                              >
+                                {page}
+                              </Button>
+                            );
+                          })}
+                          
+                          <Button
+                            variant="outline"
                             size="sm"
-                            onClick={() => handleDelete(transaction)}
-                            className="hover:bg-red-50 hover:text-red-600"
+                            onClick={() => handlePageChange(currentPage + 1)}
+                            disabled={currentPage === totalPages}
+                            className="h-7 sm:h-8 w-7 sm:w-8 p-0"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <ChevronRight className="w-3 sm:w-4 h-3 sm:h-4" />
                           </Button>
                         </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-      
-      {/* Modals */}
-      <AddTransactionModal 
-        isOpen={showAddTransaction} 
-        onClose={() => setShowAddTransaction(false)} 
-      />
-      
-      <AddTransactionModal 
-        isOpen={showEditTransaction} 
-        onClose={() => {
-          setShowEditTransaction(false);
-          setEditingTransaction(null);
-        }}
-        editingTransaction={editingTransaction}
-        isEditing={true}
-      />
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+        
+        {/* Modals */}
+        <AddTransactionModal 
+          isOpen={showAddTransaction} 
+          onClose={() => setShowAddTransaction(false)} 
+        />
+        
+        <AddTransactionModal 
+          isOpen={showEditTransaction} 
+          onClose={() => {
+            setShowEditTransaction(false);
+            setEditingTransaction(null);
+          }}
+          editingTransaction={editingTransaction}
+          isEditing={true}
+        />
 
-      {/* Delete Confirmation Dialog */}
-      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <AlertDialogContent className="sm:max-w-md">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2">
-              <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center">
-                <Trash2 className="h-6 w-6 text-red-600" />
+        {/* Modern Delete Confirmation Dialog */}
+        <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+          <AlertDialogContent className="sm:max-w-lg bg-white/95 backdrop-blur-xl border-white/20 rounded-3xl">
+            <AlertDialogHeader className="text-center pb-6">
+              <div className="mx-auto w-20 h-20 bg-gradient-to-br from-red-400 to-pink-500 rounded-full flex items-center justify-center mb-4 shadow-lg">
+                <Trash2 className="h-10 w-10 text-white" />
               </div>
-              <div>
-                <div className="text-lg font-semibold text-gray-900">Delete Transaction</div>
-                <div className="text-sm text-gray-500">This action cannot be undone</div>
-              </div>
-            </AlertDialogTitle>
-            <AlertDialogDescription className="space-y-3">
+              <AlertDialogTitle className="text-2xl font-bold text-slate-900">
+                Delete Transaction
+              </AlertDialogTitle>
+              <AlertDialogDescription className="text-slate-600 text-lg">
+                This action cannot be undone
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            
+            <div className="space-y-6">
               {transactionToDelete && (
-                <div className="bg-gray-50 rounded-lg p-4 border">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                      <span className="text-lg">{transactionToDelete.category?.icon || '💰'}</span>
+                <div className="bg-gradient-to-r from-slate-50 to-slate-100 rounded-2xl p-6 border border-slate-200">
+                  <div className="flex items-center gap-4">
+                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-xl shadow-md ${
+                      transactionToDelete.type === 'income' 
+                        ? 'bg-gradient-to-br from-emerald-400 to-green-500' 
+                        : 'bg-gradient-to-br from-red-400 to-pink-500'
+                    }`}>
+                      <span className="text-white">
+                        {transactionToDelete.category?.icon || (transactionToDelete.type === 'income' ? '💰' : '💸')}
+                      </span>
                     </div>
                     <div className="flex-1">
-                      <div className="font-medium text-gray-900">{transactionToDelete.description}</div>
-                      <div className="text-sm text-gray-500">
-                        {transactionToDelete.category?.name || 'Uncategorized'} • {' '}
-                        {new Date(transactionToDelete.date).toLocaleDateString()}
+                      <div className="font-semibold text-slate-900 text-lg mb-1">
+                        {transactionToDelete.description}
+                      </div>
+                      <div className="flex items-center gap-3 text-sm text-slate-600">
+                        <Badge className={`border-0 ${
+                          transactionToDelete.type === 'income' 
+                            ? 'bg-emerald-100 text-emerald-700' 
+                            : 'bg-red-100 text-red-700'
+                        }`}>
+                          {transactionToDelete.category?.name || 'Uncategorized'}
+                        </Badge>
+                        <span>📅 {new Date(transactionToDelete.date).toLocaleDateString('en-US')}</span>
                       </div>
                     </div>
-                    <div className={`font-semibold ${
-                      transactionToDelete.type === 'income' ? 'text-green-600' : 'text-red-600'
+                    <div className={`text-right font-bold text-lg ${
+                      transactionToDelete.type === 'income' ? 'text-emerald-600' : 'text-red-600'
                     }`}>
-                      {transactionToDelete.type === 'income' ? '+' : '-'}${transactionToDelete.amount}
+                      {transactionToDelete.type === 'income' ? '+' : '-'}${transactionToDelete.amount.toLocaleString('en-US')}
                     </div>
                   </div>
                 </div>
               )}
-              <p className="text-gray-600">
-                Are you sure you want to delete this transaction? This action will permanently remove the transaction from your records.
-              </p>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="flex gap-2 sm:gap-0">
-            <AlertDialogCancel 
-              className="hover:bg-gray-100"
-              onClick={() => {
-                setIsDeleteDialogOpen(false);
-                setTransactionToDelete(null);
-              }}
-            >
-              Cancel
-            </AlertDialogCancel>
-            <AlertDialogAction 
-              onClick={confirmDelete}
-              className="bg-red-600 hover:bg-red-700 text-white"
-              disabled={deleteTransactionMutation.isPending}
-            >
-              {deleteTransactionMutation.isPending ? (
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  Deleting...
-                </div>
-              ) : (
-                "Delete Transaction"
-              )}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
+                <p className="text-amber-800 text-center font-medium">
+                  ⚠️ This transaction will be permanently deleted from your financial records
+                </p>
+              </div>
+            </div>
+
+            <AlertDialogFooter className="flex gap-3 pt-6">
+              <AlertDialogCancel 
+                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 border-0 rounded-2xl py-3 font-medium"
+                onClick={() => {
+                  setIsDeleteDialogOpen(false);
+                  setTransactionToDelete(null);
+                }}
+              >
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction 
+                onClick={confirmDelete}
+                className="flex-1 bg-gradient-to-r from-red-500 to-pink-600 hover:from-red-600 hover:to-pink-700 text-white border-0 rounded-2xl py-3 font-medium shadow-lg"
+                disabled={deleteTransactionMutation.isPending}
+              >
+                {deleteTransactionMutation.isPending ? (
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    Deleting...
+                  </div>
+                ) : (
+                  "🗑️ Delete Transaction"
+                )}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
     </div>
   );
 }
