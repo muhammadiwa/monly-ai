@@ -32,6 +32,18 @@ export const users = sqliteTable("users", {
   updatedAt: integer("updated_at"), // Unix timestamp
 });
 
+// User preferences table
+export const userPreferences = sqliteTable("user_preferences", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: text("user_id").references(() => users.id).notNull().unique(),
+  defaultCurrency: text("default_currency").notNull().default("USD"),
+  timezone: text("timezone").notNull().default("UTC"),
+  language: text("language").notNull().default("en"), // 'en' or 'id'
+  autoCategorize: integer("auto_categorize", { mode: 'boolean' }).default(true),
+  createdAt: integer("created_at"), // Unix timestamp
+  updatedAt: integer("updated_at"), // Unix timestamp
+});
+
 // Categories table
 export const categories = sqliteTable("categories", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -76,10 +88,18 @@ export const budgets = sqliteTable("budgets", {
 });
 
 // Relations
-export const usersRelations = relations(users, ({ many }) => ({
+export const usersRelations = relations(users, ({ many, one }) => ({
   transactions: many(transactions),
   budgets: many(budgets),
   categories: many(categories),
+  preferences: one(userPreferences),
+}));
+
+export const userPreferencesRelations = relations(userPreferences, ({ one }) => ({
+  user: one(users, {
+    fields: [userPreferences.userId],
+    references: [users.id],
+  }),
 }));
 
 export const categoriesRelations = relations(categories, ({ one, many }) => ({
@@ -131,6 +151,16 @@ export const insertBudgetSchema = createInsertSchema(budgets).omit({
   updatedAt: true,
 });
 
+export const insertUserPreferencesSchema = createInsertSchema(userPreferences).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updateUserPreferencesSchema = insertUserPreferencesSchema.omit({
+  userId: true,
+});
+
 // Types
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -142,3 +172,6 @@ export type TransactionWithCategory = Transaction & { category: Category | null 
 export type InsertBudget = z.infer<typeof insertBudgetSchema>;
 export type Budget = typeof budgets.$inferSelect;
 export type BudgetWithCategory = Budget & { category: Category | null };
+export type InsertUserPreferences = z.infer<typeof insertUserPreferencesSchema>;
+export type UpdateUserPreferences = z.infer<typeof updateUserPreferencesSchema>;
+export type UserPreferences = typeof userPreferences.$inferSelect;

@@ -2,7 +2,7 @@ import type { Express, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { analyzeTransactionText, processReceiptImage } from "./openai";
-import { insertTransactionSchema, insertBudgetSchema, insertCategorySchema } from "@shared/schema";
+import { insertTransactionSchema, insertBudgetSchema, insertCategorySchema, updateUserPreferencesSchema } from "@shared/schema";
 import { requireAuth, hashPassword, verifyPassword, generateToken, type AuthRequest } from "./auth";
 import multer from "multer";
 import { z } from "zod";
@@ -152,11 +152,94 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (categories.length === 0) {
         await storage.initializeDefaultCategories(req.user.id);
       }
+
+      // Check if user has preferences, if not create defaults
+      let preferences = await storage.getUserPreferences(req.user.id);
+      if (!preferences) {
+        preferences = await storage.initializeDefaultUserPreferences(req.user.id);
+      }
       
       res.json(user);
     } catch (error) {
       console.error("Error fetching user:", error);
       res.status(500).json({ message: "Failed to fetch user" });
+    }
+  });
+
+  // User profile update
+  app.put('/api/user/profile', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
+      
+      const { firstName, lastName, email } = req.body;
+      
+      console.log('Update profile request:', { firstName, lastName, email, userId: req.user.id });
+      
+      // Validate input
+      if (!firstName || !lastName || !email) {
+        return res.status(400).json({ message: "First name, last name, and email are required" });
+      }
+      
+      // Check if email is already taken by another user
+      const existingUser = await storage.getUserByEmail(email);
+      if (existingUser && existingUser.id !== req.user.id) {
+        return res.status(400).json({ message: "Email already taken" });
+      }
+      
+      // Update user profile with explicit field mapping
+      const updateData = {
+        firstName: firstName.toString(),
+        lastName: lastName.toString(),
+        email: email.toString()
+      };
+      
+      console.log('Updating user with data:', updateData);
+      
+      const updatedUser = await storage.updateUser(req.user.id, updateData);
+      
+      console.log('Profile updated successfully:', updatedUser);
+      res.json(updatedUser);
+    } catch (error) {
+      console.error('Error updating profile:', error);
+      res.status(500).json({ message: "Failed to update profile" });
+    }
+  });
+
+  // User preferences routes
+  app.get('/api/user/preferences', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
+      
+      let preferences = await storage.getUserPreferences(req.user.id);
+      if (!preferences) {
+        // Create default preferences if none exist
+        preferences = await storage.initializeDefaultUserPreferences(req.user.id);
+      }
+      
+      res.json(preferences);
+    } catch (error) {
+      console.error("Error fetching user preferences:", error);
+      res.status(500).json({ message: "Failed to fetch user preferences" });
+    }
+  });
+
+  app.put('/api/user/preferences', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
+      
+      const preferencesData = updateUserPreferencesSchema.parse(req.body);
+      
+      // Check if preferences exist, if not create them first
+      let preferences = await storage.getUserPreferences(req.user.id);
+      if (!preferences) {
+        preferences = await storage.initializeDefaultUserPreferences(req.user.id);
+      }
+      
+      const updatedPreferences = await storage.updateUserPreferences(req.user.id, preferencesData);
+      res.json(updatedPreferences);
+    } catch (error) {
+      console.error("Error updating user preferences:", error);
+      res.status(500).json({ message: "Failed to update user preferences" });
     }
   });
 

@@ -1,0 +1,6 @@
+[
+  {
+    "type": "sqlite",
+    "path": "d:\\Project\\MoneyIntelligence\\database.db"
+  }
+]
