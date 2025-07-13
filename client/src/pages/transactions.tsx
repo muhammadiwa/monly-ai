@@ -11,9 +11,11 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Trash2, Edit, Search, Filter, Plus, DollarSign, Calendar, ChevronLeft, ChevronRight, Download } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Trash2, Edit, Search, Plus, DollarSign, ChevronLeft, ChevronRight, Download, FileText, FileSpreadsheet, ChevronDown } from "lucide-react";
 import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip, Legend } from "recharts";
 import AddTransactionModal from "@/components/modals/add-transaction-modal";
+import { exportToPDF, exportToExcel } from "@/lib/exportUtils";
 
 export default function Transactions() {
   const { toast } = useToast();
@@ -28,9 +30,15 @@ export default function Transactions() {
   // Filter states
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [selectedType, setSelectedType] = useState<string>("all");
-  const [dateRange, setDateRange] = useState({
-    start: new Date(new Date().getFullYear() - 1, 0, 1).toISOString().split('T')[0], // Last year from January
-    end: new Date(new Date().getFullYear() + 1, 11, 31).toISOString().split('T')[0] // Next year until December
+  const [dateRange, setDateRange] = useState(() => {
+    const now = new Date();
+    const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    
+    return {
+      start: firstDayOfMonth.toISOString().split('T')[0], // Tanggal 1 bulan ini
+      end: lastDayOfMonth.toISOString().split('T')[0]     // Tanggal akhir bulan ini
+    };
   });
   
   // Pagination states
@@ -61,13 +69,18 @@ export default function Transactions() {
 
     const finalDescription = transactionName ? `"${transactionName}" ${description}` : description;
     
+    const getClassName = () => {
+      if (type === 'success') return 'border-green-200 bg-green-50';
+      if (type === 'warning') return 'border-yellow-200 bg-yellow-50';
+      return '';
+    };
+    
     toast({
       title,
       description: finalDescription,
       variant: variants[type],
       duration: type === 'error' ? 5000 : 3000,
-      className: type === 'success' ? 'border-green-200 bg-green-50' : 
-                 type === 'warning' ? 'border-yellow-200 bg-yellow-50' : '',
+      className: getClassName(),
     });
   };
 
@@ -76,13 +89,6 @@ export default function Transactions() {
     retry: false,
     enabled: isAuthenticated,
     staleTime: 0, // Always fetch fresh data
-    cacheTime: 0, // Don't cache old data
-  });
-
-  const { data: categories } = useQuery({
-    queryKey: ["/api/categories"],
-    retry: false,
-    enabled: isAuthenticated,
   });
 
   const { data: userPreferences } = useQuery({
@@ -110,7 +116,7 @@ export default function Transactions() {
   };
 
   // Get user's preferred currency
-  const userCurrency = userPreferences?.defaultCurrency || 'USD';
+  const userCurrency = (userPreferences as any)?.defaultCurrency || 'USD';
   const userCurrencySymbol = getCurrencySymbol(userCurrency);
 
   // Helper function to format amount with currency
@@ -124,9 +130,31 @@ export default function Transactions() {
     return `${symbol}${amount.toLocaleString('en-US')}`;
   };
 
+  // Helper function untuk parsing tanggal
+  const parseTransactionDate = (date: string | number): Date => {
+    if (typeof date === 'number') {
+      return date > 9999999999 ? new Date(date) : new Date(date * 1000);
+    }
+    return new Date(date);
+  };
+
+  // Helper function untuk validasi date range
+  const isDateInRange = (transactionDate: Date, startDate: Date, endDate: Date): boolean => {
+    if (isNaN(transactionDate.getTime())) {
+      console.warn('Invalid transaction date');
+      return true; // Include invalid dates to avoid hiding transactions
+    }
+    
+    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+      return true; // Include all if range is invalid
+    }
+    
+    endDate.setHours(23, 59, 59, 999);
+    return transactionDate >= startDate && transactionDate <= endDate;
+  };
+
   // Filter and process transactions
   const filteredTransactions = (transactions as any[])?.filter((transaction: any) => {
-    // Add safety checks
     if (!transaction) return false;
     
     const matchesSearch = transaction.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -135,58 +163,17 @@ export default function Transactions() {
     const matchesCategory = selectedCategory === "all" || transaction.category?.name === selectedCategory;
     const matchesType = selectedType === "all" || transaction.type === selectedType;
     
-    // More robust date filtering with multiple format support
+    // Date filtering with error handling
     let matchesDate = true;
     try {
-      let transactionDate;
-      
-      // Handle different date formats from database
-      if (typeof transaction.date === 'number') {
-        // Handle timestamp (both milliseconds and seconds)
-        if (transaction.date > 9999999999) {
-          // Milliseconds timestamp
-          transactionDate = new Date(transaction.date);
-        } else {
-          // Seconds timestamp - convert to milliseconds
-          transactionDate = new Date(transaction.date * 1000);
-        }
-      } else if (typeof transaction.date === 'string') {
-        // Handle string dates
-        transactionDate = new Date(transaction.date);
-      } else {
-        // Fallback - try direct conversion
-        transactionDate = new Date(transaction.date);
-      }
-      
-      // Create filter date range
+      const transactionDate = parseTransactionDate(transaction.date);
       const startDate = new Date(dateRange.start);
       const endDate = new Date(dateRange.end);
-      endDate.setHours(23, 59, 59, 999); // Include the entire end date
       
-      // Debug log for problematic dates
-      if (isNaN(transactionDate.getTime())) {
-        console.warn('Invalid transaction date:', transaction.date, 'for transaction:', transaction.description);
-        matchesDate = true; // Include transaction if date is invalid
-      } else {
-        // Only filter by date if valid dates are provided
-        if (!isNaN(startDate.getTime()) && !isNaN(endDate.getTime())) {
-          matchesDate = transactionDate >= startDate && transactionDate <= endDate;
-          
-          // Debug log for date filtering
-          if (!matchesDate) {
-            console.log('Transaction filtered out by date:', {
-              description: transaction.description,
-              transactionDate: transactionDate.toISOString(),
-              startDate: startDate.toISOString(),
-              endDate: endDate.toISOString(),
-              originalDate: transaction.date
-            });
-          }
-        }
-      }
+      matchesDate = isDateInRange(transactionDate, startDate, endDate);
     } catch (error) {
       console.warn('Date filtering error:', error);
-      matchesDate = true; // Include transaction if date parsing fails
+      matchesDate = true;
     }
     
     return matchesSearch && matchesCategory && matchesType && matchesDate;
@@ -194,7 +181,7 @@ export default function Transactions() {
 
   // Debug logging (moved after filteredTransactions definition)
   useEffect(() => {
-    if (transactions) {
+    if (transactions && Array.isArray(transactions)) {
       console.log('Transactions data updated:', transactions.length, 'transactions');
       console.log('Current date range:', dateRange);
       console.log('Filtered transactions:', filteredTransactions.length, 'transactions');
@@ -290,6 +277,35 @@ export default function Transactions() {
     setCurrentPage(page);
   };
 
+  // Export functions
+  const handleExportPDF = () => {
+    try {
+      exportToPDF(filteredTransactions, {
+        dateRange,
+        userCurrency,
+        currencySymbol: userCurrencySymbol
+      });
+      showToast('success', '📄 PDF Exported!', 'Your transaction report has been downloaded successfully');
+    } catch (error) {
+      console.error('PDF Export error:', error);
+      showToast('error', '❌ Export Failed', 'Failed to generate PDF report');
+    }
+  };
+
+  const handleExportExcel = () => {
+    try {
+      exportToExcel(filteredTransactions, {
+        dateRange,
+        userCurrency,
+        currencySymbol: userCurrencySymbol
+      });
+      showToast('success', '📊 Excel Exported!', 'Your transaction report has been downloaded successfully');
+    } catch (error) {
+      console.error('Excel Export error:', error);
+      showToast('error', '❌ Export Failed', 'Failed to generate Excel report');
+    }
+  };
+
   const getUniqueCategories = () => {
     const uniqueCategories = Array.from(
       new Set((transactions as any[])?.map(t => t.category?.name).filter(Boolean))
@@ -322,10 +338,25 @@ export default function Transactions() {
                 <p className="text-slate-600 text-sm sm:text-base lg:text-lg">Manage all your income and expense transactions</p>
               </div>
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-                <Button variant="outline" className="flex items-center justify-center gap-2 bg-white/50 backdrop-blur border-white/30 rounded-xl sm:rounded-2xl hover:bg-white/80 px-4 sm:px-6 py-2 sm:py-3">
-                  <Download className="w-4 h-4" />
-                  <span className="hidden sm:inline">Export</span>
-                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" className="flex items-center justify-center gap-2 bg-white/50 backdrop-blur border-white/30 rounded-xl sm:rounded-2xl hover:bg-white/80 px-4 sm:px-6 py-2 sm:py-3">
+                      <Download className="w-4 h-4" />
+                      <span className="hidden sm:inline">Export</span>
+                      <ChevronDown className="w-3 h-3" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48">
+                    <DropdownMenuItem onClick={handleExportPDF} className="flex items-center gap-2 cursor-pointer">
+                      <FileText className="w-4 h-4 text-red-500" />
+                      <span>Export as PDF</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={handleExportExcel} className="flex items-center gap-2 cursor-pointer">
+                      <FileSpreadsheet className="w-4 h-4 text-green-500" />
+                      <span>Export as Excel</span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 <Button 
                   className="bg-gradient-to-r from-emerald-500 to-blue-600 hover:from-emerald-600 hover:to-blue-700 text-white px-4 sm:px-8 py-2 sm:py-3 rounded-xl sm:rounded-2xl shadow-lg transform hover:scale-105 transition-all duration-200"
                   onClick={() => setShowAddTransaction(true)}

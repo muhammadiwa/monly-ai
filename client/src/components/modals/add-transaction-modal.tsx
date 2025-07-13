@@ -570,16 +570,6 @@ export default function AddTransactionModal({
               </form>
             </Form>
           </Tabs>
-
-          {/* Currency Information */}
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-            <div className="flex items-center gap-2 text-blue-700">
-              <DollarSign className="w-4 h-4" />
-              <span className="text-sm font-medium">
-                Currency: {currencySymbol} ({userCurrency}) - Based on your preference
-              </span>
-            </div>
-          </div>
         </div>
       </DialogContent>
     </Dialog>
