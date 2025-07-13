@@ -212,7 +212,7 @@ export default function Transactions() {
 
   // Chart data preparation
   const chartData = filteredTransactions.reduce((acc: any[], transaction: any) => {
-    const date = new Date(transaction.date).toLocaleDateString('en-US', { 
+    const date = parseTransactionDate(transaction.date).toLocaleDateString('en-US', { 
       month: 'short', 
       day: 'numeric' 
     });
@@ -601,7 +601,7 @@ export default function Transactions() {
                                 {transaction.category?.name || 'Uncategorized'}
                               </Badge>
                               <span className="hidden sm:inline">
-                                {new Date(transaction.date).toLocaleDateString('en-US', {
+                                {parseTransactionDate(transaction.date).toLocaleDateString('en-US', {
                                   month: 'short',
                                   day: 'numeric'
                                 })}
@@ -759,7 +759,7 @@ export default function Transactions() {
                         }`}>
                           {transactionToDelete.category?.name || 'Uncategorized'}
                         </Badge>
-                        <span>📅 {new Date(transactionToDelete.date).toLocaleDateString('en-US')}</span>
+                        <span>📅 {parseTransactionDate(transactionToDelete.date).toLocaleDateString('en-US')}</span>
                       </div>
                     </div>
                     <div className={`text-right font-bold text-lg ${
