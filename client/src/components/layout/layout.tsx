@@ -2,6 +2,7 @@ import { ReactNode } from "react";
 import Sidebar from "@/components/layout/sidebar";
 import MobileHeader from "@/components/layout/mobile-header";
 import MobileNav from "@/components/layout/mobile-nav";
+import GlobalChat from "@/components/chat/global-chat";
 
 interface LayoutProps {
   children: ReactNode;
@@ -21,6 +22,7 @@ export default function Layout({ children }: LayoutProps) {
       </div>
       
       <MobileNav />
+      <GlobalChat />
     </div>
   );
 }

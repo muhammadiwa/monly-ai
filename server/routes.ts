@@ -8,6 +8,11 @@ import multer from "multer";
 import { z } from "zod";
 import session from "express-session";
 import MemoryStore from "memorystore";
+import OpenAI from "openai";
+
+const openai = new OpenAI({ 
+  apiKey: process.env.OPENAI_API_KEY || process.env.OPENAI_KEY || "default_key"
+});
 
 const upload = multer({ storage: multer.memoryStorage() });
 const MemStore = MemoryStore(session);
@@ -363,7 +368,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             currency: "USD",
             description: analysis.description,
             type: analysis.type,
-            date: Math.floor(Date.now() / 1000), // Convert to Unix timestamp
+            date: Date.now(), // Use milliseconds timestamp
             aiGenerated: true,
           });
           
@@ -506,7 +511,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             currency: "USD",
             description: analysis.description,
             type: analysis.type,
-            date: Math.floor(Date.now() / 1000), // Convert to Unix timestamp
+            date: Date.now(), // Use milliseconds timestamp
             aiGenerated: true,
           });
           
@@ -560,6 +565,274 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching monthly analytics:", error);
       res.status(500).json({ message: "Failed to fetch monthly analytics" });
+    }
+  });
+
+  // Chat AI routes
+  app.post('/api/chat/process', requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      console.log('Chat request received:', req.body);
+      const { message, type } = req.body;
+      
+      if (!message || typeof message !== 'string') {
+        return res.status(400).json({ 
+          success: false,
+          message: "Please provide a valid message" 
+        });
+      }
+
+      console.log('Analyzing message with OpenAI:', message);
+      
+      // Get user's categories first
+      const categories = await storage.getCategories(req.user!.id);
+      
+      // Use existing AI analysis function with categories
+      const analysis = await analyzeTransactionText(message, categories);
+      console.log('AI Analysis result:', analysis);
+      
+      if (analysis.confidence > 0.7) {
+        // Create transaction directly for high confidence
+        const categories = await storage.getCategories(req.user!.id);
+        const matchingCategory = categories.find(c => 
+          c.name.toLowerCase() === analysis.category.toLowerCase()
+        );
+        
+        if (matchingCategory) {
+          const validatedData = insertTransactionSchema.parse({
+            userId: req.user!.id,
+            categoryId: matchingCategory.id,
+            amount: analysis.amount,
+            currency: "USD",
+            description: analysis.description,
+            type: analysis.type,
+            date: Date.now(), // Use milliseconds timestamp
+            aiGenerated: true,
+          });
+
+          const transaction = await storage.createTransaction(validatedData);
+          
+          return res.json({
+            success: true,
+            transaction,
+            message: `Great! I've created a ${analysis.type} transaction: "${analysis.description}" for $${analysis.amount}. 💰`
+          });
+        } else {
+          return res.json({
+            success: false,
+            message: `I found a ${analysis.type} of $${analysis.amount} for "${analysis.description}", but couldn't find a matching category "${analysis.category}". Please create this category first or be more specific.`
+          });
+        }
+      } else {
+        // Return analysis for user to review
+        return res.json({
+          success: false,
+          analysis: analysis,
+          message: `I found a ${analysis.type} of $${analysis.amount} for "${analysis.description}". Should I create this transaction?`
+        });
+      }
+    } catch (error) {
+      console.error("Error processing chat message:", error);
+      res.status(500).json({ 
+        success: false,
+        message: "Sorry, I encountered an error processing your message. Please try again."
+      });
+    }
+  });
+
+  app.post('/api/chat/voice', requireAuth, upload.single('audio'), async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ 
+          success: false,
+          message: "No audio file provided" 
+        });
+      }
+
+      console.log('Processing voice message...', {
+        filename: req.file.originalname,
+        mimetype: req.file.mimetype,
+        size: req.file.size
+      });
+      
+      // Create a proper file-like object for OpenAI Whisper
+      const audioFile = new File([req.file.buffer], req.file.originalname || 'audio.webm', { 
+        type: req.file.mimetype || 'audio/webm' 
+      });
+
+      // Use OpenAI Whisper for speech-to-text
+      const transcription = await openai.audio.transcriptions.create({
+        file: audioFile,
+        model: 'whisper-1',
+        language: 'en', // or 'id' for Indonesian
+        response_format: 'text',
+        temperature: 0.2,
+      });
+
+      const transcribedText = transcription.trim();
+      console.log('Transcribed text:', transcribedText);
+
+      if (!transcribedText || transcribedText.length === 0) {
+        return res.json({
+          success: false,
+          transcription: transcribedText,
+          message: "🎤 I couldn't hear anything clearly. Please try speaking more clearly and ensure your microphone is working."
+        });
+      }
+
+      // Get user's categories for AI analysis
+      const categories = await storage.getCategories(req.user!.id);
+      
+      // Analyze the transcribed text
+      const analysis = await analyzeTransactionText(transcribedText, categories);
+      console.log('Voice analysis result:', analysis);
+
+      if (analysis.confidence > 0.6) {
+        // Create transaction directly for reasonable confidence
+        const matchingCategory = categories.find(c => 
+          c.name.toLowerCase() === analysis.category.toLowerCase()
+        );
+        
+        if (matchingCategory && analysis.amount > 0) {
+          try {
+            const validatedData = insertTransactionSchema.parse({
+              userId: req.user!.id,
+              categoryId: matchingCategory.id,
+              amount: parseFloat(analysis.amount.toString()),
+              currency: "USD",
+              description: analysis.description,
+              type: analysis.type,
+              date: Date.now(),
+              aiGenerated: true,
+            });
+
+            const transaction = await storage.createTransaction(validatedData);
+            console.log('Created transaction from voice:', transaction);
+            
+            return res.json({
+              success: true,
+              transaction,
+              transcription: transcribedText,
+              analysisResult: analysis,
+              message: `🎤 I heard: "${transcribedText}"\n\n✅ Created ${analysis.type}: "${analysis.description}" for $${analysis.amount}\n\nTransaction added successfully! 🎉`
+            });
+          } catch (validationError) {
+            console.error('Transaction validation error:', validationError);
+            return res.json({
+              success: false,
+              transcription: transcribedText,
+              analysisResult: analysis,
+              message: `🎤 I heard: "${transcribedText}"\n\n❌ I understood you want to record a ${analysis.type} of $${analysis.amount} for "${analysis.description}", but there was an error creating the transaction. Please try again.`
+            });
+          }
+        } else {
+          return res.json({
+            success: false,
+            transcription: transcribedText,
+            analysisResult: analysis,
+            message: `🎤 I heard: "${transcribedText}"\n\n🤔 I found a ${analysis.type} of $${analysis.amount} for "${analysis.description}", but couldn't find a matching category "${analysis.category}" in your account. Please make sure you have the right categories set up.`
+          });
+        }
+      } else {
+        return res.json({
+          success: false,
+          transcription: transcribedText,
+          analysisResult: analysis,
+          message: `🎤 I heard: "${transcribedText}"\n\n🤔 I think you might be mentioning a ${analysis.type} of $${analysis.amount} for "${analysis.description}", but I'm not completely sure. Could you please try again with more details?`
+        });
+      }
+    } catch (error) {
+      console.error("Error processing voice message:", error);
+      res.status(500).json({ 
+        success: false,
+        message: "Sorry, I couldn't process your voice message. Please try again.",
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  });
+
+  app.post('/api/chat/image', requireAuth, upload.single('image'), async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ 
+          success: false,
+          message: "No image file provided" 
+        });
+      }
+
+      console.log('Processing image receipt...');
+      
+      // Get user's categories for AI analysis
+      const categories = await storage.getCategories(req.user!.id);
+
+      // Use receipt processing function with dynamic categories
+      const base64Image = req.file.buffer.toString('base64');
+      const result = await processReceiptImage(base64Image, categories);
+      
+      console.log('Image analysis result:', result);
+      
+      if (result.transactions && result.transactions.length > 0) {
+        // Create transactions from the image
+        const createdTransactions = [];
+        
+        for (const analysis of result.transactions) {
+          // Find matching category (case-insensitive)
+          const matchingCategory = categories.find(c => 
+            c.name.toLowerCase() === analysis.category.toLowerCase()
+          );
+          
+          if (matchingCategory && analysis.amount > 0) {
+            try {
+              const validatedData = insertTransactionSchema.parse({
+                userId: req.user!.id,
+                categoryId: matchingCategory.id,
+                amount: parseFloat(analysis.amount.toString()),
+                currency: "USD",
+                description: analysis.description,
+                type: analysis.type || 'expense',
+                date: Date.now(),
+                aiGenerated: true,
+              });
+              
+              const transaction = await storage.createTransaction(validatedData);
+              createdTransactions.push(transaction);
+              console.log('Created transaction from image:', transaction);
+            } catch (validationError) {
+              console.error('Transaction validation error:', validationError);
+              continue;
+            }
+          } else {
+            console.log('No matching category found for:', analysis.category);
+          }
+        }
+        
+        if (createdTransactions.length > 0) {
+          return res.json({
+            success: true,
+            transactions: createdTransactions,
+            analysisResult: result,
+            message: `📸 Perfect! I analyzed your receipt and found ${createdTransactions.length} transaction${createdTransactions.length > 1 ? 's' : ''}:\n\n${createdTransactions.map(t => `✅ ${t.description} - $${t.amount}`).join('\n')}\n\nAll transactions have been added to your account! 🎉`
+          });
+        } else {
+          return res.json({
+            success: false,
+            analysisResult: result,
+            message: `📸 I could see some transaction details in your receipt, but couldn't match them to your existing categories. Here's what I found:\n\n${result.transactions.map(t => `• ${t.description} - $${t.amount} (${t.category})`).join('\n')}\n\nPlease make sure you have the right categories set up in your account.`
+          });
+        }
+      } else {
+        return res.json({
+          success: false,
+          analysisResult: result,
+          message: "📸 I couldn't find any clear transaction details in this image. Please make sure it's a clear receipt with visible amounts and merchant information. Try taking the photo in good lighting and ensure the text is readable."
+        });
+      }
+    } catch (error) {
+      console.error("Error processing image:", error);
+      res.status(500).json({ 
+        success: false,
+        message: "Sorry, I couldn't process that image. Please try uploading a clearer receipt.",
+        error: error instanceof Error ? error.message : String(error)
+      });
     }
   });
 
