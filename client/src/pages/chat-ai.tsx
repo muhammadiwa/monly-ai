@@ -470,13 +470,6 @@ export function ChatWidget({ isOpen, onToggle }: ChatWidgetProps) {
                     }`}
                   >
                     <p className="whitespace-pre-line">{message.text}</p>
-                    {message.transaction && (
-                      <div className="mt-2 p-2 bg-green-100 rounded-lg text-xs">
-                        <span className="font-medium">✅ Transaction Created:</span>
-                        <br />
-                        {message.transaction.description} - ${message.transaction.amount}
-                      </div>
-                    )}
                     <p className="text-xs opacity-60 mt-1">
                       {message.timestamp.toLocaleTimeString([], { 
                         hour: '2-digit', 
