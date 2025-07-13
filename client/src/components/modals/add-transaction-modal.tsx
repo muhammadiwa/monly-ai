@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -51,11 +51,15 @@ type TransactionFormData = z.infer<typeof transactionSchema>;
 interface AddTransactionModalProps {
   isOpen: boolean;
   onClose: () => void;
+  editingTransaction?: any;
+  isEditing?: boolean;
 }
 
 export default function AddTransactionModal({
   isOpen,
   onClose,
+  editingTransaction,
+  isEditing = false,
 }: AddTransactionModalProps) {
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [aiText, setAiText] = useState("");
@@ -63,60 +67,113 @@ export default function AddTransactionModal({
   const [isAnalyzingText, setIsAnalyzingText] = useState(false);
   const { toast } = useToast();
 
+  // Helper function for better toast notifications
+  const showToast = (type: 'success' | 'error' | 'warning', title: string, description: string) => {
+    const variants = {
+      success: undefined,
+      error: "destructive" as const,
+      warning: "default" as const,
+    };
+    
+    toast({
+      title,
+      description,
+      variant: variants[type],
+      duration: type === 'error' ? 5000 : 3000,
+      className: type === 'success' ? 'border-green-200 bg-green-50' : 
+                 type === 'warning' ? 'border-yellow-200 bg-yellow-50' : '',
+    });
+  };
+
   const form = useForm<TransactionFormData>({
     resolver: zodResolver(transactionSchema),
     defaultValues: {
-      description: "",
-      amount: "",
-      categoryId: "",
-      type: "expense",
-      currency: "USD",
-      date: new Date().toISOString().split('T')[0],
+      description: editingTransaction?.description || "",
+      amount: editingTransaction?.amount?.toString() || "",
+      categoryId: editingTransaction?.categoryId?.toString() || "",
+      type: editingTransaction?.type || "expense",
+      currency: editingTransaction?.currency || "USD",
+      date: editingTransaction?.date ? 
+        new Date(editingTransaction.date).toISOString().split('T')[0] : 
+        new Date().toISOString().split('T')[0],
     },
   });
+
+  // Reset states when modal is closed
+  useEffect(() => {
+    if (!isOpen) {
+      setReceiptFile(null);
+      setAiText("");
+      setIsProcessingReceipt(false);
+      setIsAnalyzingText(false);
+      form.reset();
+    }
+  }, [isOpen, form]);
+
+  // Update form when editing transaction changes
+  useEffect(() => {
+    if (editingTransaction && isEditing) {
+      form.reset({
+        description: editingTransaction.description || "",
+        amount: editingTransaction.amount?.toString() || "",
+        categoryId: editingTransaction.categoryId?.toString() || "",
+        type: editingTransaction.type || "expense",
+        currency: editingTransaction.currency || "USD",
+        date: editingTransaction.date ? 
+          new Date(editingTransaction.date).toISOString().split('T')[0] : 
+          new Date().toISOString().split('T')[0],
+      });
+    }
+  }, [editingTransaction, isEditing, form]);
 
   const { data: categories } = useQuery({
     queryKey: ["/api/categories"],
     enabled: isOpen,
   });
 
-  const createTransactionMutation = useMutation({
+  const transactionMutation = useMutation({
     mutationFn: async (data: TransactionFormData) => {
-      const response = await apiRequest("POST", "/api/transactions", {
+      const payload = {
         ...data,
         amount: parseFloat(data.amount),
         categoryId: parseInt(data.categoryId),
         date: new Date(data.date).toISOString(),
-      });
-      return response.json();
+      };
+      
+      if (isEditing && editingTransaction) {
+        const response = await apiRequest("PUT", `/api/transactions/${editingTransaction.id}`, payload);
+        return response.json();
+      } else {
+        const response = await apiRequest("POST", "/api/transactions", payload);
+        return response.json();
+      }
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
       queryClient.invalidateQueries({ queryKey: ["/api/analytics/dashboard"] });
-      toast({
-        title: "Success",
-        description: "Transaction created successfully",
-      });
+      
+      const transactionName = form.getValues('description');
+      if (isEditing) {
+        showToast('success', '🔄 Transaction Updated!', `"${transactionName}" has been successfully updated`);
+      } else {
+        showToast('success', '✨ Transaction Created!', `"${transactionName}" has been successfully added`);
+      }
+      
       form.reset();
       onClose();
     },
     onError: (error) => {
       if (isUnauthorizedError(error)) {
-        toast({
-          title: "Unauthorized",
-          description: "You are logged out. Logging in again...",
-          variant: "destructive",
-        });
+        showToast('error', '🔐 Session Expired', 'Please login again to continue');
         setTimeout(() => {
           window.location.href = "/auth";
-        }, 500);
+        }, 2000);
         return;
       }
-      toast({
-        title: "Error",
-        description: "Failed to create transaction",
-        variant: "destructive",
-      });
+      
+      const errorMessage = error instanceof Error ? error.message : 
+        `Failed to ${isEditing ? 'update' : 'create'} transaction`;
+      showToast('error', `❌ ${isEditing ? 'Update' : 'Creation'} Failed`, errorMessage);
     },
   });
 
@@ -128,10 +185,12 @@ export default function AddTransactionModal({
       return response.json();
     },
     onSuccess: (data) => {
+      setIsAnalyzingText(false);
       if (data.transaction) {
         toast({
-          title: "Success",
-          description: "Transaction created from AI analysis",
+          title: "🤖 Transaction Created Successfully",
+          description: `AI automatically analyzed and created transaction for ${data.transaction.description}`,
+          className: "bg-green-50 border-green-200",
         });
         queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
         queryClient.invalidateQueries({ queryKey: ["/api/analytics/dashboard"] });
@@ -154,17 +213,20 @@ export default function AddTransactionModal({
         }
         
         toast({
-          title: "AI Analysis Complete",
-          description: "Transaction details have been filled automatically",
+          title: "🧠 AI Analysis Complete",
+          description: `Smart analysis filled transaction details: ${analysis.description} - ${analysis.amount}`,
+          className: "bg-blue-50 border-blue-200",
         });
       }
     },
     onError: (error) => {
+      setIsAnalyzingText(false);
       if (isUnauthorizedError(error)) {
         toast({
-          title: "Unauthorized",
-          description: "You are logged out. Logging in again...",
+          title: "🔐 Unauthorized Access",
+          description: "Session expired. Redirecting to login...",
           variant: "destructive",
+          className: "bg-red-50 border-red-200",
         });
         setTimeout(() => {
           window.location.href = "/auth";
@@ -172,9 +234,10 @@ export default function AddTransactionModal({
         return;
       }
       toast({
-        title: "Error",
-        description: "Failed to analyze transaction",
+        title: "🚫 AI Analysis Failed",
+        description: "Unable to analyze transaction with AI. Please try again or enter manually.",
         variant: "destructive",
+        className: "bg-red-50 border-red-200",
       });
     },
   });
@@ -197,29 +260,22 @@ export default function AddTransactionModal({
       return response.json();
     },
     onSuccess: (data) => {
+      setIsProcessingReceipt(false);
       if (data.createdTransactions && data.createdTransactions.length > 0) {
-        toast({
-          title: "Success",
-          description: `Created ${data.createdTransactions.length} transactions from receipt`,
-        });
+        showToast('success', '📄 Receipt Processed Successfully', 
+          `Created ${data.createdTransactions.length} transaction${data.createdTransactions.length > 1 ? 's' : ''} from receipt`);
         queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
         queryClient.invalidateQueries({ queryKey: ["/api/analytics/dashboard"] });
         form.reset();
         setReceiptFile(null);
         onClose();
       } else {
-        toast({
-          title: "Receipt Processed",
-          description: "Receipt analyzed but no transactions were created",
-        });
+        showToast('warning', '📄 Receipt Analyzed', 'Receipt processed but no valid transactions were found');
       }
     },
     onError: (error) => {
-      toast({
-        title: "Error",
-        description: "Failed to process receipt",
-        variant: "destructive",
-      });
+      setIsProcessingReceipt(false);
+      showToast('error', '🚫 Receipt Processing Failed', 'Unable to process receipt. Please try again or enter manually');
     },
   });
 
@@ -234,11 +290,7 @@ export default function AddTransactionModal({
 
   const handleAiAnalysis = () => {
     if (!aiText.trim()) {
-      toast({
-        title: "Error",
-        description: "Please enter some text to analyze",
-        variant: "destructive",
-      });
+      showToast('error', '📝 Text Required', 'Please enter some text to analyze');
       return;
     }
     
@@ -247,7 +299,7 @@ export default function AddTransactionModal({
   };
 
   const onSubmit = (data: TransactionFormData) => {
-    createTransactionMutation.mutate(data);
+    transactionMutation.mutate(data);
   };
 
   return (
@@ -256,12 +308,19 @@ export default function AddTransactionModal({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <div className="bg-primary/10 p-2 rounded-full">
-              <i className="fas fa-plus text-primary" />
+              {isEditing ? (
+                <span className="text-lg">✏️</span>
+              ) : (
+                <span className="text-lg">➕</span>
+              )}
             </div>
-            Add Transaction
+            {isEditing ? 'Edit Transaction' : 'Add Transaction'}
           </DialogTitle>
           <DialogDescription>
-            Create a new transaction manually or use AI to analyze text/receipts
+            {isEditing 
+              ? 'Update transaction details or use AI to re-analyze text/receipts'
+              : 'Create a new transaction manually or use AI to analyze text/receipts'
+            }
           </DialogDescription>
         </DialogHeader>
 
@@ -472,22 +531,34 @@ export default function AddTransactionModal({
                   variant="outline"
                   onClick={onClose}
                   className="flex-1"
-                  disabled={createTransactionMutation.isPending}
+                  disabled={transactionMutation.isPending}
                 >
                   Cancel
                 </Button>
                 <Button
                   type="submit"
                   className="flex-1 bg-primary hover:bg-primary/90"
-                  disabled={createTransactionMutation.isPending}
+                  disabled={transactionMutation.isPending}
                 >
-                  {createTransactionMutation.isPending ? (
+                  {transactionMutation.isPending ? (
                     <>
                       <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                      Creating...
+                      {isEditing ? 'Updating...' : 'Creating...'}
                     </>
                   ) : (
-                    "Add Transaction"
+                    <>
+                      {isEditing ? (
+                        <>
+                          <span className="mr-2">✏️</span>
+                          Update Transaction
+                        </>
+                      ) : (
+                        <>
+                          <span className="mr-2">➕</span>
+                          Add Transaction
+                        </>
+                      )}
+                    </>
                   )}
                 </Button>
               </div>

@@ -19,17 +19,12 @@ export interface OCRResult {
   confidence: number;
 }
 
-export async function analyzeTransactionText(text: string): Promise<TransactionAnalysis> {
+export async function analyzeTransactionText(text: string, availableCategories: any[] = []): Promise<TransactionAnalysis> {
   try {
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        {
-          role: "system",
-          content: `You are a financial transaction analyzer. Extract transaction details from user messages.
-          
-          Available categories:
-          - Food & Dining
+    // Build categories list from database
+    const categoryList = availableCategories.length > 0 
+      ? availableCategories.map(cat => `- ${cat.name}${cat.type ? ` (${cat.type})` : ''}`).join('\n          ')
+      : `- Food & Dining
           - Transportation
           - Shopping
           - Entertainment
@@ -39,7 +34,30 @@ export async function analyzeTransactionText(text: string): Promise<TransactionA
           - Other
           - Salary (income)
           - Investment (income)
-          - Freelance (income)
+          - Freelance (income)`;
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content: `You are a financial transaction analyzer. Extract transaction details from user messages.
+          
+          Available categories:
+          ${categoryList}
+          
+          IMPORTANT FORMATTING RULES:
+          1. Format description with proper title case (e.g., "my salary" → "Monthly Salary", "lunch at mcdonald's" → "Lunch at McDonald's")
+          2. Use proper capitalization for brand names (McDonald's, Starbucks, etc.)
+          3. Make descriptions clear and concise
+          4. For income: use professional terms like "Monthly Salary", "Freelance Payment", "Investment Return"
+          5. For expenses: be specific like "Lunch at McDonald's", "Gas Station Fill-up", "Grocery Shopping"
+          
+          EXAMPLES:
+          - "my salary $1000" → {"amount": 1000, "description": "Monthly Salary", "category": "Salary", "type": "income", "confidence": 1}
+          - "lunch at mcdonald's $25" → {"amount": 25, "description": "Lunch at McDonald's", "category": "Food & Dining", "type": "expense", "confidence": 0.95}
+          - "i paid gas $50" → {"amount": 50, "description": "Gas Station Fill-up", "category": "Transportation", "type": "expense", "confidence": 0.9}
+          - "grocery shopping $75" → {"amount": 75, "description": "Grocery Shopping", "category": "Shopping", "type": "expense", "confidence": 0.9}
           
           Return JSON with: amount (number), description (string), category (string), type ("income" or "expense"), confidence (0-1).
           If multiple transactions are mentioned, return the first/main one.`,
@@ -63,12 +81,24 @@ export async function analyzeTransactionText(text: string): Promise<TransactionA
     };
   } catch (error) {
     console.error("Failed to analyze transaction text:", error);
-    throw new Error("Failed to analyze transaction: " + error.message);
+    throw new Error("Failed to analyze transaction: " + (error instanceof Error ? error.message : String(error)));
   }
 }
 
-export async function processReceiptImage(base64Image: string): Promise<OCRResult> {
+export async function processReceiptImage(base64Image: string, availableCategories: any[] = []): Promise<OCRResult> {
   try {
+    // Format categories for AI
+    const categoryList = availableCategories.length > 0 
+      ? availableCategories.map(cat => `- ${cat.name}`).join('\n')
+      : `- Food & Dining
+- Transportation  
+- Shopping
+- Entertainment
+- Bills & Utilities
+- Healthcare
+- Education
+- Other`;
+
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
       messages: [
@@ -80,21 +110,34 @@ export async function processReceiptImage(base64Image: string): Promise<OCRResul
               text: `Analyze this receipt image and extract transaction information. 
               
               Available categories:
-              - Food & Dining
-              - Transportation
-              - Shopping
-              - Entertainment
-              - Bills & Utilities
-              - Healthcare
-              - Education
-              - Other
+              ${categoryList}
+              
+              Instructions:
+              1. Extract the merchant name, total amount, and date if visible
+              2. Create clear, professional descriptions (e.g., "Lunch at McDonald's", "Grocery Shopping at Walmart")
+              3. Choose the most appropriate category from the list above
+              4. All transactions should be "expense" type unless clearly income
+              5. Set confidence based on image clarity and text readability
               
               Return JSON with:
-              - text: extracted text from receipt
+              - text: extracted text from receipt (merchant, items, total)
               - transactions: array of {amount, description, category, type, confidence}
               - confidence: overall confidence (0-1)
               
-              Focus on the main transaction amount and merchant name.`,
+              Example format:
+              {
+                "text": "BreadTalk Receipt - Total: 43,500",
+                "transactions": [
+                  {
+                    "amount": 43.5,
+                    "description": "Bakery Items at BreadTalk",
+                    "category": "Food & Dining", 
+                    "type": "expense",
+                    "confidence": 0.9
+                  }
+                ],
+                "confidence": 0.9
+              }`,
             },
             {
               type: "image_url",
@@ -106,10 +149,11 @@ export async function processReceiptImage(base64Image: string): Promise<OCRResul
         },
       ],
       response_format: { type: "json_object" },
-      max_tokens: 1000,
+      max_tokens: 1500,
     });
 
     const result = JSON.parse(response.choices[0].message.content || "{}");
+    console.log('Receipt analysis result:', result);
     
     return {
       text: result.text || "",
@@ -118,7 +162,7 @@ export async function processReceiptImage(base64Image: string): Promise<OCRResul
     };
   } catch (error) {
     console.error("Failed to process receipt image:", error);
-    throw new Error("Failed to process receipt: " + error.message);
+    throw new Error("Failed to process receipt: " + (error instanceof Error ? error.message : String(error)));
   }
 }
 
