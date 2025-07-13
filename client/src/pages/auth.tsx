@@ -12,8 +12,8 @@ export default function Auth() {
   const [isLoading, setIsLoading] = useState(false);
   
   const [formData, setFormData] = useState({
-    email: "",
-    password: "",
+    email: "test@gmail.com", // Default test email
+    password: "password123", // Default test password
     name: "",
     confirmPassword: ""
   });
