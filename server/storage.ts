@@ -1,10 +1,14 @@
 import {
   users,
+  userPreferences,
   categories,
   transactions,
   budgets,
   type User,
   type UpsertUser,
+  type UserPreferences,
+  type InsertUserPreferences,
+  type UpdateUserPreferences,
   type Category,
   type InsertCategory,
   type Transaction,
@@ -21,10 +25,16 @@ export interface IStorage {
   // User operations (IMPORTANT: mandatory for Replit Auth)
   getUser(id: string): Promise<User | undefined>;
   upsertUser(user: UpsertUser): Promise<User>;
+  updateUser(id: string, userData: Partial<UpsertUser>): Promise<User>;
   
   // Demo authentication methods
   getUserByEmail(email: string): Promise<User | undefined>;
   createDemoUser(userData: { email: string; name: string; password: string }): Promise<User>;
+
+  // User preferences operations
+  getUserPreferences(userId: string): Promise<UserPreferences | undefined>;
+  createUserPreferences(preferences: InsertUserPreferences): Promise<UserPreferences>;
+  updateUserPreferences(userId: string, preferences: UpdateUserPreferences): Promise<UserPreferences>;
 
   // Category operations
   getCategories(userId: string): Promise<Category[]>;
@@ -77,9 +87,21 @@ export class DatabaseStorage implements IStorage {
         target: users.id,
         set: {
           ...userData,
-          updatedAt: new Date(),
+          updatedAt: Date.now(),
         },
       })
+      .returning();
+    return user;
+  }
+
+  async updateUser(id: string, userData: Partial<UpsertUser>): Promise<User> {
+    const [user] = await db
+      .update(users)
+      .set({
+        ...userData,
+        updatedAt: Date.now(),
+      })
+      .where(eq(users.id, id))
       .returning();
     return user;
   }
@@ -239,7 +261,7 @@ export class DatabaseStorage implements IStorage {
   async updateTransaction(id: number, transaction: Partial<InsertTransaction>): Promise<Transaction> {
     const [updatedTransaction] = await db
       .update(transactions)
-      .set({ ...transaction, updatedAt: new Date() })
+      .set({ ...transaction, updatedAt: Date.now() })
       .where(eq(transactions.id, id))
       .returning();
     return updatedTransaction;
@@ -290,7 +312,7 @@ export class DatabaseStorage implements IStorage {
   async updateBudget(id: number, budget: Partial<InsertBudget>): Promise<Budget> {
     const [updatedBudget] = await db
       .update(budgets)
-      .set({ ...budget, updatedAt: new Date() })
+      .set({ ...budget, updatedAt: Date.now() })
       .where(eq(budgets.id, id))
       .returning();
     return updatedBudget;
@@ -422,6 +444,57 @@ export class DatabaseStorage implements IStorage {
       );
 
     return parseFloat(result[0]?.total || "0");
+  }
+
+  // User preferences operations
+  async getUserPreferences(userId: string): Promise<UserPreferences | undefined> {
+    const result = await db
+      .select()
+      .from(userPreferences)
+      .where(eq(userPreferences.userId, userId))
+      .limit(1);
+    
+    return result[0];
+  }
+
+  async createUserPreferences(preferences: InsertUserPreferences): Promise<UserPreferences> {
+    const now = Math.floor(Date.now() / 1000);
+    const result = await db
+      .insert(userPreferences)
+      .values({
+        ...preferences,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning();
+    
+    return result[0];
+  }
+
+  async updateUserPreferences(userId: string, preferences: UpdateUserPreferences): Promise<UserPreferences> {
+    const now = Math.floor(Date.now() / 1000);
+    const result = await db
+      .update(userPreferences)
+      .set({
+        ...preferences,
+        updatedAt: now,
+      })
+      .where(eq(userPreferences.userId, userId))
+      .returning();
+    
+    return result[0];
+  }
+
+  async initializeDefaultUserPreferences(userId: string): Promise<UserPreferences> {
+    const defaultPrefs: InsertUserPreferences = {
+      userId,
+      defaultCurrency: "USD",
+      timezone: "UTC",
+      language: "en",
+      autoCategorize: true,
+    };
+    
+    return this.createUserPreferences(defaultPrefs);
   }
 }
 

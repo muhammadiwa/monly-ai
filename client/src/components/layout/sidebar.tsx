@@ -7,7 +7,6 @@ const navigation = [
   { name: "Dashboard", href: "/", icon: BarChart3 },
   { name: "Transactions", href: "/transactions", icon: CreditCard },
   { name: "Categories", href: "/categories", icon: Grid3X3 },
-  { name: "Chat AI", href: "/chat", icon: Bot },
   { name: "Budgets", href: "/budgets", icon: PieChart },
   { name: "Reports", href: "/reports", icon: ChartLine },
   { name: "Settings", href: "/settings", icon: Settings },
