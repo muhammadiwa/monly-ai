@@ -262,7 +262,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Categories routes
-  app.get('/api/categories', requireAuth, async (req: AuthRequest, res) => {
+  app.get('/api/categories', requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
       const categories = await storage.getCategories(req.user.id);
@@ -641,25 +641,145 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const endOfMonth = new Date(currentYear, currentMonth + 1, 0);
       const categoryExpenses = await storage.getCategoryExpenses(req.user.id, startOfMonth, endOfMonth);
       
-      // Get totals
+      // Get totals for current month
       const totalBalance = await storage.getTotalBalance(req.user.id);
       const monthlyIncome = await storage.getMonthlyIncome(req.user.id, currentYear, currentMonth);
       const monthlyExpenseTotal = await storage.getMonthlyExpenseTotal(req.user.id, currentYear, currentMonth);
       
+      // Get today's and weekly spending from database
+      const todaySpending = await storage.getTodaySpending(req.user.id);
+      const weeklySpending = await storage.getWeeklySpending(req.user.id);
+      
+      // Get budgets for weekly calculation
+      const budgets = await storage.getBudgets(req.user.id);
+      const weeklyBudgetLimit = budgets.reduce((sum, budget) => sum + (budget.amount / 4), 0);
+      const weeklyBudgetUsed = weeklyBudgetLimit > 0 ? Math.round((weeklySpending / weeklyBudgetLimit) * 100) : 0;
+      
+      // Get previous month data for comparison
+      const previousMonthData = await storage.getPreviousMonthData(req.user.id);
+      
+      // Calculate percentage changes
+      const incomeChange = previousMonthData.income > 0 ? 
+        ((monthlyIncome - previousMonthData.income) / previousMonthData.income * 100) : 0;
+      const expenseChange = previousMonthData.expenses > 0 ? 
+        ((monthlyExpenseTotal - previousMonthData.expenses) / previousMonthData.expenses * 100) : 0;
+      const savingsRateChange = monthlyIncome > 0 ? 
+        ((monthlyIncome - monthlyExpenseTotal) / monthlyIncome * 100) - previousMonthData.savingsRate : 0;
+        // Calculate investment growth (simplified calculation based on savings)
+      const currentSavingsRate = monthlyIncome > 0 ? ((monthlyIncome - monthlyExpenseTotal) / monthlyIncome * 100) : 0;
+      const investmentGrowth = currentSavingsRate > 15 ? 8.5 : currentSavingsRate > 10 ? 5.2 : 2.1;
+      const investmentChange = previousMonthData.savingsRate > 0 ? 
+        ((currentSavingsRate - previousMonthData.savingsRate) / previousMonthData.savingsRate * 100) : 0;
+
+      // Calculate financial score using backend logic
+      const financialScore = await storage.calculateFinancialScore(req.user.id);
+      
+      // Calculate monthly cash flow
+      const monthlyCashFlow = monthlyIncome - monthlyExpenseTotal;
+
       const dashboardData = {
         monthlyExpenses,
         categoryExpenses,
         totalBalance,
         monthlyIncome,
         monthlyExpenseTotal,
-        savingsRate: monthlyIncome > 0 ? ((monthlyIncome - monthlyExpenseTotal) / monthlyIncome * 100).toFixed(1) : 0,
+        monthlyCashFlow, // Add cash flow calculation
+        financialScore, // Add real financial score from backend
+        savingsRate: currentSavingsRate.toFixed(1),
         transactionCount: monthlyExpenses.reduce((sum, month) => sum + (month.count || 0), 0),
+        // Add real spending data from database
+        todaySpending,
+        weeklySpending,
+        weeklyBudgetUsed,
+        // Add comparison data
+        previousMonth: previousMonthData,
+        changes: {
+          incomeChange: incomeChange.toFixed(1),
+          expenseChange: expenseChange.toFixed(1),
+          savingsRateChange: savingsRateChange.toFixed(1),
+          investmentChange: investmentChange.toFixed(1)
+        },
+        investmentGrowth: investmentGrowth.toFixed(1)
       };
       
       res.json(dashboardData);
     } catch (error) {
       console.error("Error fetching dashboard analytics:", error);
       res.status(500).json({ message: "Failed to fetch dashboard analytics" });
+    }
+  });
+
+  // Live Cash Flow API
+  app.get('/api/analytics/cash-flow', requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const userId = req.user!.id;
+      const cashFlowData = await storage.getLiveCashFlow(userId);
+      
+      res.json({
+        success: true,
+        data: cashFlowData
+      });
+    } catch (error) {
+      console.error("Error fetching cash flow data:", error);
+      res.status(500).json({ 
+        success: false,
+        message: "Failed to fetch cash flow data",
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  });
+
+  // Intelligent Budgets API
+  app.get('/api/analytics/intelligent-budgets', requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const userId = req.user!.id;
+      const budgetData = await storage.getIntelligentBudgets(userId);
+      
+      res.json({
+        success: true,
+        data: budgetData
+      });
+    } catch (error) {
+      console.error("Error fetching intelligent budgets:", error);
+      res.status(500).json({ 
+        success: false,
+        message: "Failed to fetch intelligent budget recommendations",
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  });
+
+  // Chat completion endpoint
+  app.post('/api/chat/completions', requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
+      const { messages } = req.body;
+      
+      if (!messages || !Array.isArray(messages)) {
+        return res.status(400).json({ message: "Invalid messages format" });
+      }
+      
+      // Call OpenAI chat completion API
+      const response = await openai.chat.completions.create({
+        model: 'gpt-3.5-turbo',
+        messages: messages,
+        temperature: 0.7,
+        max_tokens: 150,
+      });
+      
+      const completion = response.choices[0]?.message?.content?.trim();
+      
+      res.json({
+        success: true,
+        completion
+      });
+    } catch (error) {
+      console.error("Error processing chat completion:", error);
+      res.status(500).json({ 
+        success: false,
+        message: "Failed to process chat completion",
+        error: error instanceof Error ? error.message : String(error)
+      });
     }
   });
 
