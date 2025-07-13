@@ -32,12 +32,29 @@ export default function Transactions() {
   const [selectedType, setSelectedType] = useState<string>("all");
   const [dateRange, setDateRange] = useState(() => {
     const now = new Date();
-    const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const lastDayOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    
+    // Menggunakan format YYYY-MM-DD langsung untuk menghindari masalah timezone
+    const year = now.getFullYear();
+    const month = now.getMonth() + 1; // getMonth() returns 0-11, kita butuh 1-12
+    
+    // Tanggal 1 bulan ini
+    const startDate = `${year}-${month.toString().padStart(2, '0')}-01`;
+    
+    // Tanggal akhir bulan ini - hitung jumlah hari dalam bulan
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const endDate = `${year}-${month.toString().padStart(2, '0')}-${daysInMonth.toString().padStart(2, '0')}`;
+    
+    console.log('Setting date range:', {
+      now: now.toDateString(),
+      currentMonth: month,
+      daysInMonth,
+      startDate,
+      endDate
+    });
     
     return {
-      start: firstDayOfMonth.toISOString().split('T')[0], // Tanggal 1 bulan ini
-      end: lastDayOfMonth.toISOString().split('T')[0]     // Tanggal akhir bulan ini
+      start: startDate, // Tanggal 1 bulan ini
+      end: endDate      // Tanggal akhir bulan ini
     };
   });
   
