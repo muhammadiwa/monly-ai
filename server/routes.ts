@@ -591,12 +591,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.put('/api/budgets/:id', requireAuth, async (req: AuthRequest, res: Response) => {
     try {
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
       const id = parseInt(req.params.id);
-      const updateData = {
-        ...req.body,
-        startDate: req.body.startDate ? new Date(req.body.startDate) : undefined,
-        endDate: req.body.endDate ? new Date(req.body.endDate) : undefined,
-      };
+      
+      // Parse dan normalize tanggal ke Unix timestamp (seconds) jika ada
+      let updateData = { ...req.body };
+      if (req.body.startDate) {
+        updateData.startDate = Math.floor((new Date(req.body.startDate)).getTime() / 1000);
+      }
+      if (req.body.endDate) {
+        updateData.endDate = Math.floor((new Date(req.body.endDate)).getTime() / 1000);
+      }
       
       const budget = await storage.updateBudget(id, updateData);
       res.json(budget);
@@ -608,6 +613,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete('/api/budgets/:id', requireAuth, async (req: AuthRequest, res: Response) => {
     try {
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
       const id = parseInt(req.params.id);
       await storage.deleteBudget(id);
       res.json({ message: "Budget deleted successfully" });
