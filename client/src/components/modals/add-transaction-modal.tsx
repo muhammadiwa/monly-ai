@@ -32,8 +32,8 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { TrendingUp, TrendingDown, Calendar, DollarSign, Tag, FileText, Loader2 } from "lucide-react";
+import { DatePicker } from "@/components/ui/date-picker";
 
 const transactionSchema = z.object({
   description: z.string().min(1, "Description is required"),
@@ -60,7 +60,7 @@ export default function AddTransactionModal({
   onClose,
   editingTransaction,
   isEditing = false,
-}: AddTransactionModalProps) {
+}: Readonly<AddTransactionModalProps>) {
   const [activeTab, setActiveTab] = useState<"income" | "expense">("expense");
   const { toast } = useToast();
 
@@ -149,9 +149,9 @@ export default function AddTransactionModal({
   });
 
   // Filter categories based on active tab (transaction type)
-  const filteredCategories = categories?.filter((category: any) => 
+  const filteredCategories = Array.isArray(categories) ? categories.filter((category: any) => 
     category.type === activeTab
-  ) || [];
+  ) : [];
 
   // Helper function to get currency symbol
   const getCurrencySymbol = (currency: string) => {
@@ -171,7 +171,7 @@ export default function AddTransactionModal({
     return symbols[currency] || currency;
   };
 
-  const userCurrency = userPreferences?.defaultCurrency || 'USD';
+  const userCurrency = (userPreferences as any)?.defaultCurrency || 'USD';
   const currencySymbol = getCurrencySymbol(userCurrency);
 
   const transactionMutation = useMutation({
@@ -364,9 +364,12 @@ export default function AddTransactionModal({
                                   Date
                                 </FormLabel>
                                 <FormControl>
-                                  <Input 
-                                    type="date" 
-                                    {...field} 
+                                  <DatePicker
+                                    date={field.value ? new Date(field.value) : undefined}
+                                    onDateChange={(date) => {
+                                      field.onChange(date ? date.toISOString().split('T')[0] : '')
+                                    }}
+                                    placeholder="Select transaction date"
                                     className="bg-white/70 border-red-200 focus:border-red-400 focus:ring-red-200 rounded-xl"
                                   />
                                 </FormControl>
@@ -486,9 +489,12 @@ export default function AddTransactionModal({
                                   Date
                                 </FormLabel>
                                 <FormControl>
-                                  <Input 
-                                    type="date" 
-                                    {...field} 
+                                  <DatePicker
+                                    date={field.value ? new Date(field.value) : undefined}
+                                    onDateChange={(date) => {
+                                      field.onChange(date ? date.toISOString().split('T')[0] : '')
+                                    }}
+                                    placeholder="Select transaction date"
                                     className="bg-white/70 border-emerald-200 focus:border-emerald-400 focus:ring-emerald-200 rounded-xl"
                                   />
                                 </FormControl>

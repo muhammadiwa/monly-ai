@@ -2,8 +2,9 @@ import type { Express, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { analyzeTransactionText, processReceiptImage } from "./openai";
-import { insertTransactionSchema, insertBudgetSchema, insertCategorySchema, updateUserPreferencesSchema } from "@shared/schema";
+import { insertTransactionSchema, insertBudgetSchema, insertCategorySchema, insertGoalSchema, updateUserPreferencesSchema } from "@shared/schema";
 import { requireAuth, hashPassword, verifyPassword, generateToken, type AuthRequest } from "./auth";
+import { AIFinancialIntelligenceEngine } from './ai-intelligence';
 import multer from "multer";
 import { z } from "zod";
 import session from "express-session";
@@ -262,7 +263,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Categories routes
-  app.get('/api/categories', requireAuth, async (req: AuthRequest, res) => {
+  app.get('/api/categories', requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
       const categories = await storage.getCategories(req.user.id);
@@ -439,7 +440,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           currency: "USD",
           description: analysis.description,
           type: analysis.type,
-          date: new Date(),
+          date: Math.floor(Date.now() / 1000),
           aiGenerated: true,
         });
         
@@ -521,7 +522,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             currency: userPreferences?.defaultCurrency || "USD",
             description: analysis.description,
             type: analysis.type,
-            date: Date.now(),
+            date: Math.floor(Date.now() / 1000),
             aiGenerated: true,
           });
           
@@ -623,43 +624,194 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Goals routes
+  app.get('/api/goals', requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
+      const goals = await storage.getGoals(req.user.id);
+      res.json(goals);
+    } catch (error) {
+      console.error("Error fetching goals:", error);
+      res.status(500).json({ message: "Failed to fetch goals" });
+    }
+  });
+
+  app.post('/api/goals', requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
+      
+      const { name, targetAmount, currentAmount, deadline, category, description } = req.body;
+      
+      // Validation
+      if (!name || !targetAmount || !deadline) {
+        return res.status(400).json({ message: "Name, target amount, and deadline are required" });
+      }
+      
+      if (targetAmount <= 0) {
+        return res.status(400).json({ message: "Target amount must be greater than 0" });
+      }
+      
+      if ((currentAmount || 0) >= targetAmount) {
+        return res.status(400).json({ message: "Current amount cannot be greater than or equal to target amount" });
+      }
+      
+      const goalData = {
+        userId: req.user.id,
+        name: name.toString(),
+        targetAmount: parseFloat(targetAmount),
+        currentAmount: parseFloat(currentAmount || 0),
+        deadline: parseInt(deadline), // Unix timestamp
+        category: category || 'other',
+        description: description || '',
+        isActive: true
+      };
+      
+      const goal = await storage.createGoal(goalData);
+      res.json(goal);
+    } catch (error) {
+      console.error("Error creating goal:", error);
+      res.status(500).json({ message: "Failed to create goal" });
+    }
+  });
+
+  app.put('/api/goals/:id', requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
+      const id = parseInt(req.params.id);
+      
+      const { name, targetAmount, currentAmount, deadline, category, description, isActive } = req.body;
+      
+      const updateData: any = {};
+      if (name !== undefined) updateData.name = name.toString();
+      if (targetAmount !== undefined) updateData.targetAmount = parseFloat(targetAmount);
+      if (currentAmount !== undefined) updateData.currentAmount = parseFloat(currentAmount);
+      if (deadline !== undefined) updateData.deadline = parseInt(deadline);
+      if (category !== undefined) updateData.category = category;
+      if (description !== undefined) updateData.description = description;
+      if (isActive !== undefined) updateData.isActive = isActive;
+      
+      const goal = await storage.updateGoal(id, updateData);
+      res.json(goal);
+    } catch (error) {
+      console.error("Error updating goal:", error);
+      res.status(500).json({ message: "Failed to update goal" });
+    }
+  });
+
+  app.delete('/api/goals/:id', requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
+      const id = parseInt(req.params.id);
+      await storage.deleteGoal(id);
+      res.json({ message: "Goal deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting goal:", error);
+      res.status(500).json({ message: "Failed to delete goal" });
+    }
+  });
+
   // Analytics routes
   app.get('/api/analytics/dashboard', requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
-      const now = new Date();
       
-      // Get current month stats
-      const currentMonth = now.getMonth();
-      const currentYear = now.getFullYear();
-      
-      // Get last 6 months expenses
-      const monthlyExpenses = await storage.getMonthlyExpenses(req.user.id, 6);
-      
-      // Get current month category breakdown
-      const startOfMonth = new Date(currentYear, currentMonth, 1);
-      const endOfMonth = new Date(currentYear, currentMonth + 1, 0);
-      const categoryExpenses = await storage.getCategoryExpenses(req.user.id, startOfMonth, endOfMonth);
-      
-      // Get totals
-      const totalBalance = await storage.getTotalBalance(req.user.id);
-      const monthlyIncome = await storage.getMonthlyIncome(req.user.id, currentYear, currentMonth);
-      const monthlyExpenseTotal = await storage.getMonthlyExpenseTotal(req.user.id, currentYear, currentMonth);
-      
-      const dashboardData = {
-        monthlyExpenses,
-        categoryExpenses,
-        totalBalance,
-        monthlyIncome,
-        monthlyExpenseTotal,
-        savingsRate: monthlyIncome > 0 ? ((monthlyIncome - monthlyExpenseTotal) / monthlyIncome * 100).toFixed(1) : 0,
-        transactionCount: monthlyExpenses.reduce((sum, month) => sum + (month.count || 0), 0),
-      };
+      // Get comprehensive dashboard data from backend with all calculations
+      const dashboardData = await storage.getDashboardAnalytics(req.user.id);
       
       res.json(dashboardData);
     } catch (error) {
       console.error("Error fetching dashboard analytics:", error);
       res.status(500).json({ message: "Failed to fetch dashboard analytics" });
+    }
+  });
+
+  // Live Cash Flow API - fully optimized for mixed timestamp formats and correct weekly grouping
+  app.get('/api/analytics/cash-flow', requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      const userId = req.user!.id;
+      console.log(`Fetching live cash flow data for user: ${userId}`);
+      const cashFlowData = await storage.getLiveCashFlow(userId);
+      
+      // Format currency values for better frontend handling with improved date labeling
+      const formattedData = {
+        ...cashFlowData,
+        // Format the trend data for charting with improved week labeling
+        cashFlowTrend: cashFlowData.cashFlowTrend.map(item => {
+          // Generate a more descriptive label including date range
+          const startDate = new Date(item.weekStart).getDate();
+          const endDate = new Date(item.weekEnd).getDate();
+          const endMonth = new Date(item.weekEnd).toLocaleString('default', { month: 'short' });
+          
+          // Format: "1-7 Jul" or if crossing months: "29 Jun-5 Jul"
+          let weekLabel;
+          if (new Date(item.weekStart).getMonth() === new Date(item.weekEnd).getMonth()) {
+            // Same month
+            weekLabel = `${startDate}-${endDate} ${endMonth}`;
+          } else {
+            // Different months
+            const startMonth = new Date(item.weekStart).toLocaleString('default', { month: 'short' });
+            weekLabel = `${startDate} ${startMonth}-${endDate} ${endMonth}`;
+          }
+          
+          return {
+            date: item.date,
+            label: weekLabel,
+            weekStart: item.weekStart,
+            weekEnd: item.weekEnd,
+            amount: Number(item.amount)
+          };
+        })
+      };
+      
+      console.log('Formatted cash flow trend data:', 
+        formattedData.cashFlowTrend.map(i => `${i.label}: ${i.amount}`)
+      );
+      
+      res.json({
+        success: true,
+        data: formattedData
+      });
+    } catch (error) {
+      console.error("Error fetching cash flow data:", error);
+      res.status(500).json({ 
+        success: false,
+        message: "Failed to fetch cash flow data",
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  });
+
+  // Chat completion endpoint
+  app.post('/api/chat/completions', requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
+      const { messages } = req.body;
+      
+      if (!messages || !Array.isArray(messages)) {
+        return res.status(400).json({ message: "Invalid messages format" });
+      }
+      
+      // Call OpenAI chat completion API
+      const response = await openai.chat.completions.create({
+        model: 'gpt-4.1-nano', // Use the latest model
+        messages: messages,
+        temperature: 0.7,
+        max_tokens: 150,
+      });
+      
+      const completion = response.choices[0]?.message?.content?.trim();
+      
+      res.json({
+        success: true,
+        completion
+      });
+    } catch (error) {
+      console.error("Error processing chat completion:", error);
+      res.status(500).json({ 
+        success: false,
+        message: "Failed to process chat completion",
+        error: error instanceof Error ? error.message : String(error)
+      });
     }
   });
 
@@ -688,7 +840,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             currency: "USD",
             description: analysis.description,
             type: analysis.type,
-            date: Date.now(), // Use milliseconds timestamp
+            date: Math.floor(Date.now() / 1000), // Use seconds timestamp
             aiGenerated: true,
           });
           
@@ -817,7 +969,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             currency: userPreferences?.defaultCurrency || "USD",
             description: analysis.description,
             type: analysis.type,
-            date: Date.now(),
+            date: Math.floor(Date.now() / 1000),
             aiGenerated: true,
           });
 
@@ -964,7 +1116,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               currency: userPreferences?.defaultCurrency || "USD",
               description: analysis.description,
               type: analysis.type,
-              date: Date.now(),
+              date: Math.floor(Date.now() / 1000),
               aiGenerated: true,
             });
 
@@ -1121,7 +1273,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 currency: userPreferences?.defaultCurrency || "USD",
                 description: analysis.description,
                 type: analysis.type || 'expense',
-                date: Date.now(),
+                date: Math.floor(Date.now() / 1000),
                 aiGenerated: true,
               });
               
@@ -1191,6 +1343,90 @@ export async function registerRoutes(app: Express): Promise<Server> {
         success: false,
         message: errorMessage,
         error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  });
+
+  // AI Financial Intelligence endpoints
+  app.get("/api/ai/financial-intelligence", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
+      const userId = req.user.id;
+      const aiEngine = new AIFinancialIntelligenceEngine(userId);
+      const intelligence = await aiEngine.generateIntelligence();
+      
+      res.json({
+        success: true,
+        data: intelligence
+      });
+    } catch (error) {
+      console.error("AI Financial Intelligence error:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Failed to generate AI financial intelligence" 
+      });
+    }
+  });
+
+  // Individual AI analysis endpoints
+  app.get("/api/ai/spending-opportunities", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
+      const userId = req.user.id;
+      const aiEngine = new AIFinancialIntelligenceEngine(userId);
+      const intelligence = await aiEngine.generateIntelligence();
+      
+      res.json({
+        success: true,
+        data: intelligence.smartSpendingOpportunities
+      });
+    } catch (error) {
+      console.error("Smart Spending Opportunities error:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Failed to generate spending opportunities" 
+      });
+    }
+  });
+
+  app.get("/api/ai/budget-alerts", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
+      const userId = req.user.id;
+      const aiEngine = new AIFinancialIntelligenceEngine(userId);
+      const intelligence = await aiEngine.generateIntelligence();
+      
+      res.json({
+        success: true,
+        data: intelligence.budgetAlerts
+      });
+    } catch (error) {
+      console.error("Budget Alerts error:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Failed to generate budget alerts" 
+      });
+    }
+  });
+
+  app.get("/api/ai/goal-forecasts", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
+      const userId = req.user.id;
+      console.log('Goal forecasts request for userId:', userId, typeof userId);
+      const aiEngine = new AIFinancialIntelligenceEngine(userId);
+      const intelligence = await aiEngine.generateIntelligence();
+      console.log('Generated intelligence goalForecasts:', intelligence.goalForecasts);
+      
+      res.json({
+        success: true,
+        data: intelligence.goalForecasts
+      });
+    } catch (error) {
+      console.error("Goal Forecasts error:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Failed to generate goal forecasts" 
       });
     }
   });

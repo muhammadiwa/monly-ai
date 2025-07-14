@@ -3,6 +3,9 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency } from "@/lib/currencyUtils";
+import { DateRangePicker } from "@/components/ui/date-picker";
+import { format } from "date-fns";
+import { DateRange } from "react-day-picker";
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -23,7 +26,6 @@ import {
   CreditCard,
   Wallet,
   FileText,
-  Filter,
   AlertTriangle
 } from "lucide-react";
 import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip, Legend, Cell, Area, AreaChart } from "recharts";
@@ -32,6 +34,7 @@ export default function Reports() {
   const { toast } = useToast();
   const { isAuthenticated, isLoading } = useAuth();
   const [selectedPeriod, setSelectedPeriod] = useState("monthly");
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
 
   // Colors for charts - Updated with more vibrant and modern colors
   const CHART_COLORS = [
@@ -111,19 +114,24 @@ export default function Reports() {
     }
 
     const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
+    let startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+    let endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    
+    // Apply date range filter if selected
+    if (dateRange?.from && dateRange?.to) {
+      startDate = dateRange.from;
+      endDate = dateRange.to;
+    }
 
-    // Filter transactions for current month
-    const currentMonthTransactions = transactions.filter((transaction: any) => {
+    // Filter transactions based on selected date range
+    const filteredTransactions = transactions.filter((transaction: any) => {
       const transactionDate = parseTransactionDate(transaction.date);
-      return transactionDate.getMonth() === currentMonth && 
-             transactionDate.getFullYear() === currentYear;
+      return transactionDate >= startDate && transactionDate <= endDate;
     });
 
     // Calculate income vs expenses
-    const incomeTransactions = currentMonthTransactions.filter((t: any) => t.type === 'income');
-    const expenseTransactions = currentMonthTransactions.filter((t: any) => t.type === 'expense');
+    const incomeTransactions = filteredTransactions.filter((t: any) => t.type === 'income');
+    const expenseTransactions = filteredTransactions.filter((t: any) => t.type === 'expense');
     
     const totalIncome = incomeTransactions.reduce((sum: number, t: any) => sum + (t.amount || 0), 0);
     const totalExpenses = expenseTransactions.reduce((sum: number, t: any) => sum + (t.amount || 0), 0);
@@ -157,8 +165,9 @@ export default function Reports() {
 
     // Monthly trends (last 6 months)
     const monthlyTrends = [];
+    const currentDate = new Date();
     for (let i = 5; i >= 0; i--) {
-      const date = new Date(currentYear, currentMonth - i, 1);
+      const date = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1);
       const monthTransactions = transactions.filter((transaction: any) => {
         const transactionDate = parseTransactionDate(transaction.date);
         return transactionDate.getMonth() === date.getMonth() && 
@@ -179,20 +188,15 @@ export default function Reports() {
         expenses: monthExpenses,
         net: monthIncome - monthExpenses
       });
-    }
-
-    // Weekly spending for current month
+    }    // Weekly spending for current month
     const weeklySpending = [];
-    const startOfMonth = new Date(currentYear, currentMonth, 1);
-    const endOfMonth = new Date(currentYear, currentMonth + 1, 0);
+    const monthStart = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
     
     for (let week = 0; week < 4; week++) {
-      const weekStart = new Date(startOfMonth);
-      weekStart.setDate(startOfMonth.getDate() + (week * 7));
+      const weekStart = new Date(monthStart);
+      weekStart.setDate(monthStart.getDate() + (week * 7));
       const weekEnd = new Date(weekStart);
       weekEnd.setDate(weekStart.getDate() + 6);
-
-      if (weekEnd > endOfMonth) weekEnd.setDate(endOfMonth.getDate());
 
       const weekTransactions = expenseTransactions.filter((transaction: any) => {
         const transactionDate = parseTransactionDate(transaction.date);
@@ -219,18 +223,16 @@ export default function Reports() {
         amount: transaction.amount || 0,
         category: transaction.category?.name || 'Uncategorized',
         date: parseTransactionDate(transaction.date)
-      }));
-
-    return {
-      monthlyTrends,
-      categoryBreakdown,
-      weeklySpending,
-      topExpenses,
-      incomeVsExpenses: { income: totalIncome, expenses: totalExpenses },
-      savingsRate,
-      totalTransactions: currentMonthTransactions.length
-    };
-  }, [transactions]);
+      }));      return {
+        monthlyTrends,
+        categoryBreakdown,
+        weeklySpending,
+        topExpenses,
+        incomeVsExpenses: { income: totalIncome, expenses: totalExpenses },
+        savingsRate,
+        totalTransactions: filteredTransactions.length
+      };
+  }, [transactions, dateRange]);
 
   // Calculate budget progress for current month only
   const budgetProgress = useMemo(() => {
@@ -327,27 +329,35 @@ export default function Reports() {
                   <SelectItem value="yearly">Yearly</SelectItem>
                 </SelectContent>
               </Select>
-              <Button 
-                variant="outline" 
-                className="bg-white shadow-sm border-gray-200"
-                onClick={() => {
-                  // Filter functionality
-                  toast({
-                    title: "Filter Options",
-                    description: "Filter feature coming soon!",
-                  });
-                }}
-              >
-                <Filter className="w-4 h-4 mr-2" />
-                Filter
-              </Button>
+              <DateRangePicker
+                dateRange={dateRange}
+                onDateRangeChange={setDateRange}
+                placeholder="Select date range"
+                className="w-full sm:w-64 bg-white shadow-sm border-gray-200"
+                presets={true}
+              />
               <Button 
                 className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 shadow-lg"
                 onClick={() => {
                   // Export functionality
+                  const exportData = {
+                    period: selectedPeriod,
+                    dateRange: dateRange ? {
+                      from: dateRange.from ? format(dateRange.from, 'yyyy-MM-dd') : null,
+                      to: dateRange.to ? format(dateRange.to, 'yyyy-MM-dd') : null
+                    } : null,
+                    data: processedData
+                  };
+                  
+                  console.log('Exporting data:', exportData);
+                  
+                  const dateRangeText = dateRange?.from && dateRange?.to 
+                    ? `from ${format(dateRange.from, 'MMM dd')} to ${format(dateRange.to, 'MMM dd, yyyy')}`
+                    : '';
+                  
                   toast({
                     title: "Export Started",
-                    description: "Your financial report is being prepared for download.",
+                    description: `Exporting ${selectedPeriod} report ${dateRangeText}.`,
                   });
                 }}
               >

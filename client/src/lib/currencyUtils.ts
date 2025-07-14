@@ -16,16 +16,24 @@ export function getCurrencySymbol(currency: string): string {
   return symbols[currency] || currency;
 }
 
-export function formatCurrency(amount: number, currency: string): string {
+export function formatCurrency(amount: number | null | undefined, currency: string): string {
+  // Handle null, undefined, or invalid numbers
+  if (amount === null || amount === undefined || isNaN(Number(amount))) {
+    amount = 0;
+  }
+  
+  // Ensure amount is a number
+  const numAmount = Number(amount);
+  
   const symbol = getCurrencySymbol(currency);
   
   // Special formatting for IDR (no decimals, add thousands separator)
   if (currency === 'IDR') {
-    return `${symbol} ${amount.toLocaleString('id-ID', { maximumFractionDigits: 0 })}`;
+    return `${symbol} ${numAmount.toLocaleString('id-ID', { maximumFractionDigits: 0 })}`;
   }
   
   // Default formatting for other currencies
-  return `${symbol}${amount.toLocaleString('en-US', { 
+  return `${symbol}${numAmount.toLocaleString('en-US', { 
     minimumFractionDigits: 2,
     maximumFractionDigits: 2 
   })}`;

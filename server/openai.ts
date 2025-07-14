@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 
-// the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
+// the newest OpenAI model is "gpt-4.1-nano" which was released May 13, 2024. do not change this unless explicitly requested by the user
 const openai = new OpenAI({ 
   apiKey: process.env.OPENAI_API_KEY || process.env.OPENAI_KEY || "default_key"
 });
@@ -77,7 +77,7 @@ export async function analyzeTransactionText(
     const autoCategorize = userPreferences?.autoCategorize ?? true;
 
     const response = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: "gpt-4.1-nano",
       messages: [
         {
           role: "system",
@@ -171,7 +171,7 @@ export async function processReceiptImage(
     const autoCategorize = userPreferences?.autoCategorize ?? true;
 
     const response = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: "gpt-4.1-nano",
       messages: [
         {
           role: "user",
@@ -258,7 +258,7 @@ export async function processReceiptImage(
 export async function categorizeTransaction(description: string, amount: number): Promise<string> {
   try {
     const response = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: "gpt-4.1-nano",
       messages: [
         {
           role: "system",
@@ -298,7 +298,7 @@ export async function generateFinancialInsights(
 ): Promise<string[]> {
   try {
     const response = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: "gpt-4.1-nano",
       messages: [
         {
           role: "system",
