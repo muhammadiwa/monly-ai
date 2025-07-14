@@ -9,26 +9,20 @@ import { Progress } from "@/components/ui/progress";
 import { 
   TrendingUp,
   TrendingDown,
-  Zap,
   Eye,
   EyeOff,
   Wallet,
-  Target,
   Sparkles,
   RefreshCw,
   Plus,
-  BarChart3,
-  MessageCircle,
   Shield
 } from "lucide-react";
 import AddTransactionModal from "@/components/modals/add-transaction-modal";
 
 // Real-time components
-import AIInsights from "@/components/dashboard/ai-insights";
-import SmartSpendingTracker from "@/components/dashboard/smart-spending-tracker";
 import PredictiveAnalytics from "@/components/dashboard/predictive-analytics";
 import LiveCashFlow from "@/components/dashboard/live-cashflow";
-import IntelligentBudgets from "@/components/dashboard/intelligent-budgets";
+import AIFinancialIntelligence from "@/components/dashboard/ai-financial-intelligence";
 
 // Helper functions
 const getFinancialScoreStyles = (score: number) => {
@@ -571,16 +565,8 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-3 sm:gap-4 lg:gap-6">
         {/* Left Column - AI Insights & Analytics */}
         <div className="lg:col-span-2 space-y-3 sm:space-y-4 lg:space-y-6">
-          {/* AI-Powered Insights */}
-          <AIInsights 
-            insights={aiInsights} 
-            currency={userCurrency}
-            showBalance={showBalance}
-          />
-
-          {/* Real-time Spending Tracker */}
-          <SmartSpendingTracker 
-            data={safeData}
+          {/* AI Financial Intelligence */}
+          <AIFinancialIntelligence 
             currency={userCurrency}
             showBalance={showBalance}
           />
@@ -601,45 +587,6 @@ export default function Dashboard() {
             currency={userCurrency}
             showBalance={showBalance}
           />
-
-          {/* Intelligent Budgets */}
-          <IntelligentBudgets 
-            data={safeData}
-            currency={userCurrency}
-            showBalance={showBalance}
-          />
-
-          {/* Quick Actions */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Zap className="h-5 w-5 text-yellow-500" />
-                Quick Actions
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <Button 
-                variant="outline" 
-                className="w-full justify-start gap-2"
-                onClick={() => setShowAddTransaction(true)}
-              >
-                <Plus className="h-4 w-4" />
-                Add Transaction
-              </Button>
-              <Button variant="outline" className="w-full justify-start gap-2">
-                <Target className="h-4 w-4" />
-                Set Budget Goal
-              </Button>
-              <Button variant="outline" className="w-full justify-start gap-2">
-                <MessageCircle className="h-4 w-4" />
-                Ask MonlyAI
-              </Button>
-              <Button variant="outline" className="w-full justify-start gap-2">
-                <BarChart3 className="h-4 w-4" />
-                Generate Report
-              </Button>
-            </CardContent>
-          </Card>
         </div>
       </div>
 

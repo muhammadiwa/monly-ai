@@ -2,8 +2,9 @@ import type { Express, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { analyzeTransactionText, processReceiptImage } from "./openai";
-import { insertTransactionSchema, insertBudgetSchema, insertCategorySchema, updateUserPreferencesSchema } from "@shared/schema";
+import { insertTransactionSchema, insertBudgetSchema, insertCategorySchema, insertGoalSchema, updateUserPreferencesSchema } from "@shared/schema";
 import { requireAuth, hashPassword, verifyPassword, generateToken, type AuthRequest } from "./auth";
+import { AIFinancialIntelligenceEngine } from './ai-intelligence';
 import multer from "multer";
 import { z } from "zod";
 import session from "express-session";
@@ -623,6 +624,92 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Goals routes
+  app.get('/api/goals', requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
+      const goals = await storage.getGoals(req.user.id);
+      res.json(goals);
+    } catch (error) {
+      console.error("Error fetching goals:", error);
+      res.status(500).json({ message: "Failed to fetch goals" });
+    }
+  });
+
+  app.post('/api/goals', requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
+      
+      const { name, targetAmount, currentAmount, deadline, category, description } = req.body;
+      
+      // Validation
+      if (!name || !targetAmount || !deadline) {
+        return res.status(400).json({ message: "Name, target amount, and deadline are required" });
+      }
+      
+      if (targetAmount <= 0) {
+        return res.status(400).json({ message: "Target amount must be greater than 0" });
+      }
+      
+      if ((currentAmount || 0) >= targetAmount) {
+        return res.status(400).json({ message: "Current amount cannot be greater than or equal to target amount" });
+      }
+      
+      const goalData = {
+        userId: req.user.id,
+        name: name.toString(),
+        targetAmount: parseFloat(targetAmount),
+        currentAmount: parseFloat(currentAmount || 0),
+        deadline: parseInt(deadline), // Unix timestamp
+        category: category || 'other',
+        description: description || '',
+        isActive: true
+      };
+      
+      const goal = await storage.createGoal(goalData);
+      res.json(goal);
+    } catch (error) {
+      console.error("Error creating goal:", error);
+      res.status(500).json({ message: "Failed to create goal" });
+    }
+  });
+
+  app.put('/api/goals/:id', requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
+      const id = parseInt(req.params.id);
+      
+      const { name, targetAmount, currentAmount, deadline, category, description, isActive } = req.body;
+      
+      const updateData: any = {};
+      if (name !== undefined) updateData.name = name.toString();
+      if (targetAmount !== undefined) updateData.targetAmount = parseFloat(targetAmount);
+      if (currentAmount !== undefined) updateData.currentAmount = parseFloat(currentAmount);
+      if (deadline !== undefined) updateData.deadline = parseInt(deadline);
+      if (category !== undefined) updateData.category = category;
+      if (description !== undefined) updateData.description = description;
+      if (isActive !== undefined) updateData.isActive = isActive;
+      
+      const goal = await storage.updateGoal(id, updateData);
+      res.json(goal);
+    } catch (error) {
+      console.error("Error updating goal:", error);
+      res.status(500).json({ message: "Failed to update goal" });
+    }
+  });
+
+  app.delete('/api/goals/:id', requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
+      const id = parseInt(req.params.id);
+      await storage.deleteGoal(id);
+      res.json({ message: "Goal deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting goal:", error);
+      res.status(500).json({ message: "Failed to delete goal" });
+    }
+  });
+
   // Analytics routes
   app.get('/api/analytics/dashboard', requireAuth, async (req: AuthRequest, res: Response) => {
     try {
@@ -694,26 +781,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Intelligent Budgets API
-  app.get('/api/analytics/intelligent-budgets', requireAuth, async (req: AuthRequest, res: Response) => {
-    try {
-      const userId = req.user!.id;
-      const budgetData = await storage.getIntelligentBudgets(userId);
-      
-      res.json({
-        success: true,
-        data: budgetData
-      });
-    } catch (error) {
-      console.error("Error fetching intelligent budgets:", error);
-      res.status(500).json({ 
-        success: false,
-        message: "Failed to fetch intelligent budget recommendations",
-        error: error instanceof Error ? error.message : String(error)
-      });
-    }
-  });
-
   // Chat completion endpoint
   app.post('/api/chat/completions', requireAuth, async (req: AuthRequest, res: Response) => {
     try {
@@ -726,7 +793,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Call OpenAI chat completion API
       const response = await openai.chat.completions.create({
-        model: 'gpt-4o', // Use the latest model
+        model: 'gpt-4.1-nano', // Use the latest model
         messages: messages,
         temperature: 0.7,
         max_tokens: 150,
@@ -1276,6 +1343,90 @@ export async function registerRoutes(app: Express): Promise<Server> {
         success: false,
         message: errorMessage,
         error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  });
+
+  // AI Financial Intelligence endpoints
+  app.get("/api/ai/financial-intelligence", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
+      const userId = req.user.id;
+      const aiEngine = new AIFinancialIntelligenceEngine(userId);
+      const intelligence = await aiEngine.generateIntelligence();
+      
+      res.json({
+        success: true,
+        data: intelligence
+      });
+    } catch (error) {
+      console.error("AI Financial Intelligence error:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Failed to generate AI financial intelligence" 
+      });
+    }
+  });
+
+  // Individual AI analysis endpoints
+  app.get("/api/ai/spending-opportunities", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
+      const userId = req.user.id;
+      const aiEngine = new AIFinancialIntelligenceEngine(userId);
+      const intelligence = await aiEngine.generateIntelligence();
+      
+      res.json({
+        success: true,
+        data: intelligence.smartSpendingOpportunities
+      });
+    } catch (error) {
+      console.error("Smart Spending Opportunities error:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Failed to generate spending opportunities" 
+      });
+    }
+  });
+
+  app.get("/api/ai/budget-alerts", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
+      const userId = req.user.id;
+      const aiEngine = new AIFinancialIntelligenceEngine(userId);
+      const intelligence = await aiEngine.generateIntelligence();
+      
+      res.json({
+        success: true,
+        data: intelligence.budgetAlerts
+      });
+    } catch (error) {
+      console.error("Budget Alerts error:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Failed to generate budget alerts" 
+      });
+    }
+  });
+
+  app.get("/api/ai/goal-forecasts", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
+      const userId = req.user.id;
+      console.log('Goal forecasts request for userId:', userId, typeof userId);
+      const aiEngine = new AIFinancialIntelligenceEngine(userId);
+      const intelligence = await aiEngine.generateIntelligence();
+      console.log('Generated intelligence goalForecasts:', intelligence.goalForecasts);
+      
+      res.json({
+        success: true,
+        data: intelligence.goalForecasts
+      });
+    } catch (error) {
+      console.error("Goal Forecasts error:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Failed to generate goal forecasts" 
       });
     }
   });

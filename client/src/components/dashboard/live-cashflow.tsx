@@ -5,12 +5,11 @@ import {
   Activity, 
   ArrowUpRight,
   ArrowDownRight,
-  Zap,
   TrendingUp,
   Calendar
 } from "lucide-react";
 import { formatCurrency } from "@/lib/currencyUtils";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
 
 interface LiveCashFlowProps {
   readonly data: any;
@@ -189,9 +188,15 @@ export default function LiveCashFlow({ data, currency, showBalance }: LiveCashFl
                   />
                   <Bar 
                     dataKey="value" 
-                    fill={(entry: any) => entry.value >= 0 ? '#10B981' : '#EF4444'} 
                     radius={[4, 4, 0, 0]}
-                  />
+                  >
+                    {safeFlowData.cashFlowTrend.map((entry, index) => (
+                      <Cell 
+                        key={`cell-${index}`} 
+                        fill={entry.amount >= 0 ? '#10B981' : '#EF4444'} 
+                      />
+                    ))}
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -213,32 +218,6 @@ export default function LiveCashFlow({ data, currency, showBalance }: LiveCashFl
               {showBalance ? formatCurrency(safeFlowData.projectedBalance, currency) : '••••••'}
             </span>
           </div>
-        </div>
-        
-        {/* Quick Actions */}
-        <div className="mt-4 p-3 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg border border-green-200">
-          <div className="flex items-center gap-2 mb-2">
-            <Zap className="h-4 w-4 text-green-600" />
-            <h4 className="font-medium text-green-900">Cash Flow Insights</h4>
-          </div>
-          <p className="text-sm text-green-700">
-            {(() => {
-              if (safeFlowData.monthlyCashFlow >= 0) {
-                if (safeFlowData.monthlyCashFlow > safeFlowData.monthlyExpenses * 0.2) {
-                  return 'Your cash flow is positive this month. Consider investing excess cash for better returns.';
-                }
-                return 'Your cash flow is positive this month. Monitor your spending to maintain this trend.';
-              } else {
-                const deficitText = showBalance 
-                  ? formatCurrency(Math.abs(safeFlowData.monthlyCashFlow), currency) 
-                  : '••••••';
-                if (safeFlowData.burnRate > 0) {
-                  return `Your expenses exceed income by ${deficitText}. At this rate, your funds will last ${safeFlowData.burnRate} days.`;
-                }
-                return `Your expenses exceed income by ${deficitText}. Consider reducing expenses or increasing income.`;
-              }
-            })()}
-          </p>
         </div>
       </CardContent>
     </Card>

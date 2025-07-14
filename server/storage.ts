@@ -4,6 +4,7 @@ import {
   categories,
   transactions,
   budgets,
+  goals,
   type User,
   type UpsertUser,
   type UserPreferences,
@@ -17,6 +18,8 @@ import {
   type Budget,
   type BudgetWithCategory,
   type InsertBudget,
+  type Goal,
+  type InsertGoal,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, sum, gte, lte, sql } from "drizzle-orm";
@@ -63,6 +66,13 @@ export interface IStorage {
   updateBudget(id: number, budget: Partial<InsertBudget>): Promise<Budget>;
   deleteBudget(id: number): Promise<void>;
   getBudgetById(id: number): Promise<BudgetWithCategory | undefined>;
+
+  // Goal operations
+  getGoals(userId: string): Promise<Goal[]>;
+  createGoal(goal: InsertGoal): Promise<Goal>;
+  updateGoal(id: number, goal: Partial<InsertGoal>): Promise<Goal>;
+  deleteGoal(id: number): Promise<void>;
+  getGoalById(id: number): Promise<Goal | undefined>;
 
   // Analytics operations
   getMonthlyExpenses(userId: string, months: number): Promise<any[]>;
@@ -139,35 +149,6 @@ export interface IStorage {
     investmentGrowth: string;
   }>;
 
-  // Intelligent Budgets API methods
-  getIntelligentBudgets(userId: string): Promise<{
-    suggestedBudgets: Array<{
-      categoryId: number;
-      categoryName: string;
-      suggestedAmount: number;
-      currentSpending: number;
-      confidence: number; // 0-100%
-      reasoning: string;
-    }>;
-    budgetOptimization: Array<{
-      categoryId: number;
-      categoryName: string;
-      currentBudget: number;
-      recommendedBudget: number;
-      potentialSavings: number;
-      priority: 'high' | 'medium' | 'low';
-    }>;
-    overallRecommendation: string;
-  }>;
-
-  // Helper methods for intelligent analysis
-  getSpendingPatterns(userId: string, months: number): Promise<Array<{
-    categoryId: number;
-    categoryName: string;
-    monthlyAverage: number;
-    trend: string;
-    volatility: number;
-  }>>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -478,6 +459,54 @@ export class DatabaseStorage implements IStorage {
       ...result.budgets,
       category: result.categories
     };
+  }
+
+  // Goal operations
+  async getGoals(userId: string): Promise<Goal[]> {
+    return await db
+      .select()
+      .from(goals)
+      .where(eq(goals.userId, userId))
+      .orderBy(desc(goals.createdAt));
+  }
+
+  async createGoal(goal: InsertGoal): Promise<Goal> {
+    const now = Math.floor(Date.now() / 1000);
+    const [newGoal] = await db
+      .insert(goals)
+      .values({
+        ...goal,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning();
+    return newGoal;
+  }
+
+  async updateGoal(id: number, goal: Partial<InsertGoal>): Promise<Goal> {
+    const now = Math.floor(Date.now() / 1000);
+    const [updatedGoal] = await db
+      .update(goals)
+      .set({
+        ...goal,
+        updatedAt: now,
+      })
+      .where(eq(goals.id, id))
+      .returning();
+    return updatedGoal;
+  }
+
+  async deleteGoal(id: number): Promise<void> {
+    await db.delete(goals).where(eq(goals.id, id));
+  }
+
+  async getGoalById(id: number): Promise<Goal | undefined> {
+    const [result] = await db
+      .select()
+      .from(goals)
+      .where(eq(goals.id, id));
+    
+    return result;
   }
 
   // Analytics operations
@@ -896,124 +925,6 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  // Intelligent Budgets implementation
-  async getIntelligentBudgets(userId: string): Promise<{
-    suggestedBudgets: Array<{
-      categoryId: number;
-      categoryName: string;
-      suggestedAmount: number;
-      currentSpending: number;
-      confidence: number;
-      reasoning: string;
-    }>;
-    budgetOptimization: Array<{
-      categoryId: number;
-      categoryName: string;
-      currentBudget: number;
-      recommendedBudget: number;
-      potentialSavings: number;
-      priority: 'high' | 'medium' | 'low';
-    }>;
-    overallRecommendation: string;
-  }> {
-    const now = new Date();
-    const spendingPatterns = await this.getSpendingPatterns(userId, 6); // Last 6 months
-    const currentBudgets = await this.getBudgets(userId);
-    const monthlyIncome = await this.getMonthlyIncome(userId, now.getFullYear(), now.getMonth());
-
-    // Generate suggested budgets for categories without budgets
-    const existingBudgetCategories = new Set(currentBudgets.map(b => b.categoryId));
-    const suggestedBudgets = spendingPatterns
-      .filter(pattern => !existingBudgetCategories.has(pattern.categoryId))
-      .map(pattern => {
-        // Calculate suggested amount based on average spending + 10% buffer
-        const suggestedAmount = Math.round(pattern.monthlyAverage * 1.1);
-        
-        // Calculate confidence based on spending consistency
-        const confidence = Math.max(60, Math.min(95, 100 - (pattern.volatility * 100)));
-        
-        let reasoning = '';
-        if (pattern.trend === 'increasing') {
-          reasoning = `Based on your increasing spending trend in this category (${pattern.monthlyAverage.toFixed(0)} average), we suggest a budget with 10% buffer.`;
-        } else if (pattern.trend === 'decreasing') {
-          reasoning = `Your spending in this category is decreasing. This budget allows for some flexibility while encouraging continued reduction.`;
-        } else {
-          reasoning = `Based on your consistent spending pattern (${pattern.monthlyAverage.toFixed(0)} average), this budget provides a small buffer for unexpected expenses.`;
-        }
-
-        return {
-          categoryId: pattern.categoryId,
-          categoryName: pattern.categoryName,
-          suggestedAmount,
-          currentSpending: pattern.monthlyAverage,
-          confidence,
-          reasoning
-        };
-      });
-
-    // Generate budget optimization recommendations
-    const budgetOptimization = currentBudgets.map(budget => {
-      const pattern = spendingPatterns.find(p => p.categoryId === budget.categoryId);
-      if (!pattern) {
-        return {
-          categoryId: budget.categoryId,
-          categoryName: budget.category?.name || 'Unknown',
-          currentBudget: budget.amount,
-          recommendedBudget: budget.amount,
-          potentialSavings: 0,
-          priority: 'low' as const
-        };
-      }
-
-      // Calculate recommended budget based on actual spending patterns
-      let recommendedBudget = Math.round(pattern.monthlyAverage * 1.05); // 5% buffer
-      
-      // Adjust based on trend
-      if (pattern.trend === 'increasing') {
-        recommendedBudget = Math.round(pattern.monthlyAverage * 1.15); // 15% buffer for increasing trend
-      } else if (pattern.trend === 'decreasing') {
-        recommendedBudget = Math.round(pattern.monthlyAverage * 0.95); // Encourage further reduction
-      }
-
-      const potentialSavings = Math.max(0, budget.amount - recommendedBudget);
-      
-      // Determine priority based on potential savings and budget size
-      let priority: 'high' | 'medium' | 'low' = 'low';
-      const savingsPercentage = budget.amount > 0 ? (potentialSavings / budget.amount) * 100 : 0;
-      
-      if (potentialSavings > 100 && savingsPercentage > 20) priority = 'high';
-      else if (potentialSavings > 50 && savingsPercentage > 10) priority = 'medium';
-
-      return {
-        categoryId: budget.categoryId,
-        categoryName: budget.category?.name || 'Unknown',
-        currentBudget: budget.amount,
-        recommendedBudget,
-        potentialSavings,
-        priority
-      };
-    });
-
-    // Generate overall recommendation
-    const totalPotentialSavings = budgetOptimization.reduce((sum, opt) => sum + opt.potentialSavings, 0);
-    const highPriorityOptimizations = budgetOptimization.filter(opt => opt.priority === 'high').length;
-    
-    let overallRecommendation = '';
-    if (totalPotentialSavings > 500) {
-      overallRecommendation = `You could potentially save $${totalPotentialSavings.toFixed(0)} per month by optimizing your budgets. Focus on the ${highPriorityOptimizations} high-priority categories first.`;
-    } else if (totalPotentialSavings > 100) {
-      overallRecommendation = `There's potential to save $${totalPotentialSavings.toFixed(0)} per month through budget optimization. Consider adjusting your high-priority budgets.`;
-    } else {
-      overallRecommendation = `Your budgets are well-aligned with your spending patterns. Consider setting budgets for categories where you don't have them yet.`;
-    }
-
-    return {
-      suggestedBudgets,
-      budgetOptimization,
-      overallRecommendation
-    };
-  }
-
   // Live Cash Flow implementation
   async getLiveCashFlow(userId: string): Promise<{
     currentBalance: number;
@@ -1172,6 +1083,24 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
+  // Utility method to get currency symbol
+  getCurrencySymbol(currency: string): string {
+    const symbols: Record<string, string> = {
+      'USD': '$',
+      'EUR': '€',
+      'GBP': '£',
+      'JPY': '¥',
+      'IDR': 'Rp',
+      'CNY': '¥',
+      'KRW': '₩',
+      'SGD': 'S$',
+      'MYR': 'RM',
+      'THB': '฿',
+      'VND': '₫'
+    };
+    return symbols[currency] || currency;
+  }
+
   // Helper method to get spending patterns
   async getSpendingPatterns(userId: string, months: number): Promise<Array<{
     categoryId: number;
@@ -1249,6 +1178,7 @@ export class DatabaseStorage implements IStorage {
 
     return patterns.filter(pattern => pattern.monthlyAverage > 0);
   }
+
 }
 
 export const storage = new DatabaseStorage();

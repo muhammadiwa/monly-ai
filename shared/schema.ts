@@ -87,11 +87,27 @@ export const budgets = sqliteTable("budgets", {
   updatedAt: integer("updated_at"), // Unix timestamp
 });
 
+// Financial goals table
+export const goals = sqliteTable("goals", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: text("user_id").references(() => users.id).notNull(),
+  name: text("name").notNull(),
+  targetAmount: real("target_amount").notNull(),
+  currentAmount: real("current_amount").notNull().default(0),
+  deadline: integer("deadline").notNull(), // Unix timestamp
+  category: text("category"), // Optional category like 'emergency', 'vacation', etc.
+  description: text("description"),
+  isActive: integer("is_active", { mode: 'boolean' }).default(true),
+  createdAt: integer("created_at"), // Unix timestamp
+  updatedAt: integer("updated_at"), // Unix timestamp
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many, one }) => ({
   transactions: many(transactions),
   budgets: many(budgets),
   categories: many(categories),
+  goals: many(goals),
   preferences: one(userPreferences),
 }));
 
@@ -133,6 +149,13 @@ export const budgetsRelations = relations(budgets, ({ one }) => ({
   }),
 }));
 
+export const goalsRelations = relations(goals, ({ one }) => ({
+  user: one(users, {
+    fields: [goals.userId],
+    references: [users.id],
+  }),
+}));
+
 // Insert schemas
 export const insertCategorySchema = createInsertSchema(categories).omit({
   id: true,
@@ -146,6 +169,12 @@ export const insertTransactionSchema = createInsertSchema(transactions).omit({
 });
 
 export const insertBudgetSchema = createInsertSchema(budgets).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertGoalSchema = createInsertSchema(goals).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
@@ -172,6 +201,8 @@ export type TransactionWithCategory = Transaction & { category: Category | null 
 export type InsertBudget = z.infer<typeof insertBudgetSchema>;
 export type Budget = typeof budgets.$inferSelect;
 export type BudgetWithCategory = Budget & { category: Category | null };
+export type InsertGoal = z.infer<typeof insertGoalSchema>;
+export type Goal = typeof goals.$inferSelect;
 export type InsertUserPreferences = z.infer<typeof insertUserPreferencesSchema>;
 export type UpdateUserPreferences = z.infer<typeof updateUserPreferencesSchema>;
 export type UserPreferences = typeof userPreferences.$inferSelect;
