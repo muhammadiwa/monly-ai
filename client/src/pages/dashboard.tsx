@@ -109,7 +109,7 @@ export default function Dashboard() {
   // Real-time data fetching with intervals
   const { data: dashboardData, refetch: refetchDashboard } = useQuery({
     queryKey: ["/api/analytics/dashboard"],
-    refetchInterval: 5000, // Update every 5 seconds
+    // refetchInterval: 5000, // Update every 5 seconds
     enabled: isAuthenticated && !isLoading,
   });
 

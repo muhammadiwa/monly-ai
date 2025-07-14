@@ -45,7 +45,7 @@ export default function BudgetAlertPredictions({ currency, showBalance }: Budget
         },
       }).then(res => res.json());
     },
-    refetchInterval: 300000, // Refetch every 5 minutes
+    // refetchInterval: 300000, // Refetch every 5 minutes
   });
 
   if (isLoading) {

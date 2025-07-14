@@ -137,13 +137,12 @@ export class AIFinancialIntelligenceEngine {
         id: transactions.id,
         type: transactions.type,
         amount: transactions.amount,
-        categoryId: transactions.categoryId,
         categoryName: categories.name,
         date: transactions.date,
         description: transactions.description
       })
       .from(transactions)
-      .innerJoin(categories, eq(transactions.categoryId, categories.id))
+      .leftJoin(categories, eq(transactions.categoryId, categories.id))
       .where(
         and(
           eq(transactions.userId, this.userId),
@@ -156,7 +155,7 @@ export class AIFinancialIntelligenceEngine {
       id: t.id,
       type: t.type as 'income' | 'expense',
       amount: t.amount,
-      category: t.categoryName, // Use category name instead of ID
+      category: t.categoryName || 'Unknown',
       date: t.date,
       description: t.description
     }));
@@ -165,16 +164,15 @@ export class AIFinancialIntelligenceEngine {
   private async getBudgetAllocations(): Promise<BudgetAllocation[]> {
     const userBudgets = await db
       .select({
-        categoryId: budgets.categoryId,
         categoryName: categories.name,
         amount: budgets.amount
       })
       .from(budgets)
-      .innerJoin(categories, eq(budgets.categoryId, categories.id))
+      .leftJoin(categories, eq(budgets.categoryId, categories.id))
       .where(eq(budgets.userId, this.userId));
 
     return userBudgets.map(b => ({
-      category: b.categoryName, // Use category name instead of ID
+      category: b.categoryName || 'Unknown',
       amount: b.amount,
       period: 'monthly' as const
     }));
