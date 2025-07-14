@@ -3,19 +3,19 @@ import { Progress } from "@/components/ui/progress";
 import { useQuery } from "@tanstack/react-query";
 import { 
   Activity, 
-  TrendingUp, 
-  TrendingDown,
   ArrowUpRight,
   ArrowDownRight,
-  DollarSign,
-  Zap
+  Zap,
+  TrendingUp,
+  Calendar
 } from "lucide-react";
 import { formatCurrency } from "@/lib/currencyUtils";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
 interface LiveCashFlowProps {
-  data: any;
-  currency: string;
-  showBalance: boolean;
+  readonly data: any;
+  readonly currency: string;
+  readonly showBalance: boolean;
 }
 
 export default function LiveCashFlow({ data, currency, showBalance }: LiveCashFlowProps) {
@@ -35,7 +35,7 @@ export default function LiveCashFlow({ data, currency, showBalance }: LiveCashFl
     refetchInterval: 30000, // Refetch every 30 seconds
   });
 
-  if (!cashFlowData?.success) {
+  if (!cashFlowData?.success || !cashFlowData?.data) {
     return (
       <Card>
         <CardHeader>
@@ -55,27 +55,44 @@ export default function LiveCashFlow({ data, currency, showBalance }: LiveCashFl
 
   const flowData = cashFlowData.data;
   
+  // Ensure all required properties exist with default values
+  const safeFlowData = {
+    dailyIncome: flowData.dailyIncome ?? 0,
+    dailyExpenses: flowData.dailyExpenses ?? 0,
+    dailyCashFlow: flowData.dailyCashFlow ?? 0,
+    weeklyIncome: flowData.weeklyIncome ?? 0,
+    weeklyExpenses: flowData.weeklyExpenses ?? 0,
+    weeklyCashFlow: flowData.weeklyCashFlow ?? 0,
+    monthlyIncome: flowData.monthlyIncome ?? 0,
+    monthlyExpenses: flowData.monthlyExpenses ?? 0,
+    monthlyCashFlow: flowData.monthlyCashFlow ?? 0,
+    burnRate: flowData.burnRate ?? 0,
+    currentBalance: flowData.currentBalance ?? 0,
+    projectedBalance: flowData.projectedBalance ?? 0,
+    cashFlowTrend: flowData.cashFlowTrend ?? []
+  };
+  
   const displayData = [
     {
       period: "Daily Average",
-      income: Math.abs(flowData.dailyCashFlow) > 0 ? flowData.dailyCashFlow + Math.abs(flowData.dailyCashFlow) : 0,
-      expenses: Math.abs(flowData.dailyCashFlow),
-      net: flowData.dailyCashFlow,
-      trend: flowData.dailyCashFlow >= 0 ? "up" : "down"
+      income: safeFlowData.dailyIncome,
+      expenses: safeFlowData.dailyExpenses,
+      net: safeFlowData.dailyCashFlow,
+      trend: safeFlowData.dailyCashFlow >= 0 ? "up" : "down"
     },
     {
       period: "This Week", 
-      income: flowData.weeklyCashFlow >= 0 ? flowData.weeklyCashFlow + Math.abs(flowData.weeklyCashFlow) : Math.abs(flowData.weeklyCashFlow),
-      expenses: Math.abs(flowData.weeklyCashFlow),
-      net: flowData.weeklyCashFlow,
-      trend: flowData.weeklyCashFlow >= 0 ? "up" : "down"
+      income: safeFlowData.weeklyIncome,
+      expenses: safeFlowData.weeklyExpenses,
+      net: safeFlowData.weeklyCashFlow,
+      trend: safeFlowData.weeklyCashFlow >= 0 ? "up" : "down"
     },
     {
       period: "This Month",
-      income: flowData.monthlyIncome,
-      expenses: flowData.monthlyExpenses,
-      net: flowData.monthlyCashFlow,
-      trend: flowData.monthlyCashFlow >= 0 ? "up" : "down"
+      income: safeFlowData.monthlyIncome,
+      expenses: safeFlowData.monthlyExpenses,
+      net: safeFlowData.monthlyCashFlow,
+      trend: safeFlowData.monthlyCashFlow >= 0 ? "up" : "down"
     }
   ];
 
@@ -89,7 +106,7 @@ export default function LiveCashFlow({ data, currency, showBalance }: LiveCashFl
       </CardHeader>
       <CardContent className="space-y-4">
         {displayData.map((period, index) => (
-          <div key={index} className="space-y-3">
+          <div key={`cashflow-${period.period.toLowerCase().replace(/\s+/g, '-')}`} className="space-y-3">
             <div className="flex items-center justify-between">
               <h4 className="font-medium text-gray-900">{period.period}</h4>
               <div className="flex items-center gap-1">
@@ -120,15 +137,83 @@ export default function LiveCashFlow({ data, currency, showBalance }: LiveCashFl
             </div>
             
             <Progress 
-              value={(period.net / period.income) * 100} 
+              value={period.income > 0 ? Math.min((period.income - period.expenses) / period.income * 100, 100) : 0} 
               className="h-2"
             />
             
-            {index < cashFlowData.length - 1 && (
+            {index < displayData.length - 1 && (
               <div className="border-b border-gray-100" />
             )}
           </div>
         ))}
+        
+        {/* Cash Flow Trend Visualization */}
+        {safeFlowData.cashFlowTrend && safeFlowData.cashFlowTrend.length > 0 && (
+          <div className="mt-4">
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="text-sm font-medium flex items-center gap-2">
+                <TrendingUp className="h-4 w-4 text-blue-500" />
+                <span>Cash Flow Trend</span>
+              </h4>
+              <span className="text-xs text-gray-500 flex items-center gap-1">
+                <Calendar className="h-3 w-3" />
+                <span>Last 5 weeks</span>
+              </span>
+            </div>
+            
+            <div className="h-40">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={safeFlowData.cashFlowTrend.map(item => ({
+                    ...item,
+                    value: item.amount,
+                    // Use the new label property if available, otherwise fall back to date formatting
+                    name: item.label || item.date,
+                  }))}
+                  margin={{ top: 0, right: 0, left: 0, bottom: 0 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis 
+                    dataKey="name" 
+                    tick={{ fontSize: 10 }}
+                    tickLine={false}
+                  />
+                  <YAxis 
+                    hide 
+                    tickLine={false}
+                  />
+                  <Tooltip 
+                    formatter={(value: number) => formatCurrency(value, currency)}
+                    labelFormatter={(label) => `${label}`}
+                    contentStyle={{ fontSize: '12px' }}
+                  />
+                  <Bar 
+                    dataKey="value" 
+                    fill={(entry: any) => entry.value >= 0 ? '#10B981' : '#EF4444'} 
+                    radius={[4, 4, 0, 0]}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
+        
+        {/* Projections Section */}
+        <div className="mt-4 pt-4 border-t border-gray-100">
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="text-sm font-medium text-gray-700">Current Balance</h4>
+            <span className={`text-sm font-medium ${safeFlowData.currentBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {showBalance ? formatCurrency(safeFlowData.currentBalance, currency) : '••••••'}
+            </span>
+          </div>
+          
+          <div className="flex items-center justify-between mb-3">
+            <h4 className="text-sm font-medium text-gray-700">Projected in 3 months</h4>
+            <span className={`text-sm font-medium ${safeFlowData.projectedBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {showBalance ? formatCurrency(safeFlowData.projectedBalance, currency) : '••••••'}
+            </span>
+          </div>
+        </div>
         
         {/* Quick Actions */}
         <div className="mt-4 p-3 bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg border border-green-200">
@@ -137,7 +222,22 @@ export default function LiveCashFlow({ data, currency, showBalance }: LiveCashFl
             <h4 className="font-medium text-green-900">Cash Flow Insights</h4>
           </div>
           <p className="text-sm text-green-700">
-            Your cash flow is positive across all periods. Consider investing excess cash for better returns.
+            {(() => {
+              if (safeFlowData.monthlyCashFlow >= 0) {
+                if (safeFlowData.monthlyCashFlow > safeFlowData.monthlyExpenses * 0.2) {
+                  return 'Your cash flow is positive this month. Consider investing excess cash for better returns.';
+                }
+                return 'Your cash flow is positive this month. Monitor your spending to maintain this trend.';
+              } else {
+                const deficitText = showBalance 
+                  ? formatCurrency(Math.abs(safeFlowData.monthlyCashFlow), currency) 
+                  : '••••••';
+                if (safeFlowData.burnRate > 0) {
+                  return `Your expenses exceed income by ${deficitText}. At this rate, your funds will last ${safeFlowData.burnRate} days.`;
+                }
+                return `Your expenses exceed income by ${deficitText}. Consider reducing expenses or increasing income.`;
+              }
+            })()}
           </p>
         </div>
       </CardContent>

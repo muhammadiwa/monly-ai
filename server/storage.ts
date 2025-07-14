@@ -92,12 +92,51 @@ export interface IStorage {
     currentBalance: number;
     monthlyIncome: number;
     monthlyExpenses: number;
+    dailyIncome: number;
+    dailyExpenses: number;
     dailyCashFlow: number;
+    weeklyIncome: number;
+    weeklyExpenses: number;
     weeklyCashFlow: number;
     monthlyCashFlow: number;
     projectedBalance: number;
     burnRate: number; // days until balance reaches zero
     cashFlowTrend: Array<{ date: string; amount: number }>;
+  }>;
+
+  // Comprehensive Dashboard Analytics - all calculations done in backend
+  getDashboardAnalytics(userId: string): Promise<{
+    // Financial Score & Summary
+    financialScore: number;
+    totalBalance: number;
+    monthlyCashFlow: number;
+    savingsRate: number;
+    todaySpending: number;
+    weeklySpending: number;
+    weeklyBudgetUsed: number;
+    
+    // Monthly Data
+    monthlyIncome: number;
+    monthlyExpenseTotal: number;
+    
+    // Analytics Data
+    monthlyExpenses: any[];
+    categoryExpenses: any[];
+    transactionCount: number;
+    
+    // Comparison Data
+    previousMonth: {
+      income: number;
+      expenses: number;
+      savingsRate: number;
+    };
+    changes: {
+      incomeChange: string;
+      expenseChange: string;
+      savingsRateChange: string;
+      investmentChange: string;
+    };
+    investmentGrowth: string;
   }>;
 
   // Intelligent Budgets API methods
@@ -132,6 +171,22 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
+  // Utility functions for handling mixed timestamp formats
+  private normalizeTimestamp(timestamp: number): number {
+    // If timestamp has more than 10 digits, it's in milliseconds, convert to seconds
+    // Unix seconds: ~10 digits (e.g., 1751328000)
+    // Unix milliseconds: ~13 digits (e.g., 1751328000000)
+    if (timestamp > 9999999999) { // More than 10 digits
+      return Math.floor(timestamp / 1000);
+    }
+    return timestamp;
+  }
+
+  private isDateInRange(timestamp: number, startSeconds: number, endSeconds: number): boolean {
+    const normalizedTimestamp = this.normalizeTimestamp(timestamp);
+    return normalizedTimestamp >= startSeconds && normalizedTimestamp <= endSeconds;
+  }
+
   // User operations (IMPORTANT: mandatory for Replit Auth)
   async getUser(id: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
@@ -146,7 +201,7 @@ export class DatabaseStorage implements IStorage {
         target: users.id,
         set: {
           ...userData,
-          updatedAt: Date.now(),
+          updatedAt: Math.floor(Date.now() / 1000), // Use Unix seconds
         },
       })
       .returning();
@@ -158,7 +213,7 @@ export class DatabaseStorage implements IStorage {
       .update(users)
       .set({
         ...userData,
-        updatedAt: Date.now(),
+        updatedAt: Math.floor(Date.now() / 1000), // Use Unix seconds
       })
       .where(eq(users.id, id))
       .returning();
@@ -171,7 +226,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createDemoUser(userData: { email: string; name: string; password: string }): Promise<User> {
-    const userId = `demo_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const userId = `demo_${Math.floor(Date.now() / 1000)}_${Math.random().toString(36).substring(2, 11)}`;
     const [user] = await db
       .insert(users)
       .values({
@@ -297,20 +352,23 @@ export class DatabaseStorage implements IStorage {
     startDate: Date,
     endDate: Date
   ): Promise<TransactionWithCategory[]> {
-    const results = await db
+    const startTimestamp = startDate.getTime() / 1000; // Convert to Unix seconds
+    const endTimestamp = endDate.getTime() / 1000; // Convert to Unix seconds
+
+    // Get all user transactions and filter by date range
+    const allTransactions = await db
       .select()
       .from(transactions)
       .leftJoin(categories, eq(transactions.categoryId, categories.id))
-      .where(
-        and(
-          eq(transactions.userId, userId),
-          gte(transactions.date, startDate.getTime()),
-          lte(transactions.date, endDate.getTime())
-        )
-      )
+      .where(eq(transactions.userId, userId))
       .orderBy(desc(transactions.date));
+
+    // Filter transactions within date range using normalized timestamps
+    const filteredResults = allTransactions.filter(row => 
+      this.isDateInRange(row.transactions.date, startTimestamp, endTimestamp)
+    );
       
-    return results.map(row => ({
+    return filteredResults.map(row => ({
       ...row.transactions,
       category: row.categories
     }));
@@ -346,7 +404,7 @@ export class DatabaseStorage implements IStorage {
   async updateTransaction(id: number, transaction: Partial<InsertTransaction>): Promise<Transaction> {
     const [updatedTransaction] = await db
       .update(transactions)
-      .set({ ...transaction, updatedAt: Date.now() })
+      .set({ ...transaction, updatedAt: Math.floor(Date.now() / 1000) }) // Use Unix seconds
       .where(eq(transactions.id, id))
       .returning();
     return updatedTransaction;
@@ -397,7 +455,7 @@ export class DatabaseStorage implements IStorage {
   async updateBudget(id: number, budget: Partial<InsertBudget>): Promise<Budget> {
     const [updatedBudget] = await db
       .update(budgets)
-      .set({ ...budget, updatedAt: Date.now() })
+      .set({ ...budget, updatedAt: Math.floor(Date.now() / 1000) }) // Use Unix seconds
       .where(eq(budgets.id, id))
       .returning();
     return updatedBudget;
@@ -503,41 +561,79 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getMonthlyIncome(userId: string, year: number, month: number): Promise<number> {
-    const startDate = new Date(year, month, 1).getTime(); // Convert to timestamp
-    const endDate = new Date(year, month + 1, 0).getTime(); // Convert to timestamp
+    const startDate = new Date(year, month, 1).getTime() / 1000; // Convert to Unix seconds
+    const endDate = new Date(year, month + 1, 0).getTime() / 1000; // Convert to Unix seconds
 
-    const result = await db
-      .select({ total: sum(transactions.amount) })
+    console.log(`getMonthlyIncome: ${year}-${month + 1}, range: ${startDate} to ${endDate}`);
+
+    // Get all user income transactions and filter by date range
+    const allTransactions = await db
+      .select()
       .from(transactions)
       .where(
         and(
           eq(transactions.userId, userId),
-          eq(transactions.type, "income"),
-          gte(transactions.date, startDate),
-          lte(transactions.date, endDate)
+          eq(transactions.type, "income")
         )
       );
 
-    return parseFloat(result[0]?.total || "0");
+    console.log(`Found ${allTransactions.length} income transactions for user ${userId}`);
+    allTransactions.forEach(t => {
+      const normalizedDate = this.normalizeTimestamp(t.date);
+      const dateObj = new Date(normalizedDate * 1000);
+      console.log(`Transaction ${t.id}: ${t.amount} IDR on ${dateObj.toLocaleDateString()} (raw: ${t.date}, normalized: ${normalizedDate})`);
+    });
+
+    // Filter transactions within date range using normalized timestamps
+    const filteredTransactions = allTransactions.filter(transaction => 
+      this.isDateInRange(transaction.date, startDate, endDate)
+    );
+
+    console.log(`Filtered to ${filteredTransactions.length} transactions in range`);
+
+    // Calculate total income
+    const total = filteredTransactions.reduce((sum, transaction) => sum + transaction.amount, 0);
+    
+    console.log(`Total monthly income: ${total}`);
+    return total;
   }
 
   async getMonthlyExpenseTotal(userId: string, year: number, month: number): Promise<number> {
-    const startDate = new Date(year, month, 1).getTime(); // Convert to timestamp
-    const endDate = new Date(year, month + 1, 0).getTime(); // Convert to timestamp
+    const startDate = new Date(year, month, 1).getTime() / 1000; // Convert to Unix seconds
+    const endDate = new Date(year, month + 1, 0).getTime() / 1000; // Convert to Unix seconds
 
-    const result = await db
-      .select({ total: sum(transactions.amount) })
+    console.log(`getMonthlyExpenseTotal: ${year}-${month + 1}, range: ${startDate} to ${endDate}`);
+
+    // Get all user expense transactions and filter by date range
+    const allTransactions = await db
+      .select()
       .from(transactions)
       .where(
         and(
           eq(transactions.userId, userId),
-          eq(transactions.type, "expense"),
-          gte(transactions.date, startDate),
-          lte(transactions.date, endDate)
+          eq(transactions.type, "expense")
         )
       );
 
-    return parseFloat(result[0]?.total || "0");
+    console.log(`Found ${allTransactions.length} expense transactions for user ${userId}`);
+    allTransactions.forEach(t => {
+      const normalizedDate = this.normalizeTimestamp(t.date);
+      const dateObj = new Date(normalizedDate * 1000);
+      console.log(`Transaction ${t.id}: ${t.amount} IDR on ${dateObj.toLocaleDateString()} (raw: ${t.date}, normalized: ${normalizedDate})`);
+    });
+
+    // Filter transactions within date range using normalized timestamps
+    const filteredTransactions = allTransactions.filter(transaction => 
+      this.isDateInRange(transaction.date, startDate, endDate)
+    );
+
+    console.log(`Filtered to ${filteredTransactions.length} transactions in range`);
+
+    // Calculate total expenses
+    const total = filteredTransactions.reduce((sum, transaction) => sum + transaction.amount, 0);
+    
+    console.log(`Total monthly expenses: ${total}`);
+    return total;
   }
 
   // Get previous month data for comparison
@@ -565,22 +661,36 @@ export class DatabaseStorage implements IStorage {
   // Get today's spending from database
   async getTodaySpending(userId: string): Promise<number> {
     const now = new Date();
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-    const endOfToday = startOfToday + (24 * 60 * 60 * 1000) - 1;
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() / 1000;
+    const endOfToday = (startOfToday * 1000 + (24 * 60 * 60 * 1000) - 1) / 1000;
 
-    const result = await db
-      .select({ total: sum(transactions.amount) })
+    console.log(`getTodaySpending: range ${startOfToday} to ${endOfToday}`);
+
+    // Get all user expense transactions and filter by today's date
+    const allTransactions = await db
+      .select()
       .from(transactions)
       .where(
         and(
           eq(transactions.userId, userId),
-          eq(transactions.type, "expense"),
-          gte(transactions.date, startOfToday),
-          lte(transactions.date, endOfToday)
+          eq(transactions.type, "expense")
         )
       );
 
-    return parseFloat(result[0]?.total || "0");
+    console.log(`Found ${allTransactions.length} expense transactions for user ${userId}`);
+
+    // Filter transactions for today using normalized timestamps
+    const todayTransactions = allTransactions.filter(transaction => 
+      this.isDateInRange(transaction.date, startOfToday, endOfToday)
+    );
+
+    console.log(`Filtered to ${todayTransactions.length} transactions for today`);
+
+    // Calculate total spending for today
+    const total = todayTransactions.reduce((sum, transaction) => sum + transaction.amount, 0);
+    
+    console.log(`Total today spending: ${total}`);
+    return total;
   }
 
   // Get weekly spending from database  
@@ -669,81 +779,120 @@ export class DatabaseStorage implements IStorage {
     return Math.max(0, Math.min(100, Math.round(score)));
   }
 
-  // Live Cash Flow implementation
-  async getLiveCashFlow(userId: string): Promise<{
-    currentBalance: number;
-    monthlyIncome: number;
-    monthlyExpenses: number;
-    dailyCashFlow: number;
-    weeklyCashFlow: number;
+  // Comprehensive Dashboard Analytics - all calculations done in backend
+  async getDashboardAnalytics(userId: string): Promise<{
+    financialScore: number;
+    totalBalance: number;
     monthlyCashFlow: number;
-    projectedBalance: number;
-    burnRate: number;
-    cashFlowTrend: Array<{ date: string; amount: number }>;
+    savingsRate: number;
+    todaySpending: number;
+    weeklySpending: number;
+    weeklyBudgetUsed: number;
+    monthlyIncome: number;
+    monthlyExpenseTotal: number;
+    monthlyExpenses: any[];
+    categoryExpenses: any[];
+    transactionCount: number;
+    previousMonth: {
+      income: number;
+      expenses: number;
+      savingsRate: number;
+    };
+    changes: {
+      incomeChange: string;
+      expenseChange: string;
+      savingsRateChange: string;
+      investmentChange: string;
+    };
+    investmentGrowth: string;
   }> {
     const now = new Date();
     const currentMonth = now.getMonth();
     const currentYear = now.getFullYear();
 
-    // Get basic financial data
-    const currentBalance = await this.getTotalBalance(userId);
-    const monthlyIncome = await this.getMonthlyIncome(userId, currentYear, currentMonth);
-    const monthlyExpenses = await this.getMonthlyExpenseTotal(userId, currentYear, currentMonth);
-    const monthlyCashFlow = monthlyIncome - monthlyExpenses;
+    console.log(`Dashboard Analytics: Calculating for ${currentYear}-${currentMonth + 1}`);
 
-    // Calculate daily and weekly cash flow (last 30 days average)
-    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-    const last30DaysTransactions = await this.getTransactionsByDateRange(userId, thirtyDaysAgo, now);
+    // Get all financial data
+    const [
+      financialScore,
+      totalBalance,
+      monthlyIncome,
+      monthlyExpenseTotal,
+      todaySpending,
+      weeklySpending,
+      monthlyExpenses,
+      previousMonthData
+    ] = await Promise.all([
+      this.calculateFinancialScore(userId),
+      this.getTotalBalance(userId),
+      this.getMonthlyIncome(userId, currentYear, currentMonth),
+      this.getMonthlyExpenseTotal(userId, currentYear, currentMonth),
+      this.getTodaySpending(userId),
+      this.getWeeklySpending(userId),
+      this.getMonthlyExpenses(userId, 6),
+      this.getPreviousMonthData(userId)
+    ]);
+
+    // Get current month category breakdown
+    const startOfMonth = new Date(currentYear, currentMonth, 1);
+    const endOfMonth = new Date(currentYear, currentMonth + 1, 0);
+    const categoryExpenses = await this.getCategoryExpenses(userId, startOfMonth, endOfMonth);
+
+    // Calculate monthly cash flow and savings rate
+    const monthlyCashFlow = monthlyIncome - monthlyExpenseTotal;
+    const currentSavingsRate = monthlyIncome > 0 ? ((monthlyIncome - monthlyExpenseTotal) / monthlyIncome * 100) : 0;
+
+    // Get budgets for weekly calculation
+    const budgets = await this.getBudgets(userId);
+    const weeklyBudgetLimit = budgets.reduce((sum, budget) => sum + (budget.amount / 4), 0);
+    const weeklyBudgetUsed = weeklyBudgetLimit > 0 ? Math.round((weeklySpending / weeklyBudgetLimit) * 100) : 0;
+
+    // Calculate percentage changes
+    const incomeChange = previousMonthData.income > 0 ? 
+      ((monthlyIncome - previousMonthData.income) / previousMonthData.income * 100) : 0;
+    const expenseChange = previousMonthData.expenses > 0 ? 
+      ((monthlyExpenseTotal - previousMonthData.expenses) / previousMonthData.expenses * 100) : 0;
+    const savingsRateChange = currentSavingsRate - previousMonthData.savingsRate;
     
-    const dailyIncomeTotal = last30DaysTransactions
-      .filter(t => t.type === 'income')
-      .reduce((sum, t) => sum + t.amount, 0) / 30;
-    const dailyExpenseTotal = last30DaysTransactions
-      .filter(t => t.type === 'expense')
-      .reduce((sum, t) => sum + t.amount, 0) / 30;
-    
-    const dailyCashFlow = dailyIncomeTotal - dailyExpenseTotal;
-    const weeklyCashFlow = dailyCashFlow * 7;
+    // Calculate investment growth (simplified calculation based on savings)
+    const investmentGrowth = currentSavingsRate > 15 ? 8.5 : currentSavingsRate > 10 ? 5.2 : 2.1;
+    const investmentChange = previousMonthData.savingsRate > 0 ? 
+      ((currentSavingsRate - previousMonthData.savingsRate) / previousMonthData.savingsRate * 100) : 0;
 
-    // Calculate projected balance (3 months ahead)
-    const projectedBalance = currentBalance + (monthlyCashFlow * 3);
+    // Calculate transaction count
+    const transactionCount = monthlyExpenses.reduce((sum, month) => sum + (month.count || 0), 0);
 
-    // Calculate burn rate (days until balance reaches zero)
-    let burnRate = -1; // -1 means indefinite (positive cash flow)
-    if (dailyCashFlow < 0 && currentBalance > 0) {
-      burnRate = Math.floor(currentBalance / Math.abs(dailyCashFlow));
-    }
-
-    // Generate cash flow trend (last 30 days, grouped by week)
-    const cashFlowTrend: Array<{ date: string; amount: number }> = [];
-    for (let i = 4; i >= 0; i--) {
-      const weekStart = new Date(now.getTime() - (i + 1) * 7 * 24 * 60 * 60 * 1000);
-      const weekEnd = new Date(now.getTime() - i * 7 * 24 * 60 * 60 * 1000);
-      
-      const weekTransactions = await this.getTransactionsByDateRange(userId, weekStart, weekEnd);
-      const weekIncome = weekTransactions
-        .filter(t => t.type === 'income')
-        .reduce((sum, t) => sum + t.amount, 0);
-      const weekExpense = weekTransactions
-        .filter(t => t.type === 'expense')
-        .reduce((sum, t) => sum + t.amount, 0);
-      
-      cashFlowTrend.push({
-        date: weekStart.toISOString().split('T')[0],
-        amount: weekIncome - weekExpense
-      });
-    }
+    console.log('Dashboard Analytics Results:', {
+      monthlyIncome,
+      monthlyExpenseTotal,
+      monthlyCashFlow,
+      currentSavingsRate: currentSavingsRate.toFixed(1),
+      todaySpending,
+      weeklySpending,
+      financialScore
+    });
 
     return {
-      currentBalance,
-      monthlyIncome,
-      monthlyExpenses,
-      dailyCashFlow,
-      weeklyCashFlow,
+      financialScore,
+      totalBalance,
       monthlyCashFlow,
-      projectedBalance,
-      burnRate,
-      cashFlowTrend
+      savingsRate: parseFloat(currentSavingsRate.toFixed(1)),
+      todaySpending,
+      weeklySpending,
+      weeklyBudgetUsed,
+      monthlyIncome,
+      monthlyExpenseTotal,
+      monthlyExpenses,
+      categoryExpenses,
+      transactionCount,
+      previousMonth: previousMonthData,
+      changes: {
+        incomeChange: incomeChange.toFixed(1),
+        expenseChange: expenseChange.toFixed(1),
+        savingsRateChange: savingsRateChange.toFixed(1),
+        investmentChange: investmentChange.toFixed(1)
+      },
+      investmentGrowth: investmentGrowth.toFixed(1)
     };
   }
 
@@ -865,6 +1014,164 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
+  // Live Cash Flow implementation
+  async getLiveCashFlow(userId: string): Promise<{
+    currentBalance: number;
+    monthlyIncome: number;
+    monthlyExpenses: number;
+    dailyIncome: number;
+    dailyExpenses: number;
+    dailyCashFlow: number;
+    weeklyIncome: number;
+    weeklyExpenses: number;
+    weeklyCashFlow: number;
+    monthlyCashFlow: number;
+    projectedBalance: number;
+    burnRate: number;
+    cashFlowTrend: Array<{ date: string; amount: number }>;
+  }> {
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+
+    console.log(`Live Cash Flow: Calculating for ${currentYear}-${currentMonth + 1}`);
+
+    // Get basic financial data
+    const [currentBalance, monthlyIncome, monthlyExpenses] = await Promise.all([
+      this.getTotalBalance(userId),
+      this.getMonthlyIncome(userId, currentYear, currentMonth),
+      this.getMonthlyExpenseTotal(userId, currentYear, currentMonth)
+    ]);
+    
+    const monthlyCashFlow = monthlyIncome - monthlyExpenses;
+
+    // Calculate daily and weekly cash flow (last 30 days average)
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const thirtyDaysAgoTimestamp = Math.floor(thirtyDaysAgo.getTime() / 1000); // Convert to Unix seconds
+    const nowTimestamp = Math.floor(now.getTime() / 1000); // Convert to Unix seconds
+    
+    // Use precise start/end dates with Unix seconds
+    const last30DaysTransactions = await this.getTransactionsByDateRange(
+      userId,
+      new Date(thirtyDaysAgoTimestamp * 1000),
+      new Date(nowTimestamp * 1000)
+    );
+    
+    // Calculate daily averages
+    const dailyIncomeTotal = last30DaysTransactions
+      .filter(t => t.type === 'income')
+      .reduce((sum, t) => sum + t.amount, 0) / 30;
+    
+    const dailyExpenseTotal = last30DaysTransactions
+      .filter(t => t.type === 'expense')
+      .reduce((sum, t) => sum + t.amount, 0) / 30;
+    
+    const dailyCashFlow = dailyIncomeTotal - dailyExpenseTotal;
+
+    // Calculate weekly averages (correctly based on daily amounts)
+    const weeklyIncomeTotal = dailyIncomeTotal * 7;
+    const weeklyExpenseTotal = dailyExpenseTotal * 7;
+    const weeklyCashFlow = weeklyIncomeTotal - weeklyExpenseTotal;
+
+    // Calculate projected balance (3 months ahead)
+    const projectedBalance = currentBalance + (monthlyCashFlow * 3);
+
+    // Calculate burn rate (days until balance reaches zero)
+    let burnRate = -1; // -1 means indefinite (positive cash flow)
+    if (dailyCashFlow < 0 && currentBalance > 0) {
+      burnRate = Math.floor(currentBalance / Math.abs(dailyCashFlow));
+    }
+
+    // Generate cash flow trend (last 35 days, grouped by week with improved label accuracy)
+    const cashFlowTrend: Array<{ date: string; amount: number; weekStart: string; weekEnd: string }> = [];
+    
+    for (let i = 4; i >= 0; i--) {
+      // Calculate week boundaries in a more calendar-accurate way
+      // Start from the beginning of current day and go back in weekly increments
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      
+      // Get start and end of the week (going back i+1 weeks for start, i weeks for end)
+      const weekStartTime = new Date(todayStart.getTime() - (i + 1) * 7 * 24 * 60 * 60 * 1000);
+      const weekEndTime = new Date(todayStart.getTime() - i * 7 * 24 * 60 * 60 * 1000 - 1); // -1ms to not include next week
+      
+      // Convert to Unix seconds for consistent date handling
+      const weekStartTimestamp = Math.floor(weekStartTime.getTime() / 1000);
+      const weekEndTimestamp = Math.floor(weekEndTime.getTime() / 1000);
+      
+      // Format dates for display
+      const weekStartFormatted = weekStartTime.toISOString().split('T')[0];
+      const weekEndFormatted = weekEndTime.toISOString().split('T')[0];
+      
+      // Log for debugging
+      console.log(`Week ${5-i}: ${weekStartFormatted} to ${weekEndFormatted} [${weekStartTimestamp}-${weekEndTimestamp}]`);
+      
+      // Get transactions for this week using precise timestamp ranges
+      const weekTransactions = await this.getTransactionsByDateRange(
+        userId, 
+        weekStartTime,
+        weekEndTime
+      );
+      
+      // Calculate net cash flow for the week
+      const weekIncome = weekTransactions
+        .filter(t => t.type === 'income')
+        .reduce((sum, t) => sum + t.amount, 0);
+        
+      const weekExpense = weekTransactions
+        .filter(t => t.type === 'expense')
+        .reduce((sum, t) => sum + t.amount, 0);
+      
+      const weekNetFlow = weekIncome - weekExpense;
+      
+      // Use a more descriptive label format for the week
+      const weekLabel = `${weekStartFormatted}`;
+      
+      // Log transactions for debugging
+      console.log(`Week ${5-i} transactions: ${weekTransactions.length}`);
+      weekTransactions.forEach(t => {
+        const date = new Date(this.normalizeTimestamp(t.date) * 1000);
+        console.log(`  - ${t.type}: ${t.amount} (${date.toISOString().split('T')[0]})`);
+      });
+      
+      // Add to trend data with better labeling
+      cashFlowTrend.push({
+        date: weekLabel,
+        weekStart: weekStartFormatted,
+        weekEnd: weekEndFormatted,
+        amount: weekNetFlow
+      });
+      
+      console.log(`Week ${5-i} flow: income=${weekIncome}, expense=${weekExpense}, net=${weekNetFlow}`);
+    }
+
+    console.log('Live Cash Flow Results:', {
+      currentBalance,
+      monthlyIncome,
+      monthlyExpenses,
+      monthlyCashFlow,
+      dailyIncome: dailyIncomeTotal,
+      dailyExpenses: dailyExpenseTotal,
+      dailyCashFlow,
+      burnRate
+    });
+
+    return {
+      currentBalance,
+      monthlyIncome,
+      monthlyExpenses,
+      dailyIncome: dailyIncomeTotal,
+      dailyExpenses: dailyExpenseTotal,
+      dailyCashFlow,
+      weeklyIncome: weeklyIncomeTotal,
+      weeklyExpenses: weeklyExpenseTotal,
+      weeklyCashFlow,
+      monthlyCashFlow,
+      projectedBalance,
+      burnRate,
+      cashFlowTrend
+    };
+  }
+
   // Helper method to get spending patterns
   async getSpendingPatterns(userId: string, months: number): Promise<Array<{
     categoryId: number;
@@ -886,7 +1193,9 @@ export class DatabaseStorage implements IStorage {
     expenseTransactions.forEach(transaction => {
       if (!transaction.categoryId) return;
       
-      const transactionDate = new Date(transaction.date);
+      // Use normalized timestamp for consistent date handling
+      const normalizedTimestamp = this.normalizeTimestamp(transaction.date);
+      const transactionDate = new Date(normalizedTimestamp * 1000);
       const monthKey = `${transactionDate.getFullYear()}-${transactionDate.getMonth()}`;
       
       if (!categoryMonthlySpending[transaction.categoryId]) {

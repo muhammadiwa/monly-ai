@@ -439,7 +439,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           currency: "USD",
           description: analysis.description,
           type: analysis.type,
-          date: new Date(),
+          date: Math.floor(Date.now() / 1000),
           aiGenerated: true,
         });
         
@@ -521,7 +521,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             currency: userPreferences?.defaultCurrency || "USD",
             description: analysis.description,
             type: analysis.type,
-            date: Date.now(),
+            date: Math.floor(Date.now() / 1000),
             aiGenerated: true,
           });
           
@@ -627,80 +627,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/analytics/dashboard', requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
-      const now = new Date();
       
-      // Get current month stats
-      const currentMonth = now.getMonth();
-      const currentYear = now.getFullYear();
-      
-      // Get last 6 months expenses
-      const monthlyExpenses = await storage.getMonthlyExpenses(req.user.id, 6);
-      
-      // Get current month category breakdown
-      const startOfMonth = new Date(currentYear, currentMonth, 1);
-      const endOfMonth = new Date(currentYear, currentMonth + 1, 0);
-      const categoryExpenses = await storage.getCategoryExpenses(req.user.id, startOfMonth, endOfMonth);
-      
-      // Get totals for current month
-      const totalBalance = await storage.getTotalBalance(req.user.id);
-      const monthlyIncome = await storage.getMonthlyIncome(req.user.id, currentYear, currentMonth);
-      const monthlyExpenseTotal = await storage.getMonthlyExpenseTotal(req.user.id, currentYear, currentMonth);
-      
-      // Get today's and weekly spending from database
-      const todaySpending = await storage.getTodaySpending(req.user.id);
-      const weeklySpending = await storage.getWeeklySpending(req.user.id);
-      
-      // Get budgets for weekly calculation
-      const budgets = await storage.getBudgets(req.user.id);
-      const weeklyBudgetLimit = budgets.reduce((sum, budget) => sum + (budget.amount / 4), 0);
-      const weeklyBudgetUsed = weeklyBudgetLimit > 0 ? Math.round((weeklySpending / weeklyBudgetLimit) * 100) : 0;
-      
-      // Get previous month data for comparison
-      const previousMonthData = await storage.getPreviousMonthData(req.user.id);
-      
-      // Calculate percentage changes
-      const incomeChange = previousMonthData.income > 0 ? 
-        ((monthlyIncome - previousMonthData.income) / previousMonthData.income * 100) : 0;
-      const expenseChange = previousMonthData.expenses > 0 ? 
-        ((monthlyExpenseTotal - previousMonthData.expenses) / previousMonthData.expenses * 100) : 0;
-      const savingsRateChange = monthlyIncome > 0 ? 
-        ((monthlyIncome - monthlyExpenseTotal) / monthlyIncome * 100) - previousMonthData.savingsRate : 0;
-        // Calculate investment growth (simplified calculation based on savings)
-      const currentSavingsRate = monthlyIncome > 0 ? ((monthlyIncome - monthlyExpenseTotal) / monthlyIncome * 100) : 0;
-      const investmentGrowth = currentSavingsRate > 15 ? 8.5 : currentSavingsRate > 10 ? 5.2 : 2.1;
-      const investmentChange = previousMonthData.savingsRate > 0 ? 
-        ((currentSavingsRate - previousMonthData.savingsRate) / previousMonthData.savingsRate * 100) : 0;
-
-      // Calculate financial score using backend logic
-      const financialScore = await storage.calculateFinancialScore(req.user.id);
-      
-      // Calculate monthly cash flow
-      const monthlyCashFlow = monthlyIncome - monthlyExpenseTotal;
-
-      const dashboardData = {
-        monthlyExpenses,
-        categoryExpenses,
-        totalBalance,
-        monthlyIncome,
-        monthlyExpenseTotal,
-        monthlyCashFlow, // Add cash flow calculation
-        financialScore, // Add real financial score from backend
-        savingsRate: currentSavingsRate.toFixed(1),
-        transactionCount: monthlyExpenses.reduce((sum, month) => sum + (month.count || 0), 0),
-        // Add real spending data from database
-        todaySpending,
-        weeklySpending,
-        weeklyBudgetUsed,
-        // Add comparison data
-        previousMonth: previousMonthData,
-        changes: {
-          incomeChange: incomeChange.toFixed(1),
-          expenseChange: expenseChange.toFixed(1),
-          savingsRateChange: savingsRateChange.toFixed(1),
-          investmentChange: investmentChange.toFixed(1)
-        },
-        investmentGrowth: investmentGrowth.toFixed(1)
-      };
+      // Get comprehensive dashboard data from backend with all calculations
+      const dashboardData = await storage.getDashboardAnalytics(req.user.id);
       
       res.json(dashboardData);
     } catch (error) {
@@ -709,15 +638,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Live Cash Flow API
+  // Live Cash Flow API - fully optimized for mixed timestamp formats and correct weekly grouping
   app.get('/api/analytics/cash-flow', requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       const userId = req.user!.id;
+      console.log(`Fetching live cash flow data for user: ${userId}`);
       const cashFlowData = await storage.getLiveCashFlow(userId);
+      
+      // Format currency values for better frontend handling with improved date labeling
+      const formattedData = {
+        ...cashFlowData,
+        // Format the trend data for charting with improved week labeling
+        cashFlowTrend: cashFlowData.cashFlowTrend.map(item => {
+          // Generate a more descriptive label including date range
+          const startDate = new Date(item.weekStart).getDate();
+          const endDate = new Date(item.weekEnd).getDate();
+          const endMonth = new Date(item.weekEnd).toLocaleString('default', { month: 'short' });
+          
+          // Format: "1-7 Jul" or if crossing months: "29 Jun-5 Jul"
+          let weekLabel;
+          if (new Date(item.weekStart).getMonth() === new Date(item.weekEnd).getMonth()) {
+            // Same month
+            weekLabel = `${startDate}-${endDate} ${endMonth}`;
+          } else {
+            // Different months
+            const startMonth = new Date(item.weekStart).toLocaleString('default', { month: 'short' });
+            weekLabel = `${startDate} ${startMonth}-${endDate} ${endMonth}`;
+          }
+          
+          return {
+            date: item.date,
+            label: weekLabel,
+            weekStart: item.weekStart,
+            weekEnd: item.weekEnd,
+            amount: Number(item.amount)
+          };
+        })
+      };
+      
+      console.log('Formatted cash flow trend data:', 
+        formattedData.cashFlowTrend.map(i => `${i.label}: ${i.amount}`)
+      );
       
       res.json({
         success: true,
-        data: cashFlowData
+        data: formattedData
       });
     } catch (error) {
       console.error("Error fetching cash flow data:", error);
@@ -761,7 +726,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Call OpenAI chat completion API
       const response = await openai.chat.completions.create({
-        model: 'gpt-3.5-turbo',
+        model: 'gpt-4o', // Use the latest model
         messages: messages,
         temperature: 0.7,
         max_tokens: 150,
@@ -808,7 +773,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             currency: "USD",
             description: analysis.description,
             type: analysis.type,
-            date: Date.now(), // Use milliseconds timestamp
+            date: Math.floor(Date.now() / 1000), // Use seconds timestamp
             aiGenerated: true,
           });
           
@@ -937,7 +902,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             currency: userPreferences?.defaultCurrency || "USD",
             description: analysis.description,
             type: analysis.type,
-            date: Date.now(),
+            date: Math.floor(Date.now() / 1000),
             aiGenerated: true,
           });
 
@@ -1084,7 +1049,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               currency: userPreferences?.defaultCurrency || "USD",
               description: analysis.description,
               type: analysis.type,
-              date: Date.now(),
+              date: Math.floor(Date.now() / 1000),
               aiGenerated: true,
             });
 
@@ -1241,7 +1206,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 currency: userPreferences?.defaultCurrency || "USD",
                 description: analysis.description,
                 type: analysis.type || 'expense',
-                date: Date.now(),
+                date: Math.floor(Date.now() / 1000),
                 aiGenerated: true,
               });
               
