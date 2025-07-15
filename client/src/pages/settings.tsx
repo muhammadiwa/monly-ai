@@ -129,14 +129,29 @@ export default function Settings() {
     }
   }, [isAuthenticated, isLoading, toast]);
 
-  const handlePreferenceUpdate = (key: keyof UserPreferences, value: any) => {
+  const handlePreferenceUpdate = async (key: keyof UserPreferences, value: any) => {
     if (!preferences) return;
     
     const updatedPreferences = { ...preferences, [key]: value };
     setPreferences(updatedPreferences);
     
-    // Update only the changed field
-    updatePreferencesMutation.mutate({ [key]: value });
+    try {
+      // Update only the changed field via API
+      await apiRequest('PUT', '/api/user/preferences', { [key]: value });
+      toast({
+        title: "Settings Updated",
+        description: "Your preferences have been saved successfully.",
+      });
+    } catch (error) {
+      console.error('Error updating preferences:', error);
+      // Revert the optimistic update on error
+      setPreferences(preferences);
+      toast({
+        title: "Update Failed",
+        description: "Failed to save your preferences. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleProfileSave = async () => {

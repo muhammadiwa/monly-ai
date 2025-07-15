@@ -38,6 +38,7 @@ export interface IStorage {
   getUserPreferences(userId: string): Promise<UserPreferences | undefined>;
   createUserPreferences(preferences: InsertUserPreferences): Promise<UserPreferences>;
   updateUserPreferences(userId: string, preferences: UpdateUserPreferences): Promise<UserPreferences>;
+  initializeDefaultUserPreferences(userId: string): Promise<UserPreferences>;
 
   // Category operations
   getCategories(userId: string): Promise<Category[]>;
@@ -111,7 +112,7 @@ export interface IStorage {
     monthlyCashFlow: number;
     projectedBalance: number;
     burnRate: number; // days until balance reaches zero
-    cashFlowTrend: Array<{ date: string; amount: number }>;
+    cashFlowTrend: Array<{ date: string; amount: number; weekStart: string; weekEnd: string }>;
   }>;
 
   // Comprehensive Dashboard Analytics - all calculations done in backend
@@ -246,6 +247,22 @@ export class DatabaseStorage implements IStorage {
       .where(eq(userPreferences.userId, userId))
       .returning();
     return updatedPreferences;
+  }
+
+  async initializeDefaultUserPreferences(userId: string): Promise<UserPreferences> {
+    const defaultPreferences: InsertUserPreferences = {
+      userId,
+      defaultCurrency: "IDR",
+      timezone: "Asia/Jakarta",
+      language: "id",
+      autoCategorize: true,
+    };
+
+    const [newPreferences] = await db
+      .insert(userPreferences)
+      .values(defaultPreferences)
+      .returning();
+    return newPreferences;
   }
 
   // Category operations
@@ -434,11 +451,21 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateBudget(id: number, budget: Partial<InsertBudget>): Promise<Budget> {
+    const updateData = {
+      ...budget,
+      updatedAt: Math.floor(Date.now() / 1000) // Always set current timestamp
+    };
+    
     const [updatedBudget] = await db
       .update(budgets)
-      .set({ ...budget, updatedAt: Math.floor(Date.now() / 1000) }) // Use Unix seconds
+      .set(updateData)
       .where(eq(budgets.id, id))
       .returning();
+      
+    if (!updatedBudget) {
+      throw new Error(`Budget with id ${id} not found`);
+    }
+    
     return updatedBudget;
   }
 
@@ -939,7 +966,7 @@ export class DatabaseStorage implements IStorage {
     monthlyCashFlow: number;
     projectedBalance: number;
     burnRate: number;
-    cashFlowTrend: Array<{ date: string; amount: number }>;
+    cashFlowTrend: Array<{ date: string; amount: number; weekStart: string; weekEnd: string }>;
   }> {
     const now = new Date();
     const currentMonth = now.getMonth();

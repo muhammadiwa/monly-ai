@@ -15,7 +15,7 @@ import {
   Calendar
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { formatCurrency } from '@/lib/currencyUtils';
+import { formatCurrency, getCurrencySymbol } from '@/lib/currencyUtils';
 
 interface BudgetAlert {
   category: string;
@@ -101,18 +101,55 @@ export default function AdjustBudgetModal({
 
     try {
       const authToken = localStorage.getItem('auth-token');
-      const response = await fetch('/api/budgets/adjust', {
-        method: 'PUT',
-        credentials: 'include',
+      if (!authToken) {
+        throw new Error('No auth token');
+      }
+
+      // First, get existing budgets to find the budget ID for this category
+      const budgetsResponse = await fetch("/api/budgets", {
         headers: {
-          'Content-Type': 'application/json',
           'Authorization': `Bearer ${authToken}`,
         },
+        credentials: "include",
+      });
+
+      if (!budgetsResponse.ok) {
+        throw new Error("Failed to fetch budgets");
+      }
+
+      const budgets = await budgetsResponse.json();
+      const existingBudget = budgets.find((budget: any) => 
+        budget.category?.name === alert.category
+      );
+
+      if (!existingBudget) {
+        throw new Error(`Budget for ${alert.category} not found`);
+      }
+
+      // Update the existing budget using the same endpoint as budgets page
+      const response = await fetch(`/api/budgets/${existingBudget.id}`, {
+        method: "PUT",
+        headers: { 
+          "Content-Type": "application/json",
+          'Authorization': `Bearer ${authToken}`,
+        },
+        credentials: "include",
         body: JSON.stringify({
-          category: alert.category,
-          newAmount: budgetAmount,
+          amount: budgetAmount
         }),
       });
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          toast({
+            title: "Session Expired",
+            description: "Please log in again.",
+            variant: "destructive",
+          });
+          window.location.href = "/auth";
+        }
+        throw new Error("Failed to update budget");
+      }
 
       const result = await response.json();
 
@@ -247,12 +284,17 @@ export default function AdjustBudgetModal({
               New Budget Amount
             </Label>
             <div className="relative">
-              <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              {getCurrencySymbol(currency) === '$' ? (
+                <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              ) : (
+                <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-sm text-gray-400 font-medium">
+                  {getCurrencySymbol(currency)}
+                </span>
+              )}
               <Input
                 id="newBudgetLimit"
                 type="number"
                 min="1"
-                step="1000"
                 value={newBudgetLimit}
                 onChange={(e) => {
                   setNewBudgetLimit(e.target.value);

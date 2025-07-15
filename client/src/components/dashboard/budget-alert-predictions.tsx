@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,8 @@ import {
   Target
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/currencyUtils';
+import AdjustBudgetModal from '@/components/modals/adjust-budget-modal';
+import SetSpendingLimitModal from '@/components/modals/set-spending-limit-modal';
 
 interface BudgetAlertPrediction {
   category: string;
@@ -33,7 +35,11 @@ interface BudgetAlertPredictionsProps {
 }
 
 export default function BudgetAlertPredictions({ currency, showBalance }: BudgetAlertPredictionsProps) {
-  const { data: alertData, isLoading, error } = useQuery({
+  const [showAdjustModal, setShowAdjustModal] = useState(false);
+  const [showLimitModal, setShowLimitModal] = useState(false);
+  const [selectedAlert, setSelectedAlert] = useState<BudgetAlertPrediction | null>(null);
+
+  const { data: alertData, isLoading, error, refetch } = useQuery({
     queryKey: ['/api/ai/budget-alerts'],
     queryFn: () => {
       const authToken = localStorage.getItem('auth-token');
@@ -223,6 +229,10 @@ export default function BudgetAlertPredictions({ currency, showBalance }: Budget
                       variant="outline" 
                       size="sm" 
                       className="flex-1 border-blue-200 text-blue-700 hover:bg-blue-50"
+                      onClick={() => {
+                        setSelectedAlert(alert);
+                        setShowAdjustModal(true);
+                      }}
                     >
                       <Calendar className="h-4 w-4 mr-2" />
                       Adjust Budget
@@ -231,6 +241,10 @@ export default function BudgetAlertPredictions({ currency, showBalance }: Budget
                       variant="outline" 
                       size="sm" 
                       className="flex-1 border-green-200 text-green-700 hover:bg-green-50"
+                      onClick={() => {
+                        setSelectedAlert(alert);
+                        setShowLimitModal(true);
+                      }}
                     >
                       <Target className="h-4 w-4 mr-2" />
                       Set Spending Limit
@@ -242,6 +256,34 @@ export default function BudgetAlertPredictions({ currency, showBalance }: Budget
           </div>
         )}
       </CardContent>
+
+      {/* Adjust Budget Modal */}
+      <AdjustBudgetModal
+        isOpen={showAdjustModal}
+        onClose={() => {
+          setShowAdjustModal(false);
+          setSelectedAlert(null);
+        }}
+        alert={selectedAlert}
+        currency={currency}
+        onBudgetAdjusted={() => {
+          refetch(); // Refresh data after budget adjustment
+        }}
+      />
+
+      {/* Set Spending Limit Modal */}
+      <SetSpendingLimitModal
+        isOpen={showLimitModal}
+        onClose={() => {
+          setShowLimitModal(false);
+          setSelectedAlert(null);
+        }}
+        alert={selectedAlert}
+        currency={currency}
+        onLimitSet={() => {
+          refetch(); // Refresh data after setting limit
+        }}
+      />
     </Card>
   );
 }

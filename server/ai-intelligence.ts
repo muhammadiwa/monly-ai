@@ -538,7 +538,9 @@ export class AIFinancialIntelligenceEngine {
     const onTrackGoals = forecasts.filter(f => f.status === 'on-track' || f.status === 'ahead').length;
     score += onTrackGoals * 10;
     
-    return Math.max(0, Math.min(100, score));
+    // Round to 1 decimal place
+    const finalScore = Math.max(0, Math.min(100, score));
+    return Math.round(finalScore * 10) / 10;
   }
 
   // AI-powered content generation methods
@@ -563,7 +565,7 @@ Respond in JSON format: {"reasoning": "...", "tips": ["tip1", "tip2", "tip3"]}
 `;
 
       const response = await openai.chat.completions.create({
-        model: "gpt-3.5-turbo",
+        model: "gpt-4.1-nano",
         messages: [{ role: "user", content: prompt }],
         temperature: 0.7,
         max_tokens: 300
@@ -602,7 +604,7 @@ Generate a brief, actionable recommendation to stay within budget.
 `;
 
       const response = await openai.chat.completions.create({
-        model: "gpt-3.5-turbo",
+        model: "gpt-4.1-nano",
         messages: [{ role: "user", content: prompt }],
         temperature: 0.5,
         max_tokens: 100
@@ -633,7 +635,7 @@ Generate a brief recommendation to achieve this goal.
 `;
 
       const response = await openai.chat.completions.create({
-        model: "gpt-3.5-turbo",
+        model: "gpt-4.1-nano",
         messages: [{ role: "user", content: prompt }],
         temperature: 0.5,
         max_tokens: 100

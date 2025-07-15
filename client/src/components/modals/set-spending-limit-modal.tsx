@@ -15,7 +15,7 @@ import {
   Calendar
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { formatCurrency } from '@/lib/currencyUtils';
+import { formatCurrency, getCurrencySymbol } from '@/lib/currencyUtils';
 
 interface BudgetAlert {
   category: string;
@@ -128,7 +128,7 @@ export default function SetSpendingLimitModal({
 
     try {
       const authToken = localStorage.getItem('auth-token');
-      const response = await fetch('/api/spending-limits', {
+      const response = await fetch('/api/budgets/spending-limits', {
         method: 'POST',
         credentials: 'include',
         headers: {
@@ -280,12 +280,17 @@ export default function SetSpendingLimitModal({
               <div className="space-y-2">
                 <Label htmlFor="dailyLimit" className="text-sm">Daily Limit</Label>
                 <div className="relative">
-                  <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  {getCurrencySymbol(currency) === '$' ? (
+                    <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  ) : (
+                    <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-sm text-gray-400 font-medium">
+                      {getCurrencySymbol(currency)}
+                    </span>
+                  )}
                   <Input
                     id="dailyLimit"
                     type="number"
                     min="0"
-                    step="1000"
                     value={limitSettings.dailyLimit}
                     onChange={(e) => setLimitSettings(prev => ({ ...prev, dailyLimit: e.target.value }))}
                     placeholder="Daily spending limit"
@@ -298,12 +303,17 @@ export default function SetSpendingLimitModal({
               <div className="space-y-2">
                 <Label htmlFor="weeklyLimit" className="text-sm">Weekly Limit</Label>
                 <div className="relative">
-                  <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  {getCurrencySymbol(currency) === '$' ? (
+                    <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  ) : (
+                    <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-sm text-gray-400 font-medium">
+                      {getCurrencySymbol(currency)}
+                    </span>
+                  )}
                   <Input
                     id="weeklyLimit"
                     type="number"
                     min="0"
-                    step="1000"
                     value={limitSettings.weeklyLimit}
                     onChange={(e) => setLimitSettings(prev => ({ ...prev, weeklyLimit: e.target.value }))}
                     placeholder="Weekly spending limit"
