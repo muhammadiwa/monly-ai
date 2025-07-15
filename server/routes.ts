@@ -733,10 +733,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         dailyLimit, 
         weeklyLimit, 
         monthlyLimit,
-        alertThresholds,
-        enableAlerts,
-        strictMode 
+        enableDailyAlerts,
+        enableWeeklyAlerts,
+        hardLimit,
+        warningThreshold
       } = req.body;
+      
+      console.log('=== SPENDING LIMITS REQUEST ===');
+      console.log('User:', req.user.id);
+      console.log('Payload:', req.body);
       
       // Validation
       if (!category) {
@@ -771,17 +776,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         type: 'spending_limit',
         dailyLimit: dailyLimit || null,
         weeklyLimit: weeklyLimit || null,
-        monthlyLimit: monthlyLimit || null,
-        alertThresholds: alertThresholds || { warning: 80, critical: 95 },
-        enableAlerts: enableAlerts !== false,
-        strictMode: strictMode === true,
+        monthlyLimit: monthlyAmount || null,
+        enableDailyAlerts: enableDailyAlerts !== false,
+        enableWeeklyAlerts: enableWeeklyAlerts !== false,
+        hardLimit: hardLimit === true,
+        warningThreshold: warningThreshold || 80,
         createdAt: Date.now()
       };
+
+      console.log('=== LIMIT METADATA ===');
+      console.log('Calculated monthly amount:', monthlyAmount);
+      console.log('Limit metadata:', limitMetadata);
 
       if (existingBudget) {
         // Update existing budget with spending limit
         const updatedBudget = await storage.updateBudget(existingBudget.id, {
-          amount: monthlyAmount
+          amount: monthlyAmount,
+          metadata: JSON.stringify(limitMetadata)
         });
 
         res.json({
@@ -791,12 +802,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
             category,
             dailyLimit,
             weeklyLimit,
-            monthlyLimit,
-            alertThresholds: limitMetadata.alertThresholds,
-            enableAlerts: limitMetadata.enableAlerts,
-            strictMode: limitMetadata.strictMode
+            monthlyLimit: monthlyAmount,
+            enableDailyAlerts: limitMetadata.enableDailyAlerts,
+            enableWeeklyAlerts: limitMetadata.enableWeeklyAlerts,
+            hardLimit: limitMetadata.hardLimit,
+            warningThreshold: limitMetadata.warningThreshold
           }
         });
+        
+        console.log('=== SPENDING LIMITS UPDATED ===');
+        console.log('Budget updated:', updatedBudget);
       } else {
         // Get user preferences for currency
         const userPreferences = await storage.getUserPreferences(req.user.id);
@@ -811,6 +826,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           period: 'monthly',
           startDate: Math.floor(Date.now() / 1000),
           endDate: Math.floor((Date.now() + 30 * 24 * 60 * 60 * 1000) / 1000),
+          metadata: JSON.stringify(limitMetadata),
           isActive: true
         });
 
@@ -821,12 +837,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
             category,
             dailyLimit,
             weeklyLimit,
-            monthlyLimit,
-            alertThresholds: limitMetadata.alertThresholds,
-            enableAlerts: limitMetadata.enableAlerts,
-            strictMode: limitMetadata.strictMode
+            monthlyLimit: monthlyAmount,
+            enableDailyAlerts: limitMetadata.enableDailyAlerts,
+            enableWeeklyAlerts: limitMetadata.enableWeeklyAlerts,
+            hardLimit: limitMetadata.hardLimit,
+            warningThreshold: limitMetadata.warningThreshold
           }
         });
+        
+        console.log('=== SPENDING LIMITS CREATED ===');
+        console.log('New budget:', newBudget);
       }
     } catch (error) {
       console.error("Error setting spending limits:", error);

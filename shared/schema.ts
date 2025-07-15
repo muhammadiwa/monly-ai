@@ -83,6 +83,7 @@ export const budgets = sqliteTable("budgets", {
   startDate: integer("start_date").notNull(), // Unix timestamp
   endDate: integer("end_date").notNull(), // Unix timestamp
   isActive: integer("is_active", { mode: 'boolean' }).default(true),
+  metadata: text("metadata"), // JSON metadata for spending limits and other budget-related data
   createdAt: integer("created_at"), // Unix timestamp
   updatedAt: integer("updated_at"), // Unix timestamp
 });
