@@ -624,6 +624,216 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Adjust budget by category
+  app.put('/api/budgets/adjust', requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      console.log('=== BUDGET ADJUST REQUEST START ===');
+      console.log('User:', req.user);
+      console.log('Body:', req.body);
+      
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
+      
+      const { category, newAmount, period = 'monthly', reason } = req.body;
+      
+      // Validation
+      if (!category || !newAmount || newAmount <= 0) {
+        return res.status(400).json({ message: "Category and valid amount are required" });
+      }
+
+      // Find category by name to get categoryId
+      const categories = await storage.getCategories(req.user.id);
+      const categoryObj = categories.find(cat => cat.name === category);
+      
+      if (!categoryObj) {
+        return res.status(404).json({ message: "Category not found" });
+      }
+
+      // Find the budget by categoryId
+      const userBudgets = await storage.getBudgets(req.user.id);
+      const existingBudget = userBudgets.find(budget => budget.categoryId === categoryObj.id);
+
+      if (!existingBudget) {
+        // Get user preferences for currency
+        const userPreferences = await storage.getUserPreferences(req.user.id);
+        const userCurrency = userPreferences?.defaultCurrency || 'IDR';
+        
+        // Create new budget if doesn't exist
+        const newBudget = await storage.createBudget({
+          userId: req.user.id,
+          categoryId: categoryObj.id,
+          amount: newAmount,
+          currency: userCurrency,
+          period: period,
+          startDate: Math.floor(Date.now() / 1000),
+          endDate: Math.floor((Date.now() + 30 * 24 * 60 * 60 * 1000) / 1000),
+          isActive: true
+        });
+
+        const response = {
+          message: "Budget created successfully",
+          budget: newBudget,
+          adjustment: {
+            category,
+            previousAmount: 0,
+            newAmount,
+            difference: newAmount,
+            reason: reason || 'New budget created'
+          }
+        };
+        
+        console.log('=== BUDGET ADJUST RESPONSE (NEW) ===');
+        console.log('Response:', response);
+        console.log('=== BUDGET ADJUST REQUEST END ===');
+        
+        res.json(response);
+        return;
+      }
+
+      // Update the existing budget
+      const updatedBudget = await storage.updateBudget(existingBudget.id, {
+        amount: newAmount,
+        period: period
+      });
+
+      // Log the adjustment
+      console.log(`Budget adjusted for user ${req.user.id}: ${category} from ${existingBudget.amount} to ${newAmount}. Reason: ${reason || 'Not specified'}`);
+
+      const response = {
+        message: "Budget adjusted successfully",
+        budget: updatedBudget,
+        adjustment: {
+          category,
+          previousAmount: existingBudget.amount,
+          newAmount,
+          difference: newAmount - existingBudget.amount,
+          reason
+        }
+      };
+      
+      console.log('=== BUDGET ADJUST RESPONSE ===');
+      console.log('Response:', response);
+      console.log('=== BUDGET ADJUST REQUEST END ===');
+      
+      res.json(response);
+    } catch (error) {
+      console.error("=== BUDGET ADJUST ERROR ===");
+      console.error("Error adjusting budget:", error);
+      console.error("=== ERROR END ===");
+      res.status(500).json({ message: "Failed to adjust budget" });
+    }
+  });
+
+  // Set spending limit
+  app.post('/api/budgets/spending-limits', requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
+      
+      const { 
+        category, 
+        dailyLimit, 
+        weeklyLimit, 
+        monthlyLimit,
+        alertThresholds,
+        enableAlerts,
+        strictMode 
+      } = req.body;
+      
+      // Validation
+      if (!category) {
+        return res.status(400).json({ message: "Category is required" });
+      }
+
+      if (!dailyLimit && !weeklyLimit && !monthlyLimit) {
+        return res.status(400).json({ message: "At least one limit (daily, weekly, or monthly) is required" });
+      }
+
+      // Find category by name to get categoryId
+      const categories = await storage.getCategories(req.user.id);
+      const categoryObj = categories.find(cat => cat.name === category);
+      
+      if (!categoryObj) {
+        return res.status(404).json({ message: "Category not found" });
+      }
+
+      // Calculate monthly amount for budget storage
+      let monthlyAmount = monthlyLimit;
+      if (!monthlyAmount && dailyLimit) {
+        monthlyAmount = dailyLimit * 30;
+      } else if (!monthlyAmount && weeklyLimit) {
+        monthlyAmount = weeklyLimit * 4;
+      }
+
+      // Check if spending limit (budget) already exists for this category
+      const userBudgets = await storage.getBudgets(req.user.id);
+      const existingBudget = userBudgets.find(budget => budget.categoryId === categoryObj.id);
+
+      const limitMetadata = {
+        type: 'spending_limit',
+        dailyLimit: dailyLimit || null,
+        weeklyLimit: weeklyLimit || null,
+        monthlyLimit: monthlyLimit || null,
+        alertThresholds: alertThresholds || { warning: 80, critical: 95 },
+        enableAlerts: enableAlerts !== false,
+        strictMode: strictMode === true,
+        createdAt: Date.now()
+      };
+
+      if (existingBudget) {
+        // Update existing budget with spending limit
+        const updatedBudget = await storage.updateBudget(existingBudget.id, {
+          amount: monthlyAmount
+        });
+
+        res.json({
+          message: "Spending limits updated successfully",
+          budget: updatedBudget,
+          limits: {
+            category,
+            dailyLimit,
+            weeklyLimit,
+            monthlyLimit,
+            alertThresholds: limitMetadata.alertThresholds,
+            enableAlerts: limitMetadata.enableAlerts,
+            strictMode: limitMetadata.strictMode
+          }
+        });
+      } else {
+        // Get user preferences for currency
+        const userPreferences = await storage.getUserPreferences(req.user.id);
+        const userCurrency = userPreferences?.defaultCurrency || 'IDR';
+        
+        // Create new budget with spending limit
+        const newBudget = await storage.createBudget({
+          userId: req.user.id,
+          categoryId: categoryObj.id,
+          amount: monthlyAmount,
+          currency: userCurrency,
+          period: 'monthly',
+          startDate: Math.floor(Date.now() / 1000),
+          endDate: Math.floor((Date.now() + 30 * 24 * 60 * 60 * 1000) / 1000),
+          isActive: true
+        });
+
+        res.json({
+          message: "Spending limits set successfully",
+          budget: newBudget,
+          limits: {
+            category,
+            dailyLimit,
+            weeklyLimit,
+            monthlyLimit,
+            alertThresholds: limitMetadata.alertThresholds,
+            enableAlerts: limitMetadata.enableAlerts,
+            strictMode: limitMetadata.strictMode
+          }
+        });
+      }
+    } catch (error) {
+      console.error("Error setting spending limits:", error);
+      res.status(500).json({ message: "Failed to set spending limits" });
+    }
+  });
+
   // Goals routes
   app.get('/api/goals', requireAuth, async (req: AuthRequest, res: Response) => {
     try {

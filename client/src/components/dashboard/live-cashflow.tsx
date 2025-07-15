@@ -163,7 +163,7 @@ export default function LiveCashFlow({ data, currency, showBalance }: LiveCashFl
             <div className="h-40">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
-                  data={safeFlowData.cashFlowTrend.map(item => ({
+                  data={safeFlowData.cashFlowTrend.map((item: any) => ({
                     ...item,
                     value: item.amount,
                     // Use the new label property if available, otherwise fall back to date formatting
@@ -190,7 +190,7 @@ export default function LiveCashFlow({ data, currency, showBalance }: LiveCashFl
                     dataKey="value" 
                     radius={[4, 4, 0, 0]}
                   >
-                    {safeFlowData.cashFlowTrend.map((entry, index) => (
+                    {safeFlowData.cashFlowTrend.map((entry: any, index: number) => (
                       <Cell 
                         key={`cell-${index}`} 
                         fill={entry.amount >= 0 ? '#10B981' : '#EF4444'} 

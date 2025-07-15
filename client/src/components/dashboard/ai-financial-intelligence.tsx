@@ -77,7 +77,7 @@ export default function AIFinancialIntelligence({ currency, showBalance }: AIFin
                 </Badge>
                 <div className="text-right">
                   <div className={`text-2xl font-bold ${getScoreColor(overallScore)}`}>
-                    {overallScore}
+                    {overallScore.toFixed(1)}
                   </div>
                   <div className="text-xs text-gray-500">AI Score</div>
                 </div>

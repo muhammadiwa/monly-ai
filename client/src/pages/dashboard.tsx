@@ -330,6 +330,7 @@ export default function Dashboard() {
       netWorth,
       monthlyIncome,
       monthlyExpenses,
+      monthlyCashFlow: monthlyIncome - monthlyExpenses, // Add monthly cash flow calculation
       savingsRate,
       financialScore,
       todaySpending,
