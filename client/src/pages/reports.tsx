@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { formatCurrency } from "@/lib/currencyUtils";
+import { formatCurrency, getUserCurrency } from "@/lib/currencyUtils";
 import { DateRangePicker } from "@/components/ui/date-picker";
 import { format } from "date-fns";
 import { DateRange } from "react-day-picker";
@@ -88,8 +88,8 @@ export default function Reports() {
     enabled: isAuthenticated,
   });
 
-  // Get user's preferred currency
-  const userCurrency = (userPreferences as any)?.defaultCurrency || 'USD';
+  // Get user's preferred currency using utility function
+  const userCurrency = getUserCurrency(userPreferences);
 
   // Helper function to parse transaction dates
   const parseTransactionDate = (date: string | number): Date => {

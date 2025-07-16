@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus, Target, TrendingDown, AlertTriangle, Calendar, DollarSign, Edit3, Trash2 } from "lucide-react";
+import { formatCurrency, getUserCurrency } from '@/lib/currencyUtils';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -18,7 +19,6 @@ import { z } from "zod";
 import { format, startOfMonth, endOfMonth, isWithinInterval } from "date-fns";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { formatCurrency } from "@/lib/currencyUtils";
 
 // Budget form schema
 const budgetFormSchema = z.object({
@@ -124,7 +124,7 @@ export default function BudgetsPage() {
     retry: false,
   });
 
-  const userCurrency = userPreferences?.defaultCurrency || 'USD';
+  const userCurrency = getUserCurrency(userPreferences);
 
   // Fetch budgets
   const { data: budgets = [], isLoading: budgetsLoading } = useQuery<Budget[]>({

@@ -2,7 +2,7 @@ import React, { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { formatCurrency } from "@/lib/currencyUtils";
+import { formatCurrency, getUserCurrency } from "@/lib/currencyUtils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -154,7 +154,7 @@ export default function Dashboard() {
     return 2.1;
   };
 
-  const userCurrency = (userPreferences as any)?.defaultCurrency || 'IDR';
+  const userCurrency = getUserCurrency(userPreferences);
 
   // Calculate real financial data from dashboard API and transactions
   const financialData = useMemo(() => {

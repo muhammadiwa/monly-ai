@@ -16,6 +16,7 @@ import { Trash2, Edit, Search, Plus, DollarSign, ChevronLeft, ChevronRight, Down
 import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip, Legend } from "recharts";
 import AddTransactionModal from "@/components/modals/add-transaction-modal";
 import { exportToPDF, exportToExcel } from "@/lib/exportUtils";
+import { getCurrencySymbol, getUserCurrency } from "@/lib/currencyUtils";
 
 export default function Transactions() {
   const { toast } = useToast();
@@ -114,26 +115,8 @@ export default function Transactions() {
     enabled: isAuthenticated,
   });
 
-  // Helper function to get currency symbol
-  const getCurrencySymbol = (currency: string) => {
-    const symbols: Record<string, string> = {
-      'USD': '$',
-      'EUR': '€',
-      'GBP': '£',
-      'JPY': '¥',
-      'IDR': 'Rp',
-      'CNY': '¥',
-      'KRW': '₩',
-      'SGD': 'S$',
-      'MYR': 'RM',
-      'THB': '฿',
-      'VND': '₫'
-    };
-    return symbols[currency] || currency;
-  };
-
-  // Get user's preferred currency
-  const userCurrency = (userPreferences as any)?.defaultCurrency || 'USD';
+  // Get user's preferred currency using utility function
+  const userCurrency = getUserCurrency(userPreferences);
   const userCurrencySymbol = getCurrencySymbol(userCurrency);
 
   // Helper function to format amount with currency

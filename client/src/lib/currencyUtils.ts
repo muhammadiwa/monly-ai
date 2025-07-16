@@ -1,4 +1,13 @@
 // Currency utility functions
+
+// Default currency fallback
+export const DEFAULT_CURRENCY = 'IDR';
+
+// Get user currency from preferences with consistent fallback
+export function getUserCurrency(userPreferences: any): string {
+  return userPreferences?.defaultCurrency || DEFAULT_CURRENCY;
+}
+
 export function getCurrencySymbol(currency: string): string {
   const symbols: Record<string, string> = {
     'USD': '$',

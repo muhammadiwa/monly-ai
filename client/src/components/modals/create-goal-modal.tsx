@@ -1,4 +1,7 @@
 import React, { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { apiRequest } from '@/lib/queryClient';
+import { getUserCurrency, getCurrencySymbol } from '@/lib/currencyUtils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,6 +29,16 @@ export default function CreateGoalModal({ isOpen, onClose, onGoalCreated }: Crea
     deadline: undefined as Date | undefined,
     category: '',
     description: ''
+  });
+  
+  // Get user preferences for currency formatting
+  const { data: userPreferences } = useQuery({
+    queryKey: ['userPreferences'],
+    queryFn: async () => {
+      const response = await apiRequest('GET', '/api/user/preferences');
+      return response;
+    },
+    enabled: isOpen,
   });
 
   const goalCategories = [
@@ -211,7 +224,12 @@ export default function CreateGoalModal({ isOpen, onClose, onGoalCreated }: Crea
                 Target Amount <span className="text-red-500">*</span>
               </Label>
               <div className="relative">
-                <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                {getCurrencySymbol(getUserCurrency(userPreferences)) === '$' ? 
+                  <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" /> :
+                  <span className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400">
+                    {getCurrencySymbol(getUserCurrency(userPreferences))}
+                  </span>
+                }
                 <Input
                   id="targetAmount"
                   type="number"
@@ -229,7 +247,12 @@ export default function CreateGoalModal({ isOpen, onClose, onGoalCreated }: Crea
             <div className="space-y-2">
               <Label htmlFor="currentAmount" className="text-sm font-medium">Current Amount</Label>
               <div className="relative">
-                <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                {getCurrencySymbol(getUserCurrency(userPreferences)) === '$' ? 
+                  <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" /> :
+                  <span className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400">
+                    {getCurrencySymbol(getUserCurrency(userPreferences))}
+                  </span>
+                }
                 <Input
                   id="currentAmount"
                   type="number"
@@ -306,7 +329,10 @@ export default function CreateGoalModal({ isOpen, onClose, onGoalCreated }: Crea
                 Goal Preview
               </h4>
               <div className="text-sm text-purple-700">
-                <p>Amount needed: <span className="font-semibold">${(parseFloat(formData.targetAmount) - parseFloat(formData.currentAmount || '0')).toLocaleString()}</span></p>
+                <p>Amount needed: <span className="font-semibold">
+                  {getCurrencySymbol(getUserCurrency(userPreferences))}
+                  {(parseFloat(formData.targetAmount) - parseFloat(formData.currentAmount || '0')).toLocaleString()}
+                </span></p>
                 {formData.deadline && (
                   <p>Time remaining: <span className="font-semibold">
                     {Math.ceil((formData.deadline.getTime() - Date.now()) / (1000 * 60 * 60 * 24 * 30))} months

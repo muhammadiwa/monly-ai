@@ -13,6 +13,7 @@ import Transactions from "@/pages/transactions";
 import Categories from "@/pages/categories";
 import ChatAI from "@/pages/chat-ai";
 import Budgets from "@/pages/budgets";
+import Goals from "@/pages/goals";
 import Reports from "@/pages/reports";
 import Settings from "@/pages/settings";
 
@@ -51,6 +52,7 @@ function Router() {
             <Route path="/categories" component={Categories} />
             <Route path="/chat" component={ChatAI} />
             <Route path="/budgets" component={Budgets} />
+            <Route path="/goals" component={Goals} />
             <Route path="/reports" component={Reports} />
             <Route path="/settings" component={Settings} />
             <Route component={NotFound} />

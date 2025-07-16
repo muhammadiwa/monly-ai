@@ -1,4 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { apiRequest } from '@/lib/queryClient';
+import { getUserCurrency, getCurrencySymbol } from '@/lib/currencyUtils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -33,6 +36,17 @@ interface EditGoalModalProps {
 export default function EditGoalModal({ isOpen, onClose, goal, onGoalUpdated }: EditGoalModalProps) {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
+  
+  // Get user preferences for currency formatting
+  const { data: userPreferences } = useQuery({
+    queryKey: ['userPreferences'],
+    queryFn: async () => {
+      const response = await apiRequest('GET', '/api/user/preferences');
+      return response;
+    },
+    enabled: isOpen,
+  });
+  
   const [formData, setFormData] = useState({
     name: '',
     targetAmount: '',
@@ -225,7 +239,12 @@ export default function EditGoalModal({ isOpen, onClose, goal, onGoalUpdated }: 
                 Target Amount <span className="text-red-500">*</span>
               </Label>
               <div className="relative">
-                <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                {getCurrencySymbol(getUserCurrency(userPreferences)) === '$' ? 
+                  <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" /> :
+                  <span className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400">
+                    {getCurrencySymbol(getUserCurrency(userPreferences))}
+                  </span>
+                }
                 <Input
                   id="targetAmount"
                   type="number"
@@ -244,7 +263,12 @@ export default function EditGoalModal({ isOpen, onClose, goal, onGoalUpdated }: 
             <div className="space-y-2">
               <Label htmlFor="currentAmount" className="text-sm font-medium">Current Amount</Label>
               <div className="relative">
-                <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                {getCurrencySymbol(getUserCurrency(userPreferences)) === '$' ? 
+                  <DollarSign className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" /> :
+                  <span className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400">
+                    {getCurrencySymbol(getUserCurrency(userPreferences))}
+                  </span>
+                }
                 <Input
                   id="currentAmount"
                   type="number"

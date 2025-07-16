@@ -6,6 +6,7 @@ import { z } from "zod";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { isUnauthorizedError } from "@/lib/authUtils";
+import { getUserCurrency, getCurrencySymbol } from "@/lib/currencyUtils";
 import {
   Dialog,
   DialogContent,
@@ -153,25 +154,7 @@ export default function AddTransactionModal({
     category.type === activeTab
   ) : [];
 
-  // Helper function to get currency symbol
-  const getCurrencySymbol = (currency: string) => {
-    const symbols: Record<string, string> = {
-      'USD': '$',
-      'EUR': '€',
-      'GBP': '£',
-      'JPY': '¥',
-      'IDR': 'Rp',
-      'CNY': '¥',
-      'KRW': '₩',
-      'SGD': 'S$',
-      'MYR': 'RM',
-      'THB': '฿',
-      'VND': '₫'
-    };
-    return symbols[currency] || currency;
-  };
-
-  const userCurrency = (userPreferences as any)?.defaultCurrency || 'USD';
+  const userCurrency = getUserCurrency(userPreferences);
   const currencySymbol = getCurrencySymbol(userCurrency);
 
   const transactionMutation = useMutation({

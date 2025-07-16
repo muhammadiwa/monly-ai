@@ -16,9 +16,12 @@ import {
   CheckCircle,
   AlertTriangle,
   TrendingUp,
-  Search
+  Search,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/currencyUtils';
+import { useUserCurrency } from '@/hooks/useUserCurrency';
 import { format } from 'date-fns';
 import CreateGoalModal from '@/components/modals/create-goal-modal';
 import EditGoalModal from '@/components/modals/edit-goal-modal';
@@ -38,12 +41,7 @@ interface Goal {
   updatedAt: number;
 }
 
-interface GoalsPageProps {
-  currency: string;
-  showBalance: boolean;
-}
-
-export default function GoalsPage({ currency, showBalance }: GoalsPageProps) {
+export default function GoalsPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
@@ -52,6 +50,10 @@ export default function GoalsPage({ currency, showBalance }: GoalsPageProps) {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedGoal, setSelectedGoal] = useState<Goal | null>(null);
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'completed' | 'overdue'>('all');
+  const [showBalance, setShowBalance] = useState(true);
+
+  // Get user preferences for currency using the custom hook
+  const { currency } = useUserCurrency();
 
   // Fetch goals
   const { data: goals = [], isLoading, error, refetch } = useQuery({
@@ -199,13 +201,24 @@ export default function GoalsPage({ currency, showBalance }: GoalsPageProps) {
           <h1 className="text-2xl font-bold text-gray-900">Financial Goals</h1>
           <p className="text-gray-600">Track and manage your financial objectives</p>
         </div>
-        <Button 
-          onClick={() => setShowCreateModal(true)}
-          className="bg-purple-600 hover:bg-purple-700"
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          Create New Goal
-        </Button>
+        <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowBalance(!showBalance)}
+            className="flex items-center gap-2"
+          >
+            {showBalance ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            <span className="hidden sm:inline">{showBalance ? 'Hide' : 'Show'} Balance</span>
+          </Button>
+          <Button 
+            onClick={() => setShowCreateModal(true)}
+            className="bg-purple-600 hover:bg-purple-700"
+          >
+            <Plus className="h-4 w-4 mr-2" />
+            Create New Goal
+          </Button>
+        </div>
       </div>
 
       {/* Stats Cards */}
