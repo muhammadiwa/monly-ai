@@ -865,6 +865,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to fetch goals" });
     }
   });
+  
+  app.get('/api/goals/:id', requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
+      
+      const goalId = parseInt(req.params.id);
+      const goal = await storage.getGoalById(goalId);
+      
+      if (!goal) {
+        return res.status(404).json({ message: "Goal not found" });
+      }
+      
+      // Ensure the goal belongs to the authenticated user
+      if (goal.userId !== req.user.id) {
+        return res.status(403).json({ message: "Unauthorized access to this goal" });
+      }
+      
+      res.json(goal);
+    } catch (error) {
+      console.error("Error fetching goal:", error);
+      res.status(500).json({ message: "Failed to fetch goal details" });
+    }
+  });
 
   app.post('/api/goals', requireAuth, async (req: AuthRequest, res: Response) => {
     try {
@@ -937,6 +960,126 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error deleting goal:", error);
       res.status(500).json({ message: "Failed to delete goal" });
+    }
+  });
+  
+  // Helper function to calculate next contribution date based on frequency
+  function calculateNextContributionDate(frequency: string): number {
+    const now = new Date();
+    let nextDate: Date;
+    
+    switch (frequency) {
+      case 'weekly':
+        nextDate = new Date(now.setDate(now.getDate() + 7));
+        break;
+      case 'biweekly':
+        nextDate = new Date(now.setDate(now.getDate() + 14));
+        break;
+      case 'monthly':
+      default:
+        nextDate = new Date(now.setMonth(now.getMonth() + 1));
+        break;
+    }
+    
+    return Math.floor(nextDate.getTime() / 1000); // Unix timestamp
+  }
+  
+  // Goal boost endpoint - add a one-time amount to the current goal amount
+  app.post('/api/goals/:id/boost', requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
+      
+      const goalId = parseInt(req.params.id);
+      const { boostAmount } = req.body;
+      
+      if (!boostAmount || boostAmount <= 0) {
+        return res.status(400).json({ message: "Boost amount must be a positive number" });
+      }
+      
+      // Get current goal
+      const goal = await storage.getGoalById(goalId);
+      
+      if (!goal) {
+        return res.status(404).json({ message: "Goal not found" });
+      }
+      
+      if (goal.userId !== req.user.id) {
+        return res.status(403).json({ message: "Unauthorized access to this goal" });
+      }
+      
+      // Update the goal with new current amount
+      const newCurrentAmount = goal.currentAmount + parseFloat(boostAmount);
+      
+      // Make sure we don't exceed the target amount
+      const finalCurrentAmount = Math.min(newCurrentAmount, goal.targetAmount);
+      
+      const updatedGoal = await storage.updateGoal(goalId, {
+        currentAmount: finalCurrentAmount
+      });
+      
+      // Create a goal boost transaction record for tracking
+      await storage.createGoalBoost(
+        goalId,
+        req.user.id,
+        parseFloat(boostAmount),
+        `Manual boost for goal: ${goal.name}`
+      );
+      
+      res.json({
+        success: true,
+        message: "Goal boosted successfully",
+        goal: updatedGoal
+      });
+    } catch (error) {
+      console.error("Error boosting goal:", error);
+      res.status(500).json({ message: "Failed to boost goal" });
+    }
+  });
+  
+  // Goal savings plan endpoint - set up recurring savings plan
+  app.post('/api/goals/:id/savings-plan', requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
+      
+      const goalId = parseInt(req.params.id);
+      const { additionalAmount, frequency, isActive } = req.body;
+      
+      if (!additionalAmount || additionalAmount <= 0) {
+        return res.status(400).json({ message: "Additional savings amount must be a positive number" });
+      }
+      
+      // Valid frequencies: 'weekly', 'biweekly', 'monthly'
+      if (!['weekly', 'biweekly', 'monthly'].includes(frequency)) {
+        return res.status(400).json({ message: "Invalid frequency. Must be 'weekly', 'biweekly', or 'monthly'" });
+      }
+      
+      // Get current goal
+      const goal = await storage.getGoalById(goalId);
+      
+      if (!goal) {
+        return res.status(404).json({ message: "Goal not found" });
+      }
+      
+      if (goal.userId !== req.user.id) {
+        return res.status(403).json({ message: "Unauthorized access to this goal" });
+      }
+      
+      // Create a new savings plan
+      const savingsPlan = await storage.createGoalSavingsPlan(
+        goalId,
+        req.user.id,
+        parseFloat(additionalAmount),
+        frequency
+      );
+      
+      res.json({
+        success: true,
+        message: "Savings plan updated successfully",
+        savingsPlan
+      });
+    } catch (error) {
+      console.error("Error setting up savings plan:", error);
+      res.status(500).json({ message: "Failed to set up savings plan" });
     }
   });
 

@@ -5,6 +5,8 @@ import {
   transactions,
   budgets,
   goals,
+  goalBoosts,
+  goalSavingsPlans,
   type User,
   type UpsertUser,
   type UserPreferences,
@@ -74,6 +76,16 @@ export interface IStorage {
   updateGoal(id: number, goal: Partial<InsertGoal>): Promise<Goal>;
   deleteGoal(id: number): Promise<void>;
   getGoalById(id: number): Promise<Goal | undefined>;
+  
+  // Goal boost operations
+  createGoalBoost(goalId: number, userId: string, amount: number, description?: string): Promise<any>;
+  getGoalBoosts(goalId: number): Promise<any[]>;
+  
+  // Goal savings plan operations
+  createGoalSavingsPlan(goalId: number, userId: string, amount: number, frequency: string): Promise<any>;
+  updateGoalSavingsPlan(id: number, updates: any): Promise<any>;
+  getActiveGoalSavingsPlans(userId: string): Promise<any[]>;
+  getGoalSavingsPlansByGoalId(goalId: number): Promise<any[]>;
 
   // Analytics operations
   getMonthlyExpenses(userId: string, months: number): Promise<any[]>;
@@ -534,6 +546,131 @@ export class DatabaseStorage implements IStorage {
       .where(eq(goals.id, id));
     
     return result;
+  }
+  
+  // Goal boost operations
+  async createGoalBoost(goalId: number, userId: string, amount: number, description?: string): Promise<any> {
+    // First update the goal's current amount
+    const goal = await this.getGoalById(goalId);
+    if (!goal) {
+      throw new Error("Goal not found");
+    }
+    
+    const newCurrentAmount = goal.currentAmount + amount;
+    await this.updateGoal(goalId, { currentAmount: newCurrentAmount });
+    
+    // Then record the boost
+    const now = Math.floor(Date.now() / 1000);
+    const [boost] = await db
+      .insert(goalBoosts)
+      .values({
+        goalId,
+        userId,
+        amount,
+        description,
+        date: now,
+        createdAt: now,
+      })
+      .returning();
+    
+    return boost;
+  }
+  
+  async getGoalBoosts(goalId: number): Promise<any[]> {
+    return await db
+      .select()
+      .from(goalBoosts)
+      .where(eq(goalBoosts.goalId, goalId))
+      .orderBy(desc(goalBoosts.date));
+  }
+  
+  // Goal savings plan operations
+  async createGoalSavingsPlan(goalId: number, userId: string, amount: number, frequency: string): Promise<any> {
+    const now = Math.floor(Date.now() / 1000);
+    
+    // Calculate next contribution date based on frequency
+    const nextDate = this.calculateNextContributionDate(frequency);
+    
+    const [plan] = await db
+      .insert(goalSavingsPlans)
+      .values({
+        goalId,
+        userId,
+        amount,
+        frequency,
+        isActive: true,
+        nextContributionDate: Math.floor(nextDate.getTime() / 1000),
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning();
+    
+    return plan;
+  }
+  
+  async updateGoalSavingsPlan(id: number, updates: any): Promise<any> {
+    const now = Math.floor(Date.now() / 1000);
+    
+    // If we're updating frequency, recalculate next contribution date
+    let nextContributionDate;
+    if (updates.frequency) {
+      const nextDate = this.calculateNextContributionDate(updates.frequency);
+      nextContributionDate = Math.floor(nextDate.getTime() / 1000);
+    }
+    
+    const [plan] = await db
+      .update(goalSavingsPlans)
+      .set({
+        ...updates,
+        ...(nextContributionDate && { nextContributionDate }),
+        updatedAt: now,
+      })
+      .where(eq(goalSavingsPlans.id, id))
+      .returning();
+    
+    return plan;
+  }
+  
+  async getActiveGoalSavingsPlans(userId: string): Promise<any[]> {
+    return await db
+      .select()
+      .from(goalSavingsPlans)
+      .where(
+        and(
+          eq(goalSavingsPlans.userId, userId),
+          eq(goalSavingsPlans.isActive, true)
+        )
+      )
+      .orderBy(goalSavingsPlans.nextContributionDate);
+  }
+  
+  async getGoalSavingsPlansByGoalId(goalId: number): Promise<any[]> {
+    return await db
+      .select()
+      .from(goalSavingsPlans)
+      .where(eq(goalSavingsPlans.goalId, goalId))
+      .orderBy(desc(goalSavingsPlans.createdAt));
+  }
+  
+  // Helper for calculating next contribution date based on frequency
+  private calculateNextContributionDate(frequency: string): Date {
+    const now = new Date();
+    
+    switch(frequency) {
+      case 'weekly':
+        now.setDate(now.getDate() + 7);
+        break;
+      case 'biweekly':
+        now.setDate(now.getDate() + 14);
+        break;
+      case 'monthly':
+        now.setMonth(now.getMonth() + 1);
+        break;
+      default:
+        now.setMonth(now.getMonth() + 1); // Default to monthly
+    }
+    
+    return now;
   }
 
   // Analytics operations

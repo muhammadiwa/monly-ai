@@ -16,7 +16,10 @@ import {
   DollarSign
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/currencyUtils';
+import { useToast } from '@/hooks/use-toast';
 import CreateGoalModal from '@/components/modals/create-goal-modal';
+import EditGoalModal from '@/components/modals/edit-goal-modal';
+import BoostSavingsModal from '@/components/modals/boost-savings-modal';
 
 interface GoalAchievementForecast {
   goalId: number;
@@ -38,7 +41,12 @@ interface GoalAchievementForecastsProps {
 }
 
 export default function GoalAchievementForecasts({ currency, showBalance }: GoalAchievementForecastsProps) {
+  const { toast } = useToast();
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showBoostModal, setShowBoostModal] = useState(false);
+  const [selectedGoal, setSelectedGoal] = useState<any>(null);
+  const [selectedForecast, setSelectedForecast] = useState<GoalAchievementForecast | null>(null);
   
   const { data: forecastData, isLoading, error, refetch } = useQuery({
     queryKey: ['/api/ai/goal-forecasts'],
@@ -129,7 +137,7 @@ export default function GoalAchievementForecasts({ currency, showBalance }: Goal
     if (months < 12) return `${months.toFixed(1)} months`;
     const years = Math.floor(months / 12);
     const remainingMonths = Math.floor(months % 12);
-    return `${years}y ${remainingMonths}m`;
+    return `${years} ${years === 1 ? 'year' : 'years'} ${remainingMonths} ${remainingMonths === 1 ? 'month' : 'months'}`;
   };
 
   const getProgressPercentage = (current: number, target: number) => {
@@ -258,6 +266,42 @@ export default function GoalAchievementForecasts({ currency, showBalance }: Goal
                       variant="outline" 
                       size="sm" 
                       className="flex-1 border-purple-200 text-purple-700 hover:bg-purple-50"
+                      onClick={() => {
+                        fetch(`/api/goals/${forecast.goalId}`, {
+                          credentials: 'include',
+                          headers: {
+                            'Authorization': `Bearer ${localStorage.getItem('auth-token')}`,
+                          },
+                        })
+                          .then(res => {
+                            if (!res.ok) {
+                              throw new Error(`Error: ${res.status} ${res.statusText}`);
+                            }
+                            console.log('Response headers:', Array.from(res.headers.entries()));
+                            return res.text().then(text => {
+                              console.log('Raw response:', text);
+                              try {
+                                return JSON.parse(text);
+                              } catch (e) {
+                                console.error('JSON parse error:', e);
+                                throw new Error(`Invalid JSON response: ${text.slice(0, 100)}`);
+                              }
+                            });
+                          })
+                          .then(data => {
+                            console.log('Parsed data:', data);
+                            setSelectedGoal(data);
+                            setShowEditModal(true);
+                          })
+                          .catch(err => {
+                            console.error('Error fetching goal details:', err);
+                            toast({
+                              title: "Error",
+                              description: "Failed to load goal details. Please try again.",
+                              variant: "destructive",
+                            });
+                          });
+                      }}
                     >
                       <Calendar className="h-4 w-4 mr-2" />
                       Adjust Goal
@@ -266,6 +310,48 @@ export default function GoalAchievementForecasts({ currency, showBalance }: Goal
                       variant="outline" 
                       size="sm" 
                       className="flex-1 border-green-200 text-green-700 hover:bg-green-50"
+                      onClick={() => {
+                        // First check our debug endpoint
+                        fetch('/api/debug')
+                          .then(res => res.json())
+                          .then(data => console.log('Debug API check:', data))
+                          .catch(err => console.error('Debug API error:', err));
+                        fetch(`/api/goals/${forecast.goalId}`, {
+                          credentials: 'include',
+                          headers: {
+                            'Authorization': `Bearer ${localStorage.getItem('auth-token')}`,
+                          },
+                        })
+                          .then(res => {
+                            if (!res.ok) {
+                              throw new Error(`Error: ${res.status} ${res.statusText}`);
+                            }
+                            console.log('Response headers (boost):', Array.from(res.headers.entries()));
+                            return res.text().then(text => {
+                              console.log('Raw response (boost):', text);
+                              try {
+                                return JSON.parse(text);
+                              } catch (e) {
+                                console.error('JSON parse error (boost):', e);
+                                throw new Error(`Invalid JSON response: ${text.slice(0, 100)}`);
+                              }
+                            });
+                          })
+                          .then(data => {
+                            console.log('Parsed data (boost):', data);
+                            setSelectedGoal(data);
+                            setSelectedForecast(forecast);
+                            setShowBoostModal(true);
+                          })
+                          .catch(err => {
+                            console.error('Error fetching goal details:', err);
+                            toast({
+                              title: "Error",
+                              description: "Failed to load goal details. Please try again.",
+                              variant: "destructive",
+                            });
+                          });
+                      }}
                     >
                       <TrendingUp className="h-4 w-4 mr-2" />
                       Boost Savings
@@ -286,6 +372,32 @@ export default function GoalAchievementForecasts({ currency, showBalance }: Goal
           refetch(); // Refresh the forecasts data
         }}
       />
+
+      {/* Edit Goal Modal */}
+      {selectedGoal && (
+        <EditGoalModal
+          isOpen={showEditModal}
+          onClose={() => setShowEditModal(false)}
+          goal={selectedGoal}
+          onGoalUpdated={() => {
+            refetch(); // Refresh the forecasts data
+          }}
+        />
+      )}
+
+      {/* Boost Savings Modal */}
+      {selectedGoal && selectedForecast && (
+        <BoostSavingsModal
+          isOpen={showBoostModal}
+          onClose={() => setShowBoostModal(false)}
+          goal={selectedGoal}
+          forecast={selectedForecast}
+          currency={currency}
+          onBoostSaved={() => {
+            refetch(); // Refresh the forecasts data
+          }}
+        />
+      )}
     </Card>
   );
 }

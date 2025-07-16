@@ -114,6 +114,7 @@
     "esbuild": "^0.25.0",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.0",
+    "ts-node": "^10.9.2",
     "tsx": "^4.19.1",
     "typescript": "5.6.3"
   },

@@ -20,7 +20,7 @@ import {
 import AddTransactionModal from "@/components/modals/add-transaction-modal";
 
 // Real-time components
-import PredictiveAnalytics from "@/components/dashboard/predictive-analytics";
+
 import LiveCashFlow from "@/components/dashboard/live-cashflow";
 import AIFinancialIntelligence from "@/components/dashboard/ai-financial-intelligence";
 
@@ -110,18 +110,6 @@ export default function Dashboard() {
   const { data: dashboardData, refetch: refetchDashboard } = useQuery({
     queryKey: ["/api/analytics/dashboard"],
     // refetchInterval: 5000, // Update every 5 seconds
-    enabled: isAuthenticated && !isLoading,
-  });
-
-  const { data: aiInsights, refetch: refetchAI } = useQuery({
-    queryKey: ["/api/ai/insights"],
-    refetchInterval: 30000, // Update every 30 seconds
-    enabled: isAuthenticated && !isLoading,
-  });
-
-  const { data: predictions } = useQuery({
-    queryKey: ["/api/ai/predictions"],
-    refetchInterval: 60000, // Update every minute
     enabled: isAuthenticated && !isLoading,
   });
 
@@ -395,7 +383,6 @@ export default function Dashboard() {
 
   const handleRefresh = () => {
     refetchDashboard();
-    refetchAI();
     toast({
       title: "Data Updated",
       description: "Dashboard refreshed with latest information",
@@ -568,13 +555,6 @@ export default function Dashboard() {
         <div className="lg:col-span-2 space-y-3 sm:space-y-4 lg:space-y-6">
           {/* AI Financial Intelligence */}
           <AIFinancialIntelligence 
-            currency={userCurrency}
-            showBalance={showBalance}
-          />
-
-          {/* Predictive Analytics */}
-          <PredictiveAnalytics 
-            predictions={predictions}
             currency={userCurrency}
             showBalance={showBalance}
           />

@@ -103,6 +103,30 @@ export const goals = sqliteTable("goals", {
   updatedAt: integer("updated_at"), // Unix timestamp
 });
 
+// Goal boosts table - records one-time contributions to goals
+export const goalBoosts = sqliteTable("goal_boosts", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  goalId: integer("goal_id").references(() => goals.id).notNull(),
+  userId: text("user_id").references(() => users.id).notNull(),
+  amount: real("amount").notNull(),
+  date: integer("date").notNull(), // Unix timestamp
+  description: text("description"),
+  createdAt: integer("created_at"), // Unix timestamp
+});
+
+// Goal savings plans - automatic recurring contributions to goals
+export const goalSavingsPlans = sqliteTable("goal_savings_plans", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  goalId: integer("goal_id").references(() => goals.id).notNull(),
+  userId: text("user_id").references(() => users.id).notNull(),
+  amount: real("amount").notNull(),
+  frequency: text("frequency").notNull(), // 'weekly', 'biweekly', 'monthly'
+  isActive: integer("is_active", { mode: 'boolean' }).default(true),
+  nextContributionDate: integer("next_contribution_date"), // Unix timestamp
+  createdAt: integer("created_at"), // Unix timestamp
+  updatedAt: integer("updated_at"), // Unix timestamp
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many, one }) => ({
   transactions: many(transactions),
@@ -150,9 +174,33 @@ export const budgetsRelations = relations(budgets, ({ one }) => ({
   }),
 }));
 
-export const goalsRelations = relations(goals, ({ one }) => ({
+export const goalsRelations = relations(goals, ({ one, many }) => ({
   user: one(users, {
     fields: [goals.userId],
+    references: [users.id],
+  }),
+  boosts: many(goalBoosts),
+  savingsPlans: many(goalSavingsPlans),
+}));
+
+export const goalBoostsRelations = relations(goalBoosts, ({ one }) => ({
+  goal: one(goals, {
+    fields: [goalBoosts.goalId],
+    references: [goals.id],
+  }),
+  user: one(users, {
+    fields: [goalBoosts.userId],
+    references: [users.id],
+  }),
+}));
+
+export const goalSavingsPlansRelations = relations(goalSavingsPlans, ({ one }) => ({
+  goal: one(goals, {
+    fields: [goalSavingsPlans.goalId],
+    references: [goals.id],
+  }),
+  user: one(users, {
+    fields: [goalSavingsPlans.userId],
     references: [users.id],
   }),
 }));
