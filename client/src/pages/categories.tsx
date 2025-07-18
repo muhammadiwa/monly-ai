@@ -230,50 +230,51 @@ export default function Categories() {
   }
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="px-3 sm:px-4 lg:px-6 space-y-5 sm:space-y-6 md:space-y-8 max-w-[100vw] overflow-x-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-0">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Categories</h1>
-          <p className="text-gray-600">Manage transaction categories for better financial organization</p>
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Categories</h1>
+          <p className="text-sm sm:text-base text-gray-600">Manage transaction categories for better financial organization</p>
         </div>
         
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
-            <Button onClick={() => { resetForm(); setEditingCategory(null); }}>
+            <Button onClick={() => { resetForm(); setEditingCategory(null); }} className="w-full sm:w-auto">
               <Plus className="h-4 w-4 mr-2" />
               Add Category
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-md">
+          <DialogContent className="sm:max-w-md max-w-[90vw] p-4 sm:p-6">
             <DialogHeader>
-              <DialogTitle>
+              <DialogTitle className="text-base sm:text-lg">
                 {editingCategory ? "Edit Category" : "Create Category"}
               </DialogTitle>
-              <DialogDescription>
+              <DialogDescription className="text-xs sm:text-sm">
                 {editingCategory ? "Edit an existing category" : "Create a new category to organize your transactions"}
               </DialogDescription>
             </DialogHeader>
             
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
               <div>
-                <Label htmlFor="name">Category Name</Label>
+                <Label htmlFor="name" className="text-sm">Category Name</Label>
                 <Input
                   id="name"
                   placeholder="Category name"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="text-sm"
                   required
                 />
               </div>
               
               <div>
-                <Label htmlFor="type">Category Type</Label>
+                <Label htmlFor="type" className="text-sm">Category Type</Label>
                 <Select 
                   value={formData.type} 
                   onValueChange={(value: "income" | "expense") => setFormData({ ...formData, type: value })}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="text-sm">
                     <SelectValue placeholder="Category type" />
                   </SelectTrigger>
                   <SelectContent>
@@ -284,26 +285,27 @@ export default function Categories() {
               </div>
               
               <div>
-                <Label htmlFor="icon">Icon/Emoji</Label>
+                <Label htmlFor="icon" className="text-sm">Icon/Emoji</Label>
                 <div className="flex items-center space-x-2">
                   <Button
                     type="button"
                     variant="outline"
-                    className="w-full justify-start"
+                    className="w-full justify-start text-sm"
                     onClick={() => setIsIconPickerOpen(true)}
                   >
-                    <span className="text-2xl mr-2">{formData.icon}</span>
+                    <span className="text-xl sm:text-2xl mr-2">{formData.icon}</span>
                     Choose Icon/Emoji
                   </Button>
                 </div>
               </div>
               
-              <div className="flex justify-end space-x-2 pt-4">
-                <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
+              <div className="flex flex-col sm:flex-row sm:justify-end gap-2 sm:gap-3 pt-3 sm:pt-4">
+                <Button type="button" variant="outline" className="w-full sm:w-auto order-2 sm:order-1" onClick={() => setIsDialogOpen(false)}>
                   Cancel
                 </Button>
                 <Button 
                   type="submit" 
+                  className="w-full sm:w-auto order-1 sm:order-2"
                   disabled={createCategoryMutation.isPending || updateCategoryMutation.isPending}
                 >
                   {editingCategory ? "Save" : "Create"}
@@ -323,8 +325,8 @@ export default function Categories() {
       />
 
       {/* Search and Filter */}
-      <div className="flex items-center space-x-4">
-        <div className="relative flex-1">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:space-x-4">
+        <div className="relative flex-1 w-full">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
           <Input
             placeholder="Search categories..."
@@ -334,7 +336,7 @@ export default function Categories() {
           />
         </div>
         <Select value={selectedType} onValueChange={setSelectedType}>
-          <SelectTrigger className="w-48">
+          <SelectTrigger className="w-full sm:w-48">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -347,23 +349,23 @@ export default function Categories() {
 
       {/* Categories Tabs */}
       <Tabs defaultValue="income" className="w-full">
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="income">
+        <TabsList className="grid w-full grid-cols-2 p-0.5">
+          <TabsTrigger value="income" className="text-xs sm:text-sm py-1.5 sm:py-2">
             Income ({incomeCategories.length})
           </TabsTrigger>
-          <TabsTrigger value="expense">
+          <TabsTrigger value="expense" className="text-xs sm:text-sm py-1.5 sm:py-2">
             Expense ({expenseCategories.length})
           </TabsTrigger>
         </TabsList>
         
-        <TabsContent value="income" className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <TabsContent value="income" className="space-y-3 sm:space-y-4 mt-3 sm:mt-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
             {incomeCategories.length === 0 ? (
               <Card className="col-span-full">
-                <CardContent className="flex flex-col items-center justify-center py-12">
-                  <div className="text-4xl mb-4">📈</div>
-                  <h3 className="font-medium text-gray-900">No income categories yet</h3>
-                  <p className="text-gray-500 text-center mt-2">
+                <CardContent className="flex flex-col items-center justify-center py-8 sm:py-12">
+                  <div className="text-3xl sm:text-4xl mb-3 sm:mb-4">📈</div>
+                  <h3 className="font-medium text-gray-900 text-center">No income categories yet</h3>
+                  <p className="text-gray-500 text-center text-sm sm:text-base mt-1 sm:mt-2">
                     Add income categories to manage your revenue streams
                   </p>
                 </CardContent>
@@ -371,33 +373,35 @@ export default function Categories() {
             ) : (
               incomeCategories.map((category: any) => (
                 <Card key={category.id} className="hover:shadow-md transition-shadow">
-                  <CardHeader className="pb-3">
+                  <CardHeader className="pb-2 sm:pb-3 px-3 sm:px-6 pt-2 sm:pt-3">
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
-                          <span className="text-xl">{category.icon || "📈"}</span>
+                      <div className="flex items-center space-x-2 sm:space-x-3">
+                        <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-green-100 flex items-center justify-center">
+                          <span className="text-lg sm:text-xl">{category.icon || "📈"}</span>
                         </div>
                         <div>
-                          <CardTitle className="text-sm font-medium">{category.name}</CardTitle>
-                          <Badge variant="secondary" className="bg-green-100 text-green-700">
+                          <CardTitle className="text-xs sm:text-sm font-medium">{category.name}</CardTitle>
+                          <Badge variant="secondary" className="bg-green-100 text-green-700 text-xs px-1.5 py-0.5">
                             Income
                           </Badge>
                         </div>
                       </div>
-                      <div className="flex items-center space-x-1">
+                      <div className="flex items-center space-x-0.5 sm:space-x-1">
                         <Button
                           size="sm"
                           variant="ghost"
+                          className="h-7 w-7 sm:h-8 sm:w-8 p-0"
                           onClick={() => handleEdit(category)}
                         >
-                          <Edit2 className="h-4 w-4" />
+                          <Edit2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                         </Button>
                         <Button
                           size="sm"
                           variant="ghost"
+                          className="h-7 w-7 sm:h-8 sm:w-8 p-0"
                           onClick={() => handleDelete(category)}
                         >
-                          <Trash2 className="h-4 w-4" />
+                          <Trash2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                         </Button>
                       </div>
                     </div>
@@ -408,14 +412,14 @@ export default function Categories() {
           </div>
         </TabsContent>
         
-        <TabsContent value="expense" className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <TabsContent value="expense" className="space-y-3 sm:space-y-4 mt-3 sm:mt-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
             {expenseCategories.length === 0 ? (
               <Card className="col-span-full">
-                <CardContent className="flex flex-col items-center justify-center py-12">
-                  <div className="text-4xl mb-4">💸</div>
-                  <h3 className="font-medium text-gray-900">No expense categories yet</h3>
-                  <p className="text-gray-500 text-center mt-2">
+                <CardContent className="flex flex-col items-center justify-center py-8 sm:py-12">
+                  <div className="text-3xl sm:text-4xl mb-3 sm:mb-4">💸</div>
+                  <h3 className="font-medium text-gray-900 text-center">No expense categories yet</h3>
+                  <p className="text-gray-500 text-center text-sm sm:text-base mt-1 sm:mt-2">
                     Add expense categories to manage your spending
                   </p>
                 </CardContent>
@@ -423,33 +427,35 @@ export default function Categories() {
             ) : (
               expenseCategories.map((category: any) => (
                 <Card key={category.id} className="hover:shadow-md transition-shadow">
-                  <CardHeader className="pb-3">
+                  <CardHeader className="pb-2 sm:pb-3 px-3 sm:px-6 pt-2 sm:pt-3">
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center">
-                          <span className="text-xl">{category.icon || "💸"}</span>
+                      <div className="flex items-center space-x-2 sm:space-x-3">
+                        <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-red-100 flex items-center justify-center">
+                          <span className="text-lg sm:text-xl">{category.icon || "💸"}</span>
                         </div>
                         <div>
-                          <CardTitle className="text-sm font-medium">{category.name}</CardTitle>
-                          <Badge variant="secondary" className="bg-red-100 text-red-700">
+                          <CardTitle className="text-xs sm:text-sm font-medium">{category.name}</CardTitle>
+                          <Badge variant="secondary" className="bg-red-100 text-red-700 text-xs px-1.5 py-0.5">
                             Expense
                           </Badge>
                         </div>
                       </div>
-                      <div className="flex items-center space-x-1">
+                      <div className="flex items-center space-x-0.5 sm:space-x-1">
                         <Button
                           size="sm"
                           variant="ghost"
+                          className="h-7 w-7 sm:h-8 sm:w-8 p-0"
                           onClick={() => handleEdit(category)}
                         >
-                          <Edit2 className="h-4 w-4" />
+                          <Edit2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                         </Button>
                         <Button
                           size="sm"
                           variant="ghost"
+                          className="h-7 w-7 sm:h-8 sm:w-8 p-0"
                           onClick={() => handleDelete(category)}
                         >
-                          <Trash2 className="h-4 w-4" />
+                          <Trash2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                         </Button>
                       </div>
                     </div>
@@ -463,42 +469,42 @@ export default function Categories() {
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <AlertDialogContent className="sm:max-w-md">
+        <AlertDialogContent className="sm:max-w-md max-w-[90vw] p-4 sm:p-6">
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
-              <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center">
-                <Trash2 className="h-6 w-6 text-red-600" />
+              <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-red-100 flex items-center justify-center">
+                <Trash2 className="h-5 w-5 sm:h-6 sm:w-6 text-red-600" />
               </div>
               <div>
-                <div className="text-lg font-semibold text-gray-900">Delete Category</div>
-                <div className="text-sm text-gray-500">This action cannot be undone</div>
+                <div className="text-base sm:text-lg font-semibold text-gray-900">Delete Category</div>
+                <div className="text-xs sm:text-sm text-gray-500">This action cannot be undone</div>
               </div>
             </AlertDialogTitle>
-            <AlertDialogDescription className="space-y-3">
+            <AlertDialogDescription className="space-y-2 sm:space-y-3 mt-2 sm:mt-3">
               {categoryToDelete && (
-                <div className="bg-gray-50 rounded-lg p-4 border">
-                  <div className="flex items-center gap-3">
+                <div className="bg-gray-50 rounded-lg p-3 sm:p-4 border">
+                  <div className="flex items-center gap-2 sm:gap-3">
                     <div 
-                      className="w-10 h-10 rounded-lg flex items-center justify-center text-lg font-semibold text-white"
+                      className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center text-base sm:text-lg font-semibold text-white"
                       style={{ backgroundColor: categoryToDelete.color }}
                     >
                       {categoryToDelete.icon}
                     </div>
                     <div>
-                      <div className="font-medium text-gray-900">{categoryToDelete.name}</div>
-                      <div className="text-sm text-gray-500 capitalize">{categoryToDelete.type}</div>
+                      <div className="font-medium text-sm sm:text-base text-gray-900">{categoryToDelete.name}</div>
+                      <div className="text-xs sm:text-sm text-gray-500 capitalize">{categoryToDelete.type}</div>
                     </div>
                   </div>
                 </div>
               )}
-              <p className="text-gray-600">
+              <p className="text-xs sm:text-sm text-gray-600">
                 Are you sure you want to delete this category? All transactions associated with this category will lose their category assignment.
               </p>
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter className="flex gap-2 sm:gap-0">
+          <AlertDialogFooter className="flex flex-col sm:flex-row gap-2 sm:gap-0">
             <AlertDialogCancel 
-              className="hover:bg-gray-100"
+              className="hover:bg-gray-100 w-full sm:w-auto order-2 sm:order-1"
               onClick={() => {
                 setIsDeleteDialogOpen(false);
                 setCategoryToDelete(null);
@@ -508,7 +514,7 @@ export default function Categories() {
             </AlertDialogCancel>
             <AlertDialogAction 
               onClick={confirmDelete}
-              className="bg-red-600 hover:bg-red-700 text-white"
+              className="bg-red-600 hover:bg-red-700 text-white w-full sm:w-auto order-1 sm:order-2"
               disabled={deleteCategoryMutation.isPending}
             >
               {deleteCategoryMutation.isPending ? (

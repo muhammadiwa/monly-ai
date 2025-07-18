@@ -481,50 +481,50 @@ export default function BudgetsPage() {
   }
 
   return (
-    <div className="container mx-auto p-6 space-y-8">
+    <div className="px-3 sm:px-4 lg:px-6 space-y-5 sm:space-y-6 md:space-y-8 max-w-[100vw] overflow-x-hidden">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Budget Management</h1>
-          <p className="text-muted-foreground">
+          <h1 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">Budget Management</h1>
+          <p className="text-sm sm:text-base text-gray-600">
             Set spending limits and track your financial goals
           </p>
         </div>
         
         <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
           <DialogTrigger asChild>
-            <Button className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white shadow-lg">
-              <Plus className="w-4 h-4 mr-2" />
+            <Button className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white shadow-lg h-9 text-xs sm:text-sm mt-2 sm:mt-0">
+              <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1.5 sm:mr-2" />
               Create Budget
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[425px]">
-            <DialogHeader>
-              <DialogTitle>{editingBudget ? "Edit Budget" : "Create New Budget"}</DialogTitle>
-              <DialogDescription>
+          <DialogContent className="sm:max-w-[425px] p-4 sm:p-6">
+            <DialogHeader className="pb-1 sm:pb-2">
+              <DialogTitle className="text-base sm:text-lg">{editingBudget ? "Edit Budget" : "Create New Budget"}</DialogTitle>
+              <DialogDescription className="text-xs sm:text-sm">
                 Set a spending limit for a specific category and time period.
               </DialogDescription>
             </DialogHeader>
             <Form {...form}>
-              <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+              <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-3 sm:space-y-4">
                 <FormField
                   control={form.control}
                   name="categoryId"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Category</FormLabel>
+                      <FormLabel className="text-xs sm:text-sm">Category</FormLabel>
                       <Select 
                         onValueChange={(value) => field.onChange(parseInt(value))}
                         value={field.value ? field.value.toString() : ""}
                       >
                         <FormControl>
-                          <SelectTrigger>
+                          <SelectTrigger className="h-9 text-xs sm:text-sm">
                             <SelectValue placeholder="Select a category" />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
                           {categories.filter((cat: any) => cat.type === "expense").map((category: any) => (
-                            <SelectItem key={category.id} value={category.id.toString()}>
+                            <SelectItem key={category.id} value={category.id.toString()} className="text-xs sm:text-sm">
                               <div className="flex items-center gap-2">
                                 <span>{category.icon}</span>
                                 <span>{category.name}</span>
@@ -533,7 +533,7 @@ export default function BudgetsPage() {
                           ))}
                         </SelectContent>
                       </Select>
-                      <FormMessage />
+                      <FormMessage className="text-xs" />
                     </FormItem>
                   )}
                 />
@@ -543,7 +543,7 @@ export default function BudgetsPage() {
                   name="amount"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Budget Amount</FormLabel>
+                      <FormLabel className="text-xs sm:text-sm">Budget Amount</FormLabel>
                       <FormControl>
                         <Input
                           type="number"
@@ -551,9 +551,10 @@ export default function BudgetsPage() {
                           placeholder="0.00"
                           value={field.value || ''}
                           onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                          className="h-9 text-xs sm:text-sm"
                         />
                       </FormControl>
-                      <FormMessage />
+                      <FormMessage className="text-xs" />
                     </FormItem>
                   )}
                 />
@@ -563,35 +564,35 @@ export default function BudgetsPage() {
                   name="period"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Period</FormLabel>
+                      <FormLabel className="text-xs sm:text-sm">Period</FormLabel>
                       <Select onValueChange={field.onChange} defaultValue={field.value}>
                         <FormControl>
-                          <SelectTrigger>
+                          <SelectTrigger className="h-9 text-xs sm:text-sm">
                             <SelectValue />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="weekly">Weekly</SelectItem>
-                          <SelectItem value="monthly">Monthly</SelectItem>
-                          <SelectItem value="yearly">Yearly</SelectItem>
+                          <SelectItem value="weekly" className="text-xs sm:text-sm">Weekly</SelectItem>
+                          <SelectItem value="monthly" className="text-xs sm:text-sm">Monthly</SelectItem>
+                          <SelectItem value="yearly" className="text-xs sm:text-sm">Yearly</SelectItem>
                         </SelectContent>
                       </Select>
-                      <FormMessage />
+                      <FormMessage className="text-xs" />
                     </FormItem>
                   )}
                 />
                 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-2 sm:gap-4">
                   <FormField
                     control={form.control}
                     name="startDate"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Start Date</FormLabel>
+                        <FormLabel className="text-xs sm:text-sm">Start Date</FormLabel>
                         <FormControl>
-                          <Input type="date" {...field} />
+                          <Input type="date" {...field} className="h-9 text-xs sm:text-sm p-2" />
                         </FormControl>
-                        <FormMessage />
+                        <FormMessage className="text-xs" />
                       </FormItem>
                     )}
                   />
@@ -601,25 +602,29 @@ export default function BudgetsPage() {
                     name="endDate"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>End Date</FormLabel>
+                        <FormLabel className="text-xs sm:text-sm">End Date</FormLabel>
                         <FormControl>
-                          <Input type="date" {...field} />
+                          <Input type="date" {...field} className="h-9 text-xs sm:text-sm p-2" />
                         </FormControl>
-                        <FormMessage />
+                        <FormMessage className="text-xs" />
                       </FormItem>
                     )}
                   />
                 </div>
                 
-                <div className="flex justify-end gap-3 pt-4">
+                <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 sm:gap-3 pt-3 sm:pt-4 mt-1 sm:mt-0">
                   <Button type="button" variant="outline" onClick={() => {
                     setIsCreateDialogOpen(false);
                     setEditingBudget(null);
                     form.reset();
-                  }}>
+                  }}
+                  className="h-9 text-xs sm:text-sm w-full sm:w-auto">
                     Cancel
                   </Button>
-                  <Button type="submit" disabled={createBudgetMutation.isPending || updateBudgetMutation.isPending}>
+                  <Button type="submit" 
+                    disabled={createBudgetMutation.isPending || updateBudgetMutation.isPending}
+                    className="h-9 text-xs sm:text-sm w-full sm:w-auto mb-1 sm:mb-0"
+                  >
                     {(() => {
                       if (createBudgetMutation.isPending || updateBudgetMutation.isPending) {
                         return editingBudget ? "Updating..." : "Creating...";
@@ -635,62 +640,62 @@ export default function BudgetsPage() {
       </div>
 
       {/* Overall Statistics */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <Card className="bg-gradient-to-br from-blue-50 to-indigo-100 border-blue-200">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-blue-900">Total Budget</CardTitle>
-            <DollarSign className="h-4 w-4 text-blue-600" />
+      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 md:gap-6">
+        <Card className="bg-gradient-to-br from-blue-50 to-indigo-100 border-blue-200 shadow-sm">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 sm:pb-2 px-3 sm:px-6 pt-3 sm:pt-4">
+            <CardTitle className="text-xs sm:text-sm font-medium text-blue-900">Total Budget</CardTitle>
+            <DollarSign className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-blue-600" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-blue-900">
+          <CardContent className="px-3 sm:px-6 pb-3 sm:pb-4">
+            <div className="text-lg sm:text-xl md:text-2xl font-bold text-blue-900">
               {formatCurrency(overallStats.totalBudget, userCurrency)}
             </div>
-            <p className="text-xs text-blue-700 mt-1">
+            <p className="text-xs text-blue-700 mt-0.5 sm:mt-1">
               Across {budgetStats.length} budgets
             </p>
           </CardContent>
         </Card>
         
-        <Card className="bg-gradient-to-br from-green-50 to-emerald-100 border-green-200">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-green-900">On Track</CardTitle>
-            <Target className="h-4 w-4 text-green-600" />
+        <Card className="bg-gradient-to-br from-green-50 to-emerald-100 border-green-200 shadow-sm">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 sm:pb-2 px-3 sm:px-6 pt-3 sm:pt-4">
+            <CardTitle className="text-xs sm:text-sm font-medium text-green-900">On Track</CardTitle>
+            <Target className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-green-600" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-900">
+          <CardContent className="px-3 sm:px-6 pb-3 sm:pb-4">
+            <div className="text-lg sm:text-xl md:text-2xl font-bold text-green-900">
               {overallStats.onTrackCount}
             </div>
-            <p className="text-xs text-green-700 mt-1">
+            <p className="text-xs text-green-700 mt-0.5 sm:mt-1">
               Budgets within limits
             </p>
           </CardContent>
         </Card>
         
-        <Card className="bg-gradient-to-br from-yellow-50 to-amber-100 border-yellow-200">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-yellow-900">Warning</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-yellow-600" />
+        <Card className="bg-gradient-to-br from-yellow-50 to-amber-100 border-yellow-200 shadow-sm">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 sm:pb-2 px-3 sm:px-6 pt-3 sm:pt-4">
+            <CardTitle className="text-xs sm:text-sm font-medium text-yellow-900">Warning</CardTitle>
+            <AlertTriangle className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-yellow-600" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-yellow-900">
+          <CardContent className="px-3 sm:px-6 pb-3 sm:pb-4">
+            <div className="text-lg sm:text-xl md:text-2xl font-bold text-yellow-900">
               {overallStats.warningCount}
             </div>
-            <p className="text-xs text-yellow-700 mt-1">
+            <p className="text-xs text-yellow-700 mt-0.5 sm:mt-1">
               Near budget limit
             </p>
           </CardContent>
         </Card>
         
-        <Card className="bg-gradient-to-br from-red-50 to-rose-100 border-red-200">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-red-900">Over Budget</CardTitle>
-            <TrendingDown className="h-4 w-4 text-red-600" />
+        <Card className="bg-gradient-to-br from-red-50 to-rose-100 border-red-200 shadow-sm">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 sm:pb-2 px-3 sm:px-6 pt-3 sm:pt-4">
+            <CardTitle className="text-xs sm:text-sm font-medium text-red-900">Over Budget</CardTitle>
+            <TrendingDown className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-red-600" />
           </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-red-900">
+          <CardContent className="px-3 sm:px-6 pb-3 sm:pb-4">
+            <div className="text-lg sm:text-xl md:text-2xl font-bold text-red-900">
               {overallStats.overBudgetCount}
             </div>
-            <p className="text-xs text-red-700 mt-1">
+            <p className="text-xs text-red-700 mt-0.5 sm:mt-1">
               Exceeded limit
             </p>
           </CardContent>
@@ -699,58 +704,58 @@ export default function BudgetsPage() {
 
       {/* Budget Alerts */}
       {(overallStats.overBudgetCount > 0 || overallStats.warningCount > 0) && (
-        <div className="space-y-3">
+        <div className="space-y-2 sm:space-y-3">
           {budgetStats.filter(b => b.status === "overbudget").map(budget => (
-            <Alert key={budget.id} className="border-red-200 bg-red-50">
-              <AlertTriangle className="h-4 w-4 text-red-600" />
-              <AlertDescription className="text-red-800">
+            <Alert key={budget.id} className="border-red-200 bg-red-50 p-2 sm:p-4">
+              <AlertTriangle className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-red-600" />
+              <AlertDescription className="text-red-800 text-xs sm:text-sm ml-2">
                 <strong>{budget.category?.name}</strong> budget exceeded by {formatCurrency(budget.spent - budget.amount, userCurrency)}
               </AlertDescription>
             </Alert>
           ))}
           {budgetStats.filter(b => b.status === "warning").map(budget => (
-            <Alert key={budget.id} className="border-yellow-200 bg-yellow-50">
-              <AlertTriangle className="h-4 w-4 text-yellow-600" />
-              <AlertDescription className="text-yellow-800">
+            <Alert key={budget.id} className="border-yellow-200 bg-yellow-50 p-2 sm:p-4">
+              <AlertTriangle className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-yellow-600" />
+              <AlertDescription className="text-yellow-800 text-xs sm:text-sm ml-2">
                 <strong>{budget.category?.name}</strong> budget at {budget.percentUsed.toFixed(1)}% ({formatCurrency(budget.remaining, userCurrency)} remaining)
               </AlertDescription>
             </Alert>
           ))}
         </div>
       )}
-
+      
       {/* Filters */}
       <Tabs defaultValue="monthly" onValueChange={setSelectedPeriod}>
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="all">All Periods</TabsTrigger>
-          <TabsTrigger value="weekly">Weekly</TabsTrigger>
-          <TabsTrigger value="monthly">Monthly</TabsTrigger>
-          <TabsTrigger value="yearly">Yearly</TabsTrigger>
+        <TabsList className="grid w-full grid-cols-4 p-0.5">
+          <TabsTrigger value="all" className="text-xs sm:text-sm py-1.5 sm:py-2">All</TabsTrigger>
+          <TabsTrigger value="weekly" className="text-xs sm:text-sm py-1.5 sm:py-2">Weekly</TabsTrigger>
+          <TabsTrigger value="monthly" className="text-xs sm:text-sm py-1.5 sm:py-2">Monthly</TabsTrigger>
+          <TabsTrigger value="yearly" className="text-xs sm:text-sm py-1.5 sm:py-2">Yearly</TabsTrigger>
         </TabsList>
       </Tabs>
 
       {/* Budget Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 md:gap-6">
         {filteredBudgets.map((budget) => (
-          <Card key={budget.id} className="overflow-hidden hover:shadow-lg transition-shadow">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
+          <Card key={budget.id} className="overflow-hidden hover:shadow-lg transition-shadow shadow-sm">
+            <CardHeader className="pb-2 sm:pb-3 px-3 sm:px-6 pt-3 sm:pt-4">
+              <div className="flex flex-wrap sm:flex-nowrap items-start sm:items-center justify-between gap-2 sm:gap-0">
+                <div className="flex items-center gap-2 sm:gap-3">
                   <div 
-                    className="w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold"
+                    className="w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-white font-semibold"
                     style={{ backgroundColor: budget.category?.color }}
                   >
                     {budget.category?.icon}
                   </div>
                   <div>
-                    <CardTitle className="text-lg">{budget.category?.name}</CardTitle>
-                    <CardDescription className="flex items-center gap-1">
-                      <Calendar className="w-3 h-3" />
+                    <CardTitle className="text-base sm:text-lg">{budget.category?.name}</CardTitle>
+                    <CardDescription className="flex items-center gap-1 text-xs">
+                      <Calendar className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
                       {budget.period.charAt(0).toUpperCase() + budget.period.slice(1)}
                     </CardDescription>
                   </div>
                 </div>
-                <Badge variant={(() => {
+                <Badge className="text-xs py-0.5" variant={(() => {
                   if (budget.status === "good") return "default";
                   if (budget.status === "warning") return "secondary";
                   return "destructive";
@@ -764,27 +769,27 @@ export default function BudgetsPage() {
               </div>
             </CardHeader>
             
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-3 sm:space-y-4 px-3 sm:px-6 pb-3 sm:pb-4">
               <div className="space-y-2">
-                <div className="flex justify-between text-sm">
+                <div className="flex justify-between text-xs sm:text-sm">
                   <span className="text-muted-foreground">Spent</span>
                   <span className="font-medium">{formatCurrency(budget.spent, userCurrency)}</span>
                 </div>
                 <Progress 
                   value={Math.min(budget.percentUsed, 100)} 
-                  className="h-2"
+                  className="h-1.5 sm:h-2"
                 />
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">
+                <div className="flex flex-col sm:flex-row sm:justify-between text-xs sm:text-sm">
+                  <span className="text-muted-foreground truncate">
                     {formatCurrency(budget.spent, userCurrency)} of {formatCurrency(budget.amount, userCurrency)}
                   </span>
-                  <span className={`font-medium ${budget.remaining >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  <span className={`font-medium ${budget.remaining >= 0 ? 'text-green-600' : 'text-red-600'} mt-1 sm:mt-0`}>
                     {formatCurrency(Math.abs(budget.remaining), userCurrency)} {budget.remaining >= 0 ? 'left' : 'over'}
                   </span>
                 </div>
               </div>
               
-              <div className="flex justify-between items-center pt-2 border-t">
+              <div className="flex flex-wrap sm:flex-nowrap justify-between items-center pt-2 border-t gap-2 sm:gap-0">
                 <div className="text-xs text-muted-foreground">
                   {format(new Date(budget.startDate * 1000), "MMM dd")} - {format(new Date(budget.endDate * 1000), "MMM dd")}
                 </div>
@@ -796,8 +801,9 @@ export default function BudgetsPage() {
                       setEditingBudget(budget);
                       setIsCreateDialogOpen(true);
                     }}
+                    className="h-7 w-7 sm:h-8 sm:w-8 p-0"
                   >
-                    <Edit3 className="w-3 h-3" />
+                    <Edit3 className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
                   </Button>
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
@@ -805,8 +811,9 @@ export default function BudgetsPage() {
                         size="sm"
                         variant="outline"
                         disabled={deleteBudgetMutation.isPending}
+                        className="h-7 w-7 sm:h-8 sm:w-8 p-0"
                       >
-                        <Trash2 className="w-3 h-3" />
+                        <Trash2 className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
                       </Button>
                     </AlertDialogTrigger>
                     <AlertDialogContent>
@@ -837,18 +844,18 @@ export default function BudgetsPage() {
 
       {/* Empty State */}
       {filteredBudgets.length === 0 && (
-        <Card className="text-center py-12">
+        <Card className="text-center py-6 sm:py-8 md:py-12 shadow-sm">
           <CardContent>
-            <Target className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-            <CardTitle className="mb-2">No budgets found</CardTitle>
-            <CardDescription className="mb-4">
+            <Target className="w-10 h-10 sm:w-12 sm:h-12 text-muted-foreground mx-auto mb-3 sm:mb-4" />
+            <CardTitle className="mb-1 sm:mb-2 text-base sm:text-lg">No budgets found</CardTitle>
+            <CardDescription className="mb-3 sm:mb-4 text-xs sm:text-sm max-w-md mx-auto">
               {selectedPeriod === "all" 
                 ? "Create your first budget to start tracking your spending goals."
                 : `No ${selectedPeriod} budgets found. Try a different period or create a new budget.`
               }
             </CardDescription>
-            <Button onClick={() => setIsCreateDialogOpen(true)}>
-              <Plus className="w-4 h-4 mr-2" />
+            <Button onClick={() => setIsCreateDialogOpen(true)} className="h-9 text-xs sm:text-sm">
+              <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1.5 sm:mr-2" />
               Create Budget
             </Button>
           </CardContent>
