@@ -308,18 +308,18 @@ export default function Settings() {
                   Profile Information
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center space-x-4">
+              <CardContent className="p-3 sm:p-6 space-y-4">
+                <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 sm:space-x-4">
                   <Avatar className="h-16 w-16 sm:h-20 sm:w-20">
                     <AvatarImage src={profileData.profileImageUrl} />
                     <AvatarFallback className="text-lg font-semibold bg-primary/10 text-primary">
                       {profileData.firstName?.[0]}{profileData.lastName?.[0]}
                     </AvatarFallback>
                   </Avatar>
-                  <div className="space-y-2">
+                  <div className="space-y-2 text-center sm:text-left">
                     <h3 className="text-xl font-semibold">{profileData.firstName} {profileData.lastName}</h3>
                     <p className="text-gray-600">{profileData.email}</p>
-                    <Button variant="outline" size="sm">
+                    <Button variant="outline" size="sm" className="w-full sm:w-auto">
                       <Smartphone className="h-4 w-4 mr-2" />
                       Change Photo
                     </Button>
@@ -360,11 +360,11 @@ export default function Settings() {
                   />
                 </div>
                 
-                <div className="flex gap-3">
+                <div className="flex flex-col sm:flex-row gap-3">
                   <Button 
                     onClick={handleProfileSave}
                     disabled={isProfileSaving}
-                    className="bg-primary hover:bg-primary/90"
+                    className="bg-primary hover:bg-primary/90 w-full sm:w-auto"
                   >
                     {isProfileSaving ? (
                       <>
@@ -378,7 +378,7 @@ export default function Settings() {
                       </>
                     )}
                   </Button>
-                  <Button variant="outline">
+                  <Button variant="outline" className="w-full sm:w-auto">
                     Cancel
                   </Button>
                 </div>
@@ -387,21 +387,23 @@ export default function Settings() {
           </TabsContent>
 
           {/* Financial Tab */}
-          <TabsContent value="financial" className="space-y-6">
-            <Card className="shadow-lg border-0 bg-white/50 backdrop-blur">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-3">
-                  <CreditCard className="h-5 w-5 text-primary" />
-                  Financial Preferences
+          <TabsContent value="financial" className="space-y-3">
+            <Card className="shadow-lg border-0 bg-white">
+              <CardHeader className="pb-2 sm:pb-3">
+                <CardTitle className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3">
+                  <div className="flex items-center gap-2">
+                    <CreditCard className="h-5 w-5 text-primary" />
+                    <span>Financial Preferences</span>
+                  </div>
                   <Badge className="bg-green-100 text-green-700 border-green-200">
                     <Database className="h-3 w-3 mr-1" />
                     Connected
                   </Badge>
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-3">
+              <CardContent className="p-3 sm:p-6 space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
                     <Label htmlFor="currency" className="flex items-center gap-2">
                       <Coins className="h-4 w-4 text-primary" />
                       Default Currency
@@ -486,11 +488,11 @@ export default function Settings() {
                   />
                 </div>
                 
-                <div className="flex gap-3">
+                <div className="flex flex-col sm:flex-row gap-3">
                   <Button 
                     onClick={handleFinancialSave}
                     disabled={isFinancialSaving}
-                    className="bg-primary hover:bg-primary/90"
+                    className="bg-primary hover:bg-primary/90 w-full sm:w-auto"
                   >
                     {isFinancialSaving ? (
                       <>
@@ -506,6 +508,7 @@ export default function Settings() {
                   </Button>
                   <Button 
                     variant="outline"
+                    className="w-full sm:w-auto"
                     onClick={() => {
                       if (userPreferences) {
                         setFinancialData({
@@ -525,18 +528,20 @@ export default function Settings() {
           </TabsContent>
 
           {/* Preferences Tab */}
-          <TabsContent value="preferences" className="space-y-6">
-            <Card className="shadow-lg border-0 bg-white/50 backdrop-blur">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-3">
-                  <Bell className="h-5 w-5 text-primary" />
-                  Notifications & Alerts
+          <TabsContent value="preferences" className="space-y-3">
+            <Card className="shadow-lg border-0 bg-white">
+              <CardHeader className="pb-2 sm:pb-3">
+                <CardTitle className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3">
+                  <div className="flex items-center gap-2">
+                    <Bell className="h-5 w-5 text-primary" />
+                    <span>Notifications & Alerts</span>
+                  </div>
                   <Badge variant="outline" className="text-yellow-700 border-yellow-300">
                     Coming Soon
                   </Badge>
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-6">
+              <CardContent className="p-3 sm:p-6 space-y-3">
                 {[
                   { id: "budget-alerts", title: "Budget Alerts", desc: "Get notified when you exceed your budget", icon: "💰" },
                   { id: "transaction-reminders", title: "Transaction Reminders", desc: "Daily reminders to log transactions", icon: "⏰" },
@@ -559,16 +564,16 @@ export default function Settings() {
           </TabsContent>
 
           {/* Security Tab */}
-          <TabsContent value="security" className="space-y-6">
-            <Card className="shadow-lg border-0 bg-white/50 backdrop-blur">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-3">
+          <TabsContent value="security" className="space-y-3">
+            <Card className="shadow-lg border-0 bg-white">
+              <CardHeader className="pb-2 sm:pb-3">
+                <CardTitle className="flex items-center gap-2">
                   <Shield className="h-5 w-5 text-primary" />
-                  Privacy & Security
+                  <span>Privacy & Security</span>
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="grid gap-6">
+              <CardContent className="p-3 sm:p-6 space-y-3">
+                <div className="grid gap-3">
                   <div className="flex items-center justify-between p-4 bg-white rounded-lg border">
                     <div className="flex items-center gap-3">
                       <Eye className="h-5 w-5 text-blue-500" />
@@ -616,14 +621,14 @@ export default function Settings() {
             </Card>
 
             {/* Danger Zone */}
-            <Card className="shadow-lg border-0 bg-red-50/50 backdrop-blur border-red-200">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-3 text-red-700">
+            <Card className="shadow-lg border-0 bg-red-50/50 border-red-200">
+              <CardHeader className="pb-2 sm:pb-3">
+                <CardTitle className="flex items-center gap-2 text-red-700">
                   <Trash2 className="h-5 w-5" />
                   Danger Zone
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="p-3 sm:p-6 space-y-3">
                 <div className="flex items-center justify-between p-4 bg-white rounded-lg border border-red-200">
                   <div>
                     <Label className="text-base font-medium text-red-700">Sign Out</Label>
