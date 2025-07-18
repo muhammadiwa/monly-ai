@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { getWhatsAppStatus, generateWhatsAppQR, checkWhatsAppQR, disconnectWhatsApp } from "@/lib/whatsappService";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -36,7 +37,11 @@ import {
   Download, 
   Trash2, 
   LogOut,
-  XCircle
+  XCircle,
+  MessageCircle,
+  QrCode,
+  RefreshCw,
+  X
 } from "lucide-react";
 
 interface UserPreferences {
@@ -78,6 +83,43 @@ export default function Settings() {
   const [isFinancialSaving, setIsFinancialSaving] = useState(false);
   const [isPhotoUploading, setIsPhotoUploading] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
+  
+  // WhatsApp connection states
+  const [whatsappStatus, setWhatsappStatus] = useState<'ready' | 'authenticated' | 'qr_received' | 'initializing' | 'disconnected'>('disconnected');
+  const [isGeneratingQR, setIsGeneratingQR] = useState(false);
+  const [qrCodeData, setQrCodeData] = useState<string | null>(null);
+  const whatsappCheckInterval = useRef<NodeJS.Timeout | null>(null);
+  
+  // Use React Query to check WhatsApp status periodically
+  const { data: whatsappStatusData } = useQuery({
+    queryKey: ['whatsapp-status'],
+    queryFn: getWhatsAppStatus,
+    refetchInterval: 5000, // Check every 5 seconds
+    enabled: Boolean(user)
+  });
+  
+  // Update WhatsApp status when query data changes
+  useEffect(() => {
+    if (whatsappStatusData?.status) {
+      setWhatsappStatus(whatsappStatusData.status as any);
+      
+      // If we have a QR code, update it
+      if (whatsappStatusData.qrCode && whatsappStatusData.status === 'qr_received') {
+        setQrCodeData(whatsappStatusData.qrCode);
+      }
+      
+      // If connected, make sure QR code is cleared
+      if (whatsappStatusData.status === 'ready' || whatsappStatusData.status === 'authenticated') {
+        setQrCodeData(null);
+        
+        // Clear any polling interval
+        if (whatsappCheckInterval.current) {
+          clearInterval(whatsappCheckInterval.current);
+          whatsappCheckInterval.current = null;
+        }
+      }
+    }
+  }, [whatsappStatusData]);
 
   // Fetch user preferences
   const { data: userPreferences, isLoading: preferencesLoading, error: preferencesError } = useQuery({
@@ -130,6 +172,35 @@ export default function Settings() {
       }, 1000);
     }
   }, [isAuthenticated, isLoading, toast]);
+  
+  // Check WhatsApp connection status on initial load
+  useEffect(() => {
+    const checkWhatsAppStatus = async () => {
+      if (!isAuthenticated) return;
+      
+      try {
+        const status = await getWhatsAppStatus();
+        if (status.connected) {
+          setWhatsappStatus(status.status as any);
+        } else {
+          setWhatsappStatus('disconnected');
+        }
+      } catch (error) {
+        console.error('Failed to check WhatsApp status:', error);
+      }
+    };
+    
+    checkWhatsAppStatus();
+  }, [isAuthenticated]);
+  
+  // Clean up interval on unmount
+  useEffect(() => {
+    return () => {
+      if (whatsappCheckInterval.current) {
+        clearInterval(whatsappCheckInterval.current);
+      }
+    };
+  }, []);
 
   const handlePreferenceUpdate = async (key: keyof UserPreferences, value: any) => {
     if (!preferences) return;
@@ -336,6 +407,169 @@ export default function Settings() {
     });
   };
 
+  const handleGenerateQRCode = async () => {
+    setIsGeneratingQR(true);
+    
+    try {
+      // Request QR code generation from server
+      const response = await generateWhatsAppQR();
+      
+      if (response.success) {
+        // If QR code is already available
+        if (response.qrCode) {
+          setQrCodeData(response.qrCode);
+          setWhatsappStatus('qr_received');
+          toast({
+            title: "✅ QR Code Generated",
+            description: "Scan with your WhatsApp app to connect",
+            className: "bg-green-50 border-green-200 text-green-800",
+          });
+        } 
+        // If already connected
+        else if (response.status === 'ready' || response.status === 'authenticated') {
+          setWhatsappStatus(response.status as any);
+          toast({
+            title: "✅ Already Connected",
+            description: "Your WhatsApp is already connected",
+            className: "bg-green-50 border-green-200 text-green-800",
+          });
+        } 
+        // If initializing
+        else {
+          setWhatsappStatus(response.status as any);
+          toast({
+            title: "🔄 Initializing",
+            description: "WhatsApp connection is initializing, please wait...",
+            className: "bg-blue-50 border-blue-200 text-blue-800",
+          });
+          
+          // Start checking for QR code
+          startQRCodePolling();
+        }
+      } else {
+        throw new Error(response.message || 'Failed to generate QR code');
+      }
+    } catch (error: any) {
+      console.error('Error generating QR code:', error);
+      toast({
+        title: "❌ Failed to Generate QR",
+        description: error.message || "Please try again later",
+        variant: "destructive",
+      });
+    } finally {
+      setIsGeneratingQR(false);
+    }
+  };
+  
+  const startQRCodePolling = () => {
+    // Clear existing interval if any
+    if (whatsappCheckInterval.current) {
+      clearInterval(whatsappCheckInterval.current);
+    }
+    
+    // Start polling every 2 seconds
+    whatsappCheckInterval.current = setInterval(async () => {
+      try {
+        const response = await checkWhatsAppQR();
+        
+        if (response.success) {
+          // If QR code is available
+          if (response.qrCode) {
+            setQrCodeData(response.qrCode);
+            setWhatsappStatus('qr_received');
+          }
+          
+          // If connected
+          if (response.connected) {
+            setWhatsappStatus(response.status as any);
+            setQrCodeData(null);
+            
+            // Stop polling once connected
+            if (whatsappCheckInterval.current) {
+              clearInterval(whatsappCheckInterval.current);
+              whatsappCheckInterval.current = null;
+            }
+            
+            toast({
+              title: "✅ WhatsApp Connected",
+              description: "Your WhatsApp account is now connected",
+              className: "bg-green-50 border-green-200 text-green-800",
+            });
+          }
+        }
+      } catch (error) {
+        console.error('Error polling QR status:', error);
+      }
+    }, 2000);
+  };
+  
+  const handleRefreshWhatsAppConnection = async () => {
+    try {
+      // Check current status
+      const status = await getWhatsAppStatus();
+      setWhatsappStatus(status.status as any);
+      
+      // If connected, display connected toast
+      if (status.connected) {
+        toast({
+          title: "✅ Connection Active",
+          description: "Your WhatsApp is connected and active",
+          className: "bg-green-50 border-green-200 text-green-800",
+        });
+      } 
+      // If a QR code is available, update it
+      else if (status.status === 'qr_received' && status.qrCode) {
+        setQrCodeData(status.qrCode);
+        toast({
+          title: "🔄 QR Code Ready",
+          description: "Scan the QR code with WhatsApp",
+          className: "bg-blue-50 border-blue-200 text-blue-800",
+        });
+      } 
+      // Otherwise show general status update
+      else {
+        toast({
+          title: "❌ Not Connected",
+          description: `Status: ${status.status}`,
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error('Error refreshing connection:', error);
+      toast({
+        title: "❌ Connection Error",
+        description: "Unable to refresh WhatsApp connection",
+        variant: "destructive",
+      });
+    }
+  };
+  
+  const handleDisconnectWhatsApp = async () => {
+    try {
+      const response = await disconnectWhatsApp();
+      
+      if (response.success) {
+        setWhatsappStatus('disconnected');
+        setQrCodeData(null);
+        
+        toast({
+          title: "✅ Disconnected",
+          description: "Your WhatsApp has been disconnected",
+          className: "bg-blue-50 border-blue-200 text-blue-800",
+        });
+      } else {
+        throw new Error(response.message);
+      }
+    } catch (error: any) {
+      console.error('Error disconnecting WhatsApp:', error);
+      toast({
+        title: "❌ Disconnect Error",
+        description: error.message || "Failed to disconnect WhatsApp",
+        variant: "destructive",
+      });
+    }
+  };
+
   if (isLoading || preferencesLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
@@ -377,7 +611,7 @@ export default function Settings() {
         </div>
 
         <Tabs defaultValue="profile" className="space-y-3">
-          <TabsList className="grid w-full grid-cols-4 lg:w-fit lg:grid-cols-4 bg-white shadow-sm border border-gray-200">
+          <TabsList className="grid w-full grid-cols-5 lg:w-fit lg:grid-cols-5 bg-white shadow-sm border border-gray-200">
             <TabsTrigger value="profile" className="flex items-center space-x-1 text-xs sm:text-sm">
               <User className="h-3 w-3 sm:h-4 sm:w-4" />
               <span>Profile</span>
@@ -389,6 +623,10 @@ export default function Settings() {
             <TabsTrigger value="preferences" className="flex items-center space-x-1 text-xs sm:text-sm">
               <Bell className="h-3 w-3 sm:h-4 sm:w-4" />
               <span>Preferences</span>
+            </TabsTrigger>
+            <TabsTrigger value="whatsapp" className="flex items-center space-x-1 text-xs sm:text-sm">
+              <MessageCircle className="h-3 w-3 sm:h-4 sm:w-4" />
+              <span>WhatsApp</span>
             </TabsTrigger>
             <TabsTrigger value="security" className="flex items-center space-x-1 text-xs sm:text-sm">
               <Shield className="h-3 w-3 sm:h-4 sm:w-4" />
@@ -698,6 +936,165 @@ export default function Settings() {
                     <Switch id={item.id} defaultChecked disabled />
                   </div>
                 ))}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* WhatsApp Tab */}
+          <TabsContent value="whatsapp" className="space-y-3">
+            <Card className="shadow-lg border-0 bg-white">
+              <CardHeader className="pb-2 sm:pb-3">
+                <CardTitle className="flex items-center gap-2">
+                  <MessageCircle className="h-5 w-5 text-green-600" />
+                  <span>WhatsApp Integration</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-3 sm:p-6 space-y-4">
+                <div className="p-4 bg-green-50 rounded-lg border border-green-100 mb-4">
+                  <h3 className="text-lg font-medium text-green-800 flex items-center gap-2">
+                    <Smartphone className="h-5 w-5" />
+                    Connect Your WhatsApp
+                  </h3>
+                  <p className="text-sm text-green-700 mt-2">
+                    Connect your WhatsApp account to use it as a financial assistant bot. Track expenses,
+                    check balances, and manage your finances directly through WhatsApp messages.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-4">
+                    <div className="space-y-1">
+                      <h4 className="font-medium">Connection Status</h4>
+                      <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-md">
+                        {whatsappStatus === 'ready' || whatsappStatus === 'authenticated' ? (
+                          <>
+                            <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                            <span className="text-green-700">Connected</span>
+                          </>
+                        ) : whatsappStatus === 'qr_received' ? (
+                          <>
+                            <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
+                            <span className="text-yellow-700">Waiting for scan</span>
+                          </>
+                        ) : whatsappStatus === 'initializing' ? (
+                          <>
+                            <div className="w-3 h-3 rounded-full bg-blue-500 animate-pulse"></div>
+                            <span className="text-blue-700">Initializing...</span>
+                          </>
+                        ) : (
+                          <>
+                            <div className="w-3 h-3 rounded-full bg-gray-400"></div>
+                            <span className="text-gray-600">Not Connected</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <h4 className="font-medium">How to Connect</h4>
+                      <ol className="space-y-2 text-sm text-gray-600 ml-5 list-decimal">
+                        <li>Click the "Generate QR Code" button</li>
+                        <li>Open WhatsApp on your phone</li>
+                        <li>Tap Menu or Settings and select Linked Devices</li>
+                        <li>Point your phone to this screen to scan the QR code</li>
+                      </ol>
+                    </div>
+
+                    <div className="space-y-3 pt-2">
+                      <Button 
+                        className="w-full bg-green-600 hover:bg-green-700 text-white"
+                        onClick={handleGenerateQRCode}
+                        disabled={isGeneratingQR || whatsappStatus === 'ready' || whatsappStatus === 'authenticated'}
+                      >
+                        {isGeneratingQR ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            Generating...
+                          </>
+                        ) : (
+                          <>
+                            <QrCode className="h-4 w-4 mr-2" />
+                            Generate QR Code
+                          </>
+                        )}
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        className="w-full" 
+                        onClick={handleRefreshWhatsAppConnection}
+                      >
+                        <RefreshCw className="h-4 w-4 mr-2" />
+                        Check Connection Status
+                      </Button>
+                      {(whatsappStatus === 'ready' || whatsappStatus === 'authenticated') && (
+                        <Button 
+                          variant="outline" 
+                          className="w-full border-red-200 text-red-600 hover:bg-red-50"
+                          onClick={handleDisconnectWhatsApp}
+                        >
+                          <X className="h-4 w-4 mr-2" />
+                          Disconnect WhatsApp
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-gray-300 rounded-lg bg-gray-50">
+                    {qrCodeData ? (
+                      <>
+                        <div className="w-64 h-64 bg-white p-4 rounded-lg shadow-inner flex items-center justify-center">
+                          <img 
+                            src={qrCodeData} 
+                            alt="WhatsApp QR Code" 
+                            className="w-full h-full"
+                          />
+                        </div>
+                        <p className="text-sm font-medium text-green-700 mt-4">
+                          Scan this QR code with your WhatsApp app
+                        </p>
+                      </>
+                    ) : whatsappStatus === 'ready' || whatsappStatus === 'authenticated' ? (
+                      <>
+                        <div className="w-32 h-32 bg-green-100 rounded-full flex items-center justify-center text-green-700">
+                          <Smartphone className="w-16 h-16" />
+                        </div>
+                        <p className="text-green-700 font-medium mt-4">
+                          WhatsApp Connected Successfully
+                        </p>
+                        <p className="text-sm text-gray-600 mt-2 text-center">
+                          Your WhatsApp account is connected and ready to use with Monly AI
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <QrCode className="w-32 h-32 text-gray-300" />
+                        <p className="text-gray-500 text-sm mt-4 text-center">
+                          QR code will appear here after you click "Generate QR Code"
+                        </p>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-6">
+                  <h4 className="font-medium mb-2">Bot Features</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {[
+                      { title: "Expense Tracking", desc: "Record expenses by sending a message", icon: "💸" },
+                      { title: "Balance Inquiries", desc: "Check your current account balance", icon: "💰" },
+                      { title: "Budget Alerts", desc: "Get notified when nearing budget limits", icon: "🚨" },
+                      { title: "Financial Reports", desc: "Request spending summaries and reports", icon: "📊" }
+                    ].map((feature, i) => (
+                      <div key={i} className="flex items-start gap-3 p-3 bg-white border rounded-lg">
+                        <span className="text-2xl">{feature.icon}</span>
+                        <div>
+                          <h5 className="font-medium">{feature.title}</h5>
+                          <p className="text-xs text-gray-600">{feature.desc}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
