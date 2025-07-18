@@ -245,11 +245,10 @@ export default function Navbar({ className }: NavbarProps) {
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem className="cursor-pointer">
-                  <User className="mr-2 h-4 w-4" />
-                  <span>Profile Settings</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem className="cursor-pointer">
+                <DropdownMenuItem 
+                  className="cursor-pointer"
+                  onClick={() => window.location.href = '/settings'}
+                >
                   <Settings className="mr-2 h-4 w-4" />
                   <span>Account Settings</span>
                 </DropdownMenuItem>
