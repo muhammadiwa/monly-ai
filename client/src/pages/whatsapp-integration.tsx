@@ -388,40 +388,75 @@ export default function WhatsAppIntegration() {
               <CardTitle className="text-lg sm:text-xl">Fitur Bot WhatsApp</CardTitle>
             </CardHeader>
             <CardContent className="p-3 sm:p-6">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
                 {[
                   {
-                    title: "Tracking Pengeluaran",
-                    description: "Catat pengeluaran dengan pesan WhatsApp",
+                    title: "💰 Pencatatan Keuangan",
+                    description: "Catat pemasukan & pengeluaran dengan mudah",
                     icon: "💸",
-                    example: "spent 50000 on lunch"
+                    examples: ["keluar 50000 untuk makan", "masuk 500000 dari gaji", "bayar 25000 transport"]
                   },
                   {
-                    title: "Cek Saldo",
-                    description: "Lihat saldo terkini",
+                    title: "📊 Cek Saldo & Laporan",
+                    description: "Lihat saldo dan ringkasan keuangan real-time",
                     icon: "💰",
-                    example: "balance"
+                    examples: ["saldo", "hari ini", "minggu ini", "bulan ini"]
                   },
                   {
-                    title: "Alert Budget",
-                    description: "Notifikasi saat mendekati limit",
-                    icon: "🚨",
-                    example: "Auto notification"
+                    title: "🎯 Manajemen Budget",
+                    description: "Atur dan pantau budget per kategori",
+                    icon: "📋",
+                    examples: ["budget check", "budget set makanan 1000000", "anggaran transport 500000"]
                   },
                   {
-                    title: "Laporan Keuangan",
-                    description: "Minta ringkasan pengeluaran",
+                    title: "🏆 Target & Goal",
+                    description: "Buat dan tracking target finansial",
+                    icon: "🎯",
+                    examples: ["goal list", "goal add rumah 500000000", "target emergency 15000000"]
+                  },
+                  {
+                    title: "📈 Analisis Kategori",
+                    description: "Analisis pengeluaran per kategori",
                     icon: "📊",
-                    example: "report monthly"
+                    examples: ["kategori", "analisis pengeluaran", "category breakdown"]
+                  },
+                  {
+                    title: "🤖 AI Financial Insights",
+                    description: "Saran dan insight cerdas dari AI",
+                    icon: "🧠",
+                    examples: ["ai insights", "saran keuangan", "tips hemat", "analisa pola"]
+                  },
+                  {
+                    title: "📱 Quick Commands",
+                    description: "Perintah cepat untuk info harian",
+                    icon: "⚡",
+                    examples: ["today", "yesterday", "week summary", "month report"]
+                  },
+                  {
+                    title: "🚨 Smart Alerts",
+                    description: "Notifikasi otomatis budget & target",
+                    icon: "🔔",
+                    examples: ["Auto notification", "Budget warnings", "Goal reminders"]
+                  },
+                  {
+                    title: "📑 Laporan Lengkap",
+                    description: "Laporan detail harian/mingguan/bulanan",
+                    icon: "📋",
+                    examples: ["laporan harian", "report weekly", "summary monthly"]
                   }
                 ].map((feature, index) => (
-                  <div key={index} className="p-3 sm:p-4 bg-gray-50 rounded-lg border">
+                  <div key={index} className="p-3 sm:p-4 bg-gray-50 rounded-lg border hover:bg-gray-100 transition-colors">
                     <div className="text-xl sm:text-2xl mb-2">{feature.icon}</div>
                     <h4 className="font-medium mb-1 text-sm sm:text-base">{feature.title}</h4>
-                    <p className="text-xs sm:text-sm text-gray-600 mb-2">{feature.description}</p>
-                    <code className="text-xs bg-gray-200 px-2 py-1 rounded block break-all">
-                      {feature.example}
-                    </code>
+                    <p className="text-xs sm:text-sm text-gray-600 mb-3">{feature.description}</p>
+                    <div className="space-y-1">
+                      <div className="text-xs font-medium text-gray-700">Contoh perintah:</div>
+                      {feature.examples.map((example, idx) => (
+                        <code key={idx} className="text-xs bg-gray-200 px-2 py-1 rounded block break-all">
+                          {example}
+                        </code>
+                      ))}
+                    </div>
                   </div>
                 ))}
               </div>
