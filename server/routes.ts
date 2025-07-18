@@ -224,6 +224,67 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // User profile image upload
+  app.post('/api/user/upload-profile-image', requireAuth, upload.single('profileImage'), async (req: AuthRequest, res) => {
+    try {
+      console.log("Profile image upload request received");
+      
+      if (!req.user) {
+        console.log("Unauthorized - No user in request");
+        return res.status(401).json({ message: 'Unauthorized' });
+      }
+      
+      if (!req.file) {
+        console.log("No file in request");
+        return res.status(400).json({ message: "Profile image is required" });
+      }
+      
+      console.log("File received:", {
+        filename: req.file.originalname,
+        mimetype: req.file.mimetype,
+        size: req.file.size
+      });
+      
+      // Validate file type
+      if (!req.file.mimetype.startsWith('image/')) {
+        return res.status(400).json({ message: "File must be an image" });
+      }
+      
+      // Validate file size (max 5MB)
+      const maxSize = 5 * 1024 * 1024; // 5MB
+      if (req.file.size > maxSize) {
+        return res.status(400).json({ message: "Image size must be less than 5MB" });
+      }
+      
+      // Convert the image to Base64 for storage
+      // In a production app, you should use a proper file storage service like AWS S3
+      const base64Image = req.file.buffer.toString('base64');
+      
+      // Create a data URL for the image
+      const mimeType = req.file.mimetype;
+      const dataUrl = `data:${mimeType};base64,${base64Image}`;
+      
+      console.log("Updating user profile with image URL");
+      
+      // Update the user's profile with the new image URL
+      const updatedUser = await storage.updateUser(req.user.id, {
+        profileImageUrl: dataUrl
+      });
+      
+      console.log('Profile image updated successfully');
+      res.json({ 
+        success: true, 
+        message: "Profile image updated successfully",
+        imageUrl: updatedUser.profileImageUrl
+      });
+    } catch (error) {
+      console.error('Error updating profile image:', error);
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : "Failed to update profile image" 
+      });
+    }
+  });
+
   // User preferences routes
   app.get('/api/user/preferences', requireAuth, async (req: AuthRequest, res) => {
     try {

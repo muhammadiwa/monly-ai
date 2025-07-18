@@ -139,45 +139,12 @@ export default function Navbar({ className }: NavbarProps) {
               </DropdownMenuContent>
             </DropdownMenu>
 
-            {/* Currency Selector */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="flex items-center space-x-1 h-9 px-2 hover:bg-gray-100">
-                  <span className="text-sm font-medium">
-                    {selectedCurrency}
-                  </span>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-32">
-                <DropdownMenuLabel>Currency</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={() => handleCurrencyChange('IDR')}
-                  className="flex items-center justify-between"
-                >
-                  <span>IDR</span>
-                  {selectedCurrency === 'IDR' && (
-                    <Check className="h-4 w-4 text-green-600" />
-                  )}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => handleCurrencyChange('USD')}
-                  className="flex items-center justify-between"
-                >
-                  <span>USD</span>
-                  {selectedCurrency === 'USD' && (
-                    <Check className="h-4 w-4 text-green-600" />
-                  )}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-
             {/* Profile Dropdown */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative h-9 w-9 rounded-full hover:bg-gray-100">
                   <Avatar className="h-9 w-9">
-                    <AvatarImage src={user?.avatar} alt={user?.firstName} />
+                    <AvatarImage src={user?.profileImageUrl} alt={user?.firstName} />
                     <AvatarFallback className="bg-gradient-to-br from-emerald-500 to-blue-600 text-white text-sm">
                       {(user?.firstName || 'U').charAt(0)}
                     </AvatarFallback>

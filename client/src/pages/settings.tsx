@@ -76,6 +76,8 @@ export default function Settings() {
   });
   const [isProfileSaving, setIsProfileSaving] = useState(false);
   const [isFinancialSaving, setIsFinancialSaving] = useState(false);
+  const [isPhotoUploading, setIsPhotoUploading] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
 
   // Fetch user preferences
   const { data: userPreferences, isLoading: preferencesLoading, error: preferencesError } = useQuery({
@@ -185,6 +187,101 @@ export default function Settings() {
       });
     } finally {
       setIsProfileSaving(false);
+    }
+  };
+
+  const handlePhotoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    
+    // Validate file is an image
+    if (!file.type.startsWith('image/')) {
+      setPhotoError('Selected file must be an image');
+      toast({
+        title: "❌ Invalid File",
+        description: "Please select a valid image file (JPEG, PNG, etc.)",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // Validate file size (max 5MB)
+    const maxSize = 5 * 1024 * 1024; // 5MB
+    if (file.size > maxSize) {
+      setPhotoError('Image must be less than 5MB');
+      toast({
+        title: "❌ File Too Large",
+        description: "Profile image must be less than 5MB",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    setIsPhotoUploading(true);
+    setPhotoError(null);
+    
+    try {
+      // Create form data to send to server
+      const formData = new FormData();
+      formData.append('profileImage', file);
+      
+      // Get the authentication token
+      const authToken = localStorage.getItem('auth-token');
+      
+      // Send image to server - note: don't set Content-Type header with FormData
+      const response = await fetch('/api/user/upload-profile-image', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: formData,
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        let errorMsg = `Failed to upload profile image (${response.status})`;
+        
+        try {
+          const errorData = await response.json();
+          errorMsg = errorData.message || errorMsg;
+        } catch (parseError) {
+          // If we can't parse the response as JSON, use the status text
+          errorMsg = `${errorMsg}: ${response.statusText}`;
+        }
+        
+        throw new Error(errorMsg);
+      }
+      
+      const data = await response.json();
+      
+      // Update local profile data with the new image URL
+      setProfileData({
+        ...profileData,
+        profileImageUrl: data.imageUrl
+      });
+      
+      // Refresh user data to get the updated profile image
+      queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
+      
+      toast({
+        title: "✅ Profile Photo Updated",
+        description: "Your profile photo has been successfully updated",
+        className: "bg-green-50 border-green-200 text-green-800",
+      });
+    } catch (error: any) {
+      console.error('Photo upload error:', error);
+      setPhotoError(error.message || 'Failed to upload photo');
+      toast({
+        title: "❌ Upload Failed",
+        description: error.message || "Failed to upload profile photo. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsPhotoUploading(false);
+      // Reset file input
+      if (event.target) {
+        event.target.value = '';
+      }
     }
   };
 
@@ -310,19 +407,61 @@ export default function Settings() {
               </CardHeader>
               <CardContent className="p-3 sm:p-6 space-y-4">
                 <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 sm:space-x-4">
-                  <Avatar className="h-16 w-16 sm:h-20 sm:w-20">
-                    <AvatarImage src={profileData.profileImageUrl} />
-                    <AvatarFallback className="text-lg font-semibold bg-primary/10 text-primary">
-                      {profileData.firstName?.[0]}{profileData.lastName?.[0]}
-                    </AvatarFallback>
-                  </Avatar>
+                  <div className="relative">
+                    <Avatar className="h-16 w-16 sm:h-20 sm:w-20">
+                      <AvatarImage 
+                        src={profileData.profileImageUrl} 
+                        alt={`${profileData.firstName} ${profileData.lastName}`} 
+                      />
+                      <AvatarFallback className="text-lg font-semibold bg-primary/10 text-primary">
+                        {profileData.firstName?.[0]}{profileData.lastName?.[0]}
+                      </AvatarFallback>
+                    </Avatar>
+                    {isPhotoUploading && (
+                      <div className="absolute inset-0 bg-black/30 rounded-full flex items-center justify-center">
+                        <Loader2 className="h-6 w-6 text-white animate-spin" />
+                      </div>
+                    )}
+                  </div>
                   <div className="space-y-2 text-center sm:text-left">
                     <h3 className="text-xl font-semibold">{profileData.firstName} {profileData.lastName}</h3>
                     <p className="text-gray-600">{profileData.email}</p>
-                    <Button variant="outline" size="sm" className="w-full sm:w-auto">
-                      <Smartphone className="h-4 w-4 mr-2" />
-                      Change Photo
+                    
+                    {/* Hidden file input for photo upload */}
+                    <input 
+                      type="file" 
+                      id="profile-photo-input" 
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handlePhotoUpload}
+                      disabled={isPhotoUploading}
+                      aria-label="Upload profile photo"
+                    />
+                    
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="w-full sm:w-auto"
+                      onClick={() => document.getElementById('profile-photo-input')?.click()}
+                      disabled={isPhotoUploading}
+                      aria-label="Change profile photo"
+                    >
+                      {isPhotoUploading ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Uploading...
+                        </>
+                      ) : (
+                        <>
+                          <User className="h-4 w-4 mr-2" />
+                          Change Photo
+                        </>
+                      )}
                     </Button>
+                    
+                    {photoError && (
+                      <p className="text-sm text-red-500 mt-1">{photoError}</p>
+                    )}
                   </div>
                 </div>
                 
