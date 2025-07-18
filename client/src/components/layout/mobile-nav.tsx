@@ -1,13 +1,13 @@
 import { Link, useLocation } from "wouter";
-import { BarChart3, CreditCard, PieChart, ChartLine, Bot } from "lucide-react";
+import { BarChart3, CreditCard, PieChart, Bot, Target } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: BarChart3 },
   { name: "Transactions", href: "/transactions", icon: CreditCard },
-  { name: "Chat AI", href: "/chat", icon: Bot },
+  { name: "Goals", href: "/goals", icon: Target },
   { name: "Budgets", href: "/budgets", icon: PieChart },
-  { name: "Reports", href: "/reports", icon: ChartLine },
+  { name: "Chat AI", href: "/chat", icon: Bot },
 ];
 
 export default function MobileNav() {

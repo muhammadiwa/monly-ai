@@ -224,7 +224,7 @@ export default function BudgetAlertPredictions({ currency, showBalance }: Budget
                   </div>
 
                   {/* Action Buttons */}
-                  <div className="flex gap-2">
+                  <div className="flex flex-col sm:flex-row gap-2">
                     <Button 
                       variant="outline" 
                       size="sm" 
@@ -235,7 +235,7 @@ export default function BudgetAlertPredictions({ currency, showBalance }: Budget
                       }}
                     >
                       <Calendar className="h-4 w-4 mr-2" />
-                      Adjust Budget
+                      <span className="whitespace-nowrap">Adjust Budget</span>
                     </Button>
                     <Button 
                       variant="outline" 
@@ -247,7 +247,7 @@ export default function BudgetAlertPredictions({ currency, showBalance }: Budget
                       }}
                     >
                       <Target className="h-4 w-4 mr-2" />
-                      Set Spending Limit
+                      <span className="whitespace-nowrap">Set Spending Limit</span>
                     </Button>
                   </div>
                 </div>

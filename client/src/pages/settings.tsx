@@ -76,6 +76,8 @@ export default function Settings() {
   });
   const [isProfileSaving, setIsProfileSaving] = useState(false);
   const [isFinancialSaving, setIsFinancialSaving] = useState(false);
+  const [isPhotoUploading, setIsPhotoUploading] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
 
   // Fetch user preferences
   const { data: userPreferences, isLoading: preferencesLoading, error: preferencesError } = useQuery({
@@ -188,6 +190,101 @@ export default function Settings() {
     }
   };
 
+  const handlePhotoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    
+    // Validate file is an image
+    if (!file.type.startsWith('image/')) {
+      setPhotoError('Selected file must be an image');
+      toast({
+        title: "❌ Invalid File",
+        description: "Please select a valid image file (JPEG, PNG, etc.)",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // Validate file size (max 5MB)
+    const maxSize = 5 * 1024 * 1024; // 5MB
+    if (file.size > maxSize) {
+      setPhotoError('Image must be less than 5MB');
+      toast({
+        title: "❌ File Too Large",
+        description: "Profile image must be less than 5MB",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    setIsPhotoUploading(true);
+    setPhotoError(null);
+    
+    try {
+      // Create form data to send to server
+      const formData = new FormData();
+      formData.append('profileImage', file);
+      
+      // Get the authentication token
+      const authToken = localStorage.getItem('auth-token');
+      
+      // Send image to server - note: don't set Content-Type header with FormData
+      const response = await fetch('/api/user/upload-profile-image', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: formData,
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        let errorMsg = `Failed to upload profile image (${response.status})`;
+        
+        try {
+          const errorData = await response.json();
+          errorMsg = errorData.message || errorMsg;
+        } catch (parseError) {
+          // If we can't parse the response as JSON, use the status text
+          errorMsg = `${errorMsg}: ${response.statusText}`;
+        }
+        
+        throw new Error(errorMsg);
+      }
+      
+      const data = await response.json();
+      
+      // Update local profile data with the new image URL
+      setProfileData({
+        ...profileData,
+        profileImageUrl: data.imageUrl
+      });
+      
+      // Refresh user data to get the updated profile image
+      queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
+      
+      toast({
+        title: "✅ Profile Photo Updated",
+        description: "Your profile photo has been successfully updated",
+        className: "bg-green-50 border-green-200 text-green-800",
+      });
+    } catch (error: any) {
+      console.error('Photo upload error:', error);
+      setPhotoError(error.message || 'Failed to upload photo');
+      toast({
+        title: "❌ Upload Failed",
+        description: error.message || "Failed to upload profile photo. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsPhotoUploading(false);
+      // Reset file input
+      if (event.target) {
+        event.target.value = '';
+      }
+    }
+  };
+
   const handleFinancialSave = async () => {
     setIsFinancialSaving(true);
     try {
@@ -242,12 +339,10 @@ export default function Settings() {
   if (isLoading || preferencesLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
-        <div className="text-center space-y-4">
-          <div className="animate-spin rounded-full h-16 w-16 border-4 border-primary border-t-transparent mx-auto"></div>
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900">Loading Settings</h3>
-            <p className="text-gray-600">Please wait while we load your preferences...</p>
-          </div>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-4 border-primary border-t-transparent mx-auto mb-3"></div>
+          <h2 className="text-2xl font-semibold text-gray-900 mb-1">Loading Settings</h2>
+          <p className="text-gray-600">Please wait while we load your preferences...</p>
         </div>
       </div>
     );
@@ -256,13 +351,11 @@ export default function Settings() {
   if (preferencesError) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
-        <div className="text-center space-y-4 max-w-md mx-auto p-6">
-          <XCircle className="h-16 w-16 text-red-500 mx-auto" />
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900">Unable to Load Settings</h3>
-            <p className="text-gray-600">There was an error loading your preferences. Please try refreshing the page.</p>
-          </div>
-          <Button onClick={() => window.location.reload()} className="mt-4">
+        <div className="text-center max-w-md mx-auto p-4">
+          <XCircle className="h-16 w-16 text-red-500 mx-auto mb-3" />
+          <h2 className="text-2xl font-semibold text-gray-900 mb-1">Unable to Load Settings</h2>
+          <p className="text-gray-600 mb-4">There was an error loading your preferences. Please try refreshing the page.</p>
+          <Button onClick={() => window.location.reload()}>
             Retry
           </Button>
         </div>
@@ -272,70 +365,109 @@ export default function Settings() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-      <div className="container mx-auto px-4 py-8 w-full max-w-none">
+      <div className="px-2 sm:px-4 lg:px-6 w-full">
         {/* Header */}
-        <div className="mb-8">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 bg-primary/10 rounded-lg">
-              <SettingsIcon className="h-6 w-6 text-primary" />
-            </div>
+        <div className="mb-1">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">Settings</h1>
-              <p className="text-gray-600">Manage your account and preferences</p>
+              <h1 className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">Settings</h1>
+              <p className="mt-0.5 text-sm text-gray-600">Manage your account and preferences</p>
             </div>
           </div>
         </div>
 
-        <Tabs defaultValue="profile" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4 lg:w-fit">
-            <TabsTrigger value="profile" className="flex items-center gap-2">
-              <User className="h-4 w-4" />
-              Profile
+        <Tabs defaultValue="profile" className="space-y-3">
+          <TabsList className="grid w-full grid-cols-4 lg:w-fit lg:grid-cols-4 bg-white shadow-sm border border-gray-200">
+            <TabsTrigger value="profile" className="flex items-center space-x-1 text-xs sm:text-sm">
+              <User className="h-3 w-3 sm:h-4 sm:w-4" />
+              <span>Profile</span>
             </TabsTrigger>
-            <TabsTrigger value="financial" className="flex items-center gap-2">
-              <CreditCard className="h-4 w-4" />
-              Financial
+            <TabsTrigger value="financial" className="flex items-center space-x-1 text-xs sm:text-sm">
+              <CreditCard className="h-3 w-3 sm:h-4 sm:w-4" />
+              <span>Financial</span>
             </TabsTrigger>
-            <TabsTrigger value="preferences" className="flex items-center gap-2">
-              <Bell className="h-4 w-4" />
-              Preferences
+            <TabsTrigger value="preferences" className="flex items-center space-x-1 text-xs sm:text-sm">
+              <Bell className="h-3 w-3 sm:h-4 sm:w-4" />
+              <span>Preferences</span>
             </TabsTrigger>
-            <TabsTrigger value="security" className="flex items-center gap-2">
-              <Shield className="h-4 w-4" />
-              Security
+            <TabsTrigger value="security" className="flex items-center space-x-1 text-xs sm:text-sm">
+              <Shield className="h-3 w-3 sm:h-4 sm:w-4" />
+              <span>Security</span>
             </TabsTrigger>
           </TabsList>
 
           {/* Profile Tab */}
-          <TabsContent value="profile" className="space-y-6">
-            <Card className="shadow-lg border-0 bg-white/50 backdrop-blur">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-3">
-                  <User className="h-5 w-5 text-primary" />
+          <TabsContent value="profile" className="space-y-3">
+            <Card className="shadow-lg border-0 bg-white">
+              <CardHeader className="pb-2 sm:pb-3">
+                <CardTitle className="text-lg sm:text-xl font-semibold text-gray-900 flex items-center gap-2">
+                  <User className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
                   Profile Information
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="flex items-center space-x-6">
-                  <Avatar className="h-20 w-20">
-                    <AvatarImage src={profileData.profileImageUrl} />
-                    <AvatarFallback className="text-lg font-semibold bg-primary/10 text-primary">
-                      {profileData.firstName?.[0]}{profileData.lastName?.[0]}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="space-y-2">
+              <CardContent className="p-3 sm:p-6 space-y-4">
+                <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 sm:space-x-4">
+                  <div className="relative">
+                    <Avatar className="h-16 w-16 sm:h-20 sm:w-20">
+                      <AvatarImage 
+                        src={profileData.profileImageUrl} 
+                        alt={`${profileData.firstName} ${profileData.lastName}`} 
+                      />
+                      <AvatarFallback className="text-lg font-semibold bg-primary/10 text-primary">
+                        {profileData.firstName?.[0]}{profileData.lastName?.[0]}
+                      </AvatarFallback>
+                    </Avatar>
+                    {isPhotoUploading && (
+                      <div className="absolute inset-0 bg-black/30 rounded-full flex items-center justify-center">
+                        <Loader2 className="h-6 w-6 text-white animate-spin" />
+                      </div>
+                    )}
+                  </div>
+                  <div className="space-y-2 text-center sm:text-left">
                     <h3 className="text-xl font-semibold">{profileData.firstName} {profileData.lastName}</h3>
                     <p className="text-gray-600">{profileData.email}</p>
-                    <Button variant="outline" size="sm">
-                      <Smartphone className="h-4 w-4 mr-2" />
-                      Change Photo
+                    
+                    {/* Hidden file input for photo upload */}
+                    <input 
+                      type="file" 
+                      id="profile-photo-input" 
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handlePhotoUpload}
+                      disabled={isPhotoUploading}
+                      aria-label="Upload profile photo"
+                    />
+                    
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="w-full sm:w-auto"
+                      onClick={() => document.getElementById('profile-photo-input')?.click()}
+                      disabled={isPhotoUploading}
+                      aria-label="Change profile photo"
+                    >
+                      {isPhotoUploading ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Uploading...
+                        </>
+                      ) : (
+                        <>
+                          <User className="h-4 w-4 mr-2" />
+                          Change Photo
+                        </>
+                      )}
                     </Button>
+                    
+                    {photoError && (
+                      <p className="text-sm text-red-500 mt-1">{photoError}</p>
+                    )}
                   </div>
                 </div>
                 
                 <Separator />
                 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="firstName">First Name</Label>
                     <Input 
@@ -367,11 +499,11 @@ export default function Settings() {
                   />
                 </div>
                 
-                <div className="flex gap-3">
+                <div className="flex flex-col sm:flex-row gap-3">
                   <Button 
                     onClick={handleProfileSave}
                     disabled={isProfileSaving}
-                    className="bg-primary hover:bg-primary/90"
+                    className="bg-primary hover:bg-primary/90 w-full sm:w-auto"
                   >
                     {isProfileSaving ? (
                       <>
@@ -385,7 +517,7 @@ export default function Settings() {
                       </>
                     )}
                   </Button>
-                  <Button variant="outline">
+                  <Button variant="outline" className="w-full sm:w-auto">
                     Cancel
                   </Button>
                 </div>
@@ -394,21 +526,23 @@ export default function Settings() {
           </TabsContent>
 
           {/* Financial Tab */}
-          <TabsContent value="financial" className="space-y-6">
-            <Card className="shadow-lg border-0 bg-white/50 backdrop-blur">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-3">
-                  <CreditCard className="h-5 w-5 text-primary" />
-                  Financial Preferences
+          <TabsContent value="financial" className="space-y-3">
+            <Card className="shadow-lg border-0 bg-white">
+              <CardHeader className="pb-2 sm:pb-3">
+                <CardTitle className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3">
+                  <div className="flex items-center gap-2">
+                    <CreditCard className="h-5 w-5 text-primary" />
+                    <span>Financial Preferences</span>
+                  </div>
                   <Badge className="bg-green-100 text-green-700 border-green-200">
                     <Database className="h-3 w-3 mr-1" />
                     Connected
                   </Badge>
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-3">
+              <CardContent className="p-3 sm:p-6 space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
                     <Label htmlFor="currency" className="flex items-center gap-2">
                       <Coins className="h-4 w-4 text-primary" />
                       Default Currency
@@ -493,11 +627,11 @@ export default function Settings() {
                   />
                 </div>
                 
-                <div className="flex gap-3">
+                <div className="flex flex-col sm:flex-row gap-3">
                   <Button 
                     onClick={handleFinancialSave}
                     disabled={isFinancialSaving}
-                    className="bg-primary hover:bg-primary/90"
+                    className="bg-primary hover:bg-primary/90 w-full sm:w-auto"
                   >
                     {isFinancialSaving ? (
                       <>
@@ -513,6 +647,7 @@ export default function Settings() {
                   </Button>
                   <Button 
                     variant="outline"
+                    className="w-full sm:w-auto"
                     onClick={() => {
                       if (userPreferences) {
                         setFinancialData({
@@ -532,18 +667,20 @@ export default function Settings() {
           </TabsContent>
 
           {/* Preferences Tab */}
-          <TabsContent value="preferences" className="space-y-6">
-            <Card className="shadow-lg border-0 bg-white/50 backdrop-blur">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-3">
-                  <Bell className="h-5 w-5 text-primary" />
-                  Notifications & Alerts
+          <TabsContent value="preferences" className="space-y-3">
+            <Card className="shadow-lg border-0 bg-white">
+              <CardHeader className="pb-2 sm:pb-3">
+                <CardTitle className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3">
+                  <div className="flex items-center gap-2">
+                    <Bell className="h-5 w-5 text-primary" />
+                    <span>Notifications & Alerts</span>
+                  </div>
                   <Badge variant="outline" className="text-yellow-700 border-yellow-300">
                     Coming Soon
                   </Badge>
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-6">
+              <CardContent className="p-3 sm:p-6 space-y-3">
                 {[
                   { id: "budget-alerts", title: "Budget Alerts", desc: "Get notified when you exceed your budget", icon: "💰" },
                   { id: "transaction-reminders", title: "Transaction Reminders", desc: "Daily reminders to log transactions", icon: "⏰" },
@@ -566,16 +703,16 @@ export default function Settings() {
           </TabsContent>
 
           {/* Security Tab */}
-          <TabsContent value="security" className="space-y-6">
-            <Card className="shadow-lg border-0 bg-white/50 backdrop-blur">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-3">
+          <TabsContent value="security" className="space-y-3">
+            <Card className="shadow-lg border-0 bg-white">
+              <CardHeader className="pb-2 sm:pb-3">
+                <CardTitle className="flex items-center gap-2">
                   <Shield className="h-5 w-5 text-primary" />
-                  Privacy & Security
+                  <span>Privacy & Security</span>
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="grid gap-6">
+              <CardContent className="p-3 sm:p-6 space-y-3">
+                <div className="grid gap-3">
                   <div className="flex items-center justify-between p-4 bg-white rounded-lg border">
                     <div className="flex items-center gap-3">
                       <Eye className="h-5 w-5 text-blue-500" />
@@ -623,14 +760,14 @@ export default function Settings() {
             </Card>
 
             {/* Danger Zone */}
-            <Card className="shadow-lg border-0 bg-red-50/50 backdrop-blur border-red-200">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-3 text-red-700">
+            <Card className="shadow-lg border-0 bg-red-50/50 border-red-200">
+              <CardHeader className="pb-2 sm:pb-3">
+                <CardTitle className="flex items-center gap-2 text-red-700">
                   <Trash2 className="h-5 w-5" />
                   Danger Zone
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="p-3 sm:p-6 space-y-3">
                 <div className="flex items-center justify-between p-4 bg-white rounded-lg border border-red-200">
                   <div>
                     <Label className="text-base font-medium text-red-700">Sign Out</Label>

@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { ChartLine, BarChart3, CreditCard, PieChart, Settings, Grid3X3 } from "lucide-react";
+import { ChartLine, BarChart3, CreditCard, PieChart, Settings, Grid3X3, Target } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navigation = [
@@ -7,6 +7,7 @@ const navigation = [
   { name: "Transactions", href: "/transactions", icon: CreditCard },
   { name: "Categories", href: "/categories", icon: Grid3X3 },
   { name: "Budgets", href: "/budgets", icon: PieChart },
+  { name: "Goals", href: "/goals", icon: Target },
   { name: "Reports", href: "/reports", icon: ChartLine },
   { name: "Settings", href: "/settings", icon: Settings },
 ];

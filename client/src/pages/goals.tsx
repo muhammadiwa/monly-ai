@@ -16,9 +16,12 @@ import {
   CheckCircle,
   AlertTriangle,
   TrendingUp,
-  Search
+  Search,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/currencyUtils';
+import { useUserCurrency } from '@/hooks/useUserCurrency';
 import { format } from 'date-fns';
 import CreateGoalModal from '@/components/modals/create-goal-modal';
 import EditGoalModal from '@/components/modals/edit-goal-modal';
@@ -38,12 +41,7 @@ interface Goal {
   updatedAt: number;
 }
 
-interface GoalsPageProps {
-  currency: string;
-  showBalance: boolean;
-}
-
-export default function GoalsPage({ currency, showBalance }: GoalsPageProps) {
+export default function GoalsPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
@@ -52,6 +50,10 @@ export default function GoalsPage({ currency, showBalance }: GoalsPageProps) {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedGoal, setSelectedGoal] = useState<Goal | null>(null);
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'completed' | 'overdue'>('all');
+  const [showBalance, setShowBalance] = useState(true);
+
+  // Get user preferences for currency using the custom hook
+  const { currency } = useUserCurrency();
 
   // Fetch goals
   const { data: goals = [], isLoading, error, refetch } = useQuery({
@@ -165,9 +167,9 @@ export default function GoalsPage({ currency, showBalance }: GoalsPageProps) {
 
   if (isLoading) {
     return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500"></div>
+      <div className="px-3 sm:px-4 lg:px-6 space-y-5 sm:space-y-6">
+        <div className="flex items-center justify-center py-8 sm:py-12">
+          <div className="animate-spin rounded-full h-10 w-10 sm:h-12 sm:w-12 border-b-2 border-purple-500"></div>
         </div>
       </div>
     );
@@ -175,13 +177,13 @@ export default function GoalsPage({ currency, showBalance }: GoalsPageProps) {
 
   if (error) {
     return (
-      <div className="space-y-6">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-center text-gray-500 py-8">
-              <AlertTriangle className="h-12 w-12 mx-auto mb-4 text-red-400" />
-              <p>Failed to load goals. Please try again.</p>
-              <Button onClick={() => refetch()} className="mt-4">
+      <div className="px-3 sm:px-4 lg:px-6 space-y-5 sm:space-y-6">
+        <Card className="shadow-sm">
+          <CardContent className="pt-4 sm:pt-6">
+            <div className="text-center text-gray-500 py-6 sm:py-8">
+              <AlertTriangle className="h-10 w-10 sm:h-12 sm:w-12 mx-auto mb-3 sm:mb-4 text-red-400" />
+              <p className="text-sm sm:text-base">Failed to load goals. Please try again.</p>
+              <Button onClick={() => refetch()} className="mt-3 sm:mt-4 text-sm h-9">
                 Retry
               </Button>
             </div>
@@ -192,75 +194,86 @@ export default function GoalsPage({ currency, showBalance }: GoalsPageProps) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 sm:space-y-6 px-3 sm:px-4 lg:px-6 max-w-[100vw] overflow-x-hidden">
       {/* Header with Stats */}
-      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Financial Goals</h1>
-          <p className="text-gray-600">Track and manage your financial objectives</p>
+          <h1 className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">Financial Goals</h1>
+          <p className="text-sm sm:text-base text-gray-600">Track and manage your financial objectives</p>
         </div>
-        <Button 
-          onClick={() => setShowCreateModal(true)}
-          className="bg-purple-600 hover:bg-purple-700"
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          Create New Goal
-        </Button>
+        <div className="flex items-center gap-2 sm:gap-3 mt-2 sm:mt-0">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowBalance(!showBalance)}
+            className="flex items-center gap-1 sm:gap-2 text-xs sm:text-sm h-9"
+          >
+            {showBalance ? <EyeOff className="h-3.5 w-3.5 sm:h-4 sm:w-4" /> : <Eye className="h-3.5 w-3.5 sm:h-4 sm:w-4" />}
+            <span>{showBalance ? 'Hide' : 'Show'} Balance</span>
+          </Button>
+          <Button 
+            onClick={() => setShowCreateModal(true)}
+            className="bg-purple-600 hover:bg-purple-700 h-9 text-xs sm:text-sm"
+          >
+            <Plus className="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+            <span>Create Goal</span>
+          </Button>
+        </div>
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="pt-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-purple-100 rounded-lg">
-                <Target className="h-5 w-5 text-purple-600" />
+      <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+        <Card className="shadow-sm">
+          <CardContent className="pt-3 sm:pt-4 px-3 sm:px-6 pb-3">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="p-1.5 sm:p-2 bg-purple-100 rounded-lg">
+                <Target className="h-4 w-4 sm:h-5 sm:w-5 text-purple-600" />
               </div>
               <div>
-                <p className="text-sm text-gray-600">Total Goals</p>
-                <p className="text-2xl font-bold">{totalGoals}</p>
+                <p className="text-xs sm:text-sm text-gray-600">Total Goals</p>
+                <p className="text-lg sm:text-xl md:text-2xl font-bold">{totalGoals}</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardContent className="pt-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-green-100 rounded-lg">
-                <CheckCircle className="h-5 w-5 text-green-600" />
+        <Card className="shadow-sm">
+          <CardContent className="pt-3 sm:pt-4 px-3 sm:px-6 pb-3">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="p-1.5 sm:p-2 bg-green-100 rounded-lg">
+                <CheckCircle className="h-4 w-4 sm:h-5 sm:w-5 text-green-600" />
               </div>
               <div>
-                <p className="text-sm text-gray-600">Completed</p>
-                <p className="text-2xl font-bold text-green-600">{completedGoals}</p>
+                <p className="text-xs sm:text-sm text-gray-600">Completed</p>
+                <p className="text-lg sm:text-xl md:text-2xl font-bold text-green-600">{completedGoals}</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardContent className="pt-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-blue-100 rounded-lg">
-                <Clock className="h-5 w-5 text-blue-600" />
+        <Card className="shadow-sm">
+          <CardContent className="pt-3 sm:pt-4 px-3 sm:px-6 pb-3">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="p-1.5 sm:p-2 bg-blue-100 rounded-lg">
+                <Clock className="h-4 w-4 sm:h-5 sm:w-5 text-blue-600" />
               </div>
               <div>
-                <p className="text-sm text-gray-600">Active</p>
-                <p className="text-2xl font-bold text-blue-600">{activeGoals}</p>
+                <p className="text-xs sm:text-sm text-gray-600">Active</p>
+                <p className="text-lg sm:text-xl md:text-2xl font-bold text-blue-600">{activeGoals}</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardContent className="pt-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-red-100 rounded-lg">
-                <AlertTriangle className="h-5 w-5 text-red-600" />
+        <Card className="shadow-sm">
+          <CardContent className="pt-3 sm:pt-4 px-3 sm:px-6 pb-3">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="p-1.5 sm:p-2 bg-red-100 rounded-lg">
+                <AlertTriangle className="h-4 w-4 sm:h-5 sm:w-5 text-red-600" />
               </div>
               <div>
-                <p className="text-sm text-gray-600">Overdue</p>
-                <p className="text-2xl font-bold text-red-600">{overdueGoals}</p>
+                <p className="text-xs sm:text-sm text-gray-600">Overdue</p>
+                <p className="text-lg sm:text-xl md:text-2xl font-bold text-red-600">{overdueGoals}</p>
               </div>
             </div>
           </CardContent>
@@ -268,23 +281,24 @@ export default function GoalsPage({ currency, showBalance }: GoalsPageProps) {
       </div>
 
       {/* Filters and Search */}
-      <Card>
-        <CardContent className="pt-4">
-          <div className="flex flex-col md:flex-row gap-4">
+      <Card className="shadow-sm">
+        <CardContent className="pt-3 sm:pt-4 px-3 sm:px-6 pb-3 sm:pb-4">
+          <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 h-3.5 w-3.5 sm:h-4 sm:w-4 text-gray-400" />
               <Input
                 placeholder="Search goals..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
+                className="pl-8 sm:pl-10 h-9 text-sm"
               />
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2 sm:flex-nowrap">
               <Button
                 variant={filterStatus === 'all' ? 'default' : 'outline'}
                 size="sm"
                 onClick={() => setFilterStatus('all')}
+                className="text-xs h-9 px-2.5 sm:px-3"
               >
                 All
               </Button>
@@ -292,6 +306,7 @@ export default function GoalsPage({ currency, showBalance }: GoalsPageProps) {
                 variant={filterStatus === 'active' ? 'default' : 'outline'}
                 size="sm"
                 onClick={() => setFilterStatus('active')}
+                className="text-xs h-9 px-2.5 sm:px-3"
               >
                 Active
               </Button>
@@ -299,6 +314,7 @@ export default function GoalsPage({ currency, showBalance }: GoalsPageProps) {
                 variant={filterStatus === 'completed' ? 'default' : 'outline'}
                 size="sm"
                 onClick={() => setFilterStatus('completed')}
+                className="text-xs h-9 px-2.5 sm:px-3"
               >
                 Completed
               </Button>
@@ -306,6 +322,7 @@ export default function GoalsPage({ currency, showBalance }: GoalsPageProps) {
                 variant={filterStatus === 'overdue' ? 'default' : 'outline'}
                 size="sm"
                 onClick={() => setFilterStatus('overdue')}
+                className="text-xs h-9 px-2.5 sm:px-3"
               >
                 Overdue
               </Button>
@@ -316,14 +333,14 @@ export default function GoalsPage({ currency, showBalance }: GoalsPageProps) {
 
       {/* Goals List */}
       {filteredGoals.length === 0 ? (
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-center py-8">
-              <Target className="h-12 w-12 mx-auto mb-4 text-gray-400" />
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">
+        <Card className="shadow-sm">
+          <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6 pb-4 sm:pb-6">
+            <div className="text-center py-6 sm:py-8">
+              <Target className="h-10 w-10 sm:h-12 sm:w-12 mx-auto mb-3 sm:mb-4 text-gray-400" />
+              <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-2">
                 {goals.length === 0 ? 'No Goals Yet' : 'No Matching Goals'}
               </h3>
-              <p className="text-gray-600 mb-4">
+              <p className="text-sm text-gray-600 mb-4 max-w-md mx-auto">
                 {goals.length === 0 
                   ? 'Create your first financial goal to start tracking your progress.'
                   : 'Try adjusting your search or filter criteria.'
@@ -332,9 +349,9 @@ export default function GoalsPage({ currency, showBalance }: GoalsPageProps) {
               {goals.length === 0 && (
                 <Button 
                   onClick={() => setShowCreateModal(true)}
-                  className="bg-purple-600 hover:bg-purple-700"
+                  className="bg-purple-600 hover:bg-purple-700 text-sm h-9"
                 >
-                  <Plus className="h-4 w-4 mr-2" />
+                  <Plus className="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1.5 sm:mr-2" />
                   Create Your First Goal
                 </Button>
               )}
@@ -351,89 +368,90 @@ export default function GoalsPage({ currency, showBalance }: GoalsPageProps) {
             const daysRemaining = Math.ceil((deadline.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
 
             return (
-              <Card key={goal.id} className="hover:shadow-md transition-shadow">
-                <CardContent className="pt-6">
-                  <div className="flex items-start justify-between mb-4">
+              <Card key={goal.id} className="hover:shadow-md transition-shadow shadow-sm">
+                <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6 pb-3 sm:pb-6">
+                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-0 mb-3 sm:mb-4">
                     <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        <h3 className="text-lg font-semibold text-gray-900">{goal.name}</h3>
-                        <Badge className={getStatusColor(status)}>
+                      <div className="flex flex-wrap items-center gap-2 mb-1.5 sm:mb-2">
+                        <h3 className="text-base sm:text-lg font-semibold text-gray-900">{goal.name}</h3>
+                        <Badge className={`text-xs py-0.5 ${getStatusColor(status)}`}>
                           {getStatusIcon(status)}
                           <span className="ml-1 capitalize">{status}</span>
                         </Badge>
                       </div>
-                      <p className="text-sm text-gray-600 mb-2">{goal.description}</p>
-                      <p className="text-sm text-gray-500">Category: {goal.category}</p>
+                      <p className="text-xs sm:text-sm text-gray-600 mb-1.5 sm:mb-2">{goal.description}</p>
+                      <p className="text-xs sm:text-sm text-gray-500">Category: {goal.category}</p>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 self-end sm:self-start">
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => handleEditGoal(goal)}
+                        className="h-8 w-8 p-0 sm:h-9 sm:w-9"
                       >
-                        <Edit className="h-4 w-4" />
+                        <Edit className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                       </Button>
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => handleDeleteGoal(goal)}
-                        className="text-red-600 hover:text-red-700"
+                        className="text-red-600 hover:text-red-700 h-8 w-8 p-0 sm:h-9 sm:w-9"
                       >
-                        <Trash2 className="h-4 w-4" />
+                        <Trash2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                       </Button>
                     </div>
                   </div>
 
-                  <div className="space-y-4">
+                  <div className="space-y-3 sm:space-y-4">
                     {/* Progress */}
                     <div>
-                      <div className="flex justify-between text-sm mb-2">
+                      <div className="flex justify-between text-xs sm:text-sm mb-1.5 sm:mb-2">
                         <span>Progress</span>
                         <span className="font-medium">{progress.toFixed(1)}%</span>
                       </div>
-                      <Progress value={progress} className="h-2" />
+                      <Progress value={progress} className="h-1.5 sm:h-2" />
                     </div>
 
                     {/* Amount Info */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 text-xs sm:text-sm">
                       <div>
-                        <span className="text-gray-600">Current</span>
-                        <div className="font-semibold">
+                        <span className="text-gray-600 text-xs">Current</span>
+                        <div className="font-semibold text-xs sm:text-sm truncate">
                           {showBalance ? formatCurrency(goal.currentAmount, currency) : '••••••'}
                         </div>
                       </div>
                       <div>
-                        <span className="text-gray-600">Target</span>
-                        <div className="font-semibold">
+                        <span className="text-gray-600 text-xs">Target</span>
+                        <div className="font-semibold text-xs sm:text-sm truncate">
                           {showBalance ? formatCurrency(goal.targetAmount, currency) : '••••••'}
                         </div>
                       </div>
                       <div>
-                        <span className="text-gray-600">Remaining</span>
-                        <div className="font-semibold">
+                        <span className="text-gray-600 text-xs">Remaining</span>
+                        <div className="font-semibold text-xs sm:text-sm truncate">
                           {showBalance ? formatCurrency(remainingAmount, currency) : '••••••'}
                         </div>
                       </div>
                       <div>
-                        <span className="text-gray-600">Deadline</span>
-                        <div className="font-semibold flex items-center gap-1">
-                          <Calendar className="h-3 w-3" />
-                          {format(deadline, 'MMM dd, yyyy')}
+                        <span className="text-gray-600 text-xs">Deadline</span>
+                        <div className="font-semibold flex items-center gap-1 text-xs sm:text-sm">
+                          <Calendar className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
+                          <span className="truncate">{format(deadline, 'MMM dd, yyyy')}</span>
                         </div>
                       </div>
                     </div>
 
                     {/* Timeline */}
                     {status !== 'completed' && (
-                      <div className="text-sm">
+                      <div className="text-xs sm:text-sm">
                         {daysRemaining > 0 ? (
                           <div className="flex items-center gap-1 text-blue-600">
-                            <Clock className="h-3 w-3" />
+                            <Clock className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
                             {daysRemaining} days remaining
                           </div>
                         ) : (
                           <div className="flex items-center gap-1 text-red-600">
-                            <AlertTriangle className="h-3 w-3" />
+                            <AlertTriangle className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
                             {Math.abs(daysRemaining)} days overdue
                           </div>
                         )}

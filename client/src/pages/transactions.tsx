@@ -16,6 +16,7 @@ import { Trash2, Edit, Search, Plus, DollarSign, ChevronLeft, ChevronRight, Down
 import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip, Legend } from "recharts";
 import AddTransactionModal from "@/components/modals/add-transaction-modal";
 import { exportToPDF, exportToExcel } from "@/lib/exportUtils";
+import { getCurrencySymbol, getUserCurrency } from "@/lib/currencyUtils";
 
 export default function Transactions() {
   const { toast } = useToast();
@@ -114,26 +115,8 @@ export default function Transactions() {
     enabled: isAuthenticated,
   });
 
-  // Helper function to get currency symbol
-  const getCurrencySymbol = (currency: string) => {
-    const symbols: Record<string, string> = {
-      'USD': '$',
-      'EUR': '€',
-      'GBP': '£',
-      'JPY': '¥',
-      'IDR': 'Rp',
-      'CNY': '¥',
-      'KRW': '₩',
-      'SGD': 'S$',
-      'MYR': 'RM',
-      'THB': '฿',
-      'VND': '₫'
-    };
-    return symbols[currency] || currency;
-  };
-
-  // Get user's preferred currency
-  const userCurrency = (userPreferences as any)?.defaultCurrency || 'USD';
+  // Get user's preferred currency using utility function
+  const userCurrency = getUserCurrency(userPreferences);
   const userCurrencySymbol = getCurrencySymbol(userCurrency);
 
   // Helper function to format amount with currency
@@ -367,65 +350,69 @@ export default function Transactions() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100">
-      <div className="w-full px-4 py-6 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+      <div className="px-3 sm:px-4 lg:px-6 w-full max-w-[100vw] overflow-x-hidden">
         {/* Modern Header */}
-        <div className="mb-6">
-          <div className="bg-white/70 backdrop-blur-xl rounded-2xl sm:rounded-3xl p-4 sm:p-6 lg:p-8 shadow-xl border border-white/20">
-            <div className="flex flex-col space-y-4 lg:flex-row lg:items-center lg:justify-between lg:space-y-0 mb-6">
-              <div className="space-y-2">
-                <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold bg-gradient-to-r from-slate-900 via-blue-900 to-indigo-900 bg-clip-text text-transparent">
-                  💰 Transaction Data
-                </h1>
-                <p className="text-slate-600 text-sm sm:text-base lg:text-lg">Manage all your income and expense transactions</p>
-              </div>
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" className="flex items-center justify-center gap-2 bg-white/50 backdrop-blur border-white/30 rounded-xl sm:rounded-2xl hover:bg-white/80 px-4 sm:px-6 py-2 sm:py-3">
-                      <Download className="w-4 h-4" />
-                      <span className="hidden sm:inline">Export</span>
-                      <ChevronDown className="w-3 h-3" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-48">
-                    <DropdownMenuItem onClick={handleExportPDF} className="flex items-center gap-2 cursor-pointer">
-                      <FileText className="w-4 h-4 text-red-500" />
-                      <span>Export as PDF</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={handleExportExcel} className="flex items-center gap-2 cursor-pointer">
-                      <FileSpreadsheet className="w-4 h-4 text-green-500" />
-                      <span>Export as Excel</span>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                <Button 
-                  className="bg-gradient-to-r from-emerald-500 to-blue-600 hover:from-emerald-600 hover:to-blue-700 text-white px-4 sm:px-8 py-2 sm:py-3 rounded-xl sm:rounded-2xl shadow-lg transform hover:scale-105 transition-all duration-200"
-                  onClick={() => setShowAddTransaction(true)}
-                >
-                  <Plus className="w-4 sm:w-5 h-4 sm:h-5 mr-2" />
-                  <span className="hidden sm:inline">Add Transaction</span>
-                  <span className="sm:hidden">Add</span>
-                </Button>
-              </div>
+        <div className="mb-2 sm:mb-1">
+          <div className="flex flex-col gap-2 sm:gap-1 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h1 className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
+                Transactions
+              </h1>
+              <p className="mt-0.5 text-sm text-gray-600">
+                Manage all your income and expense transactions
+              </p>
             </div>
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 mt-3 sm:mt-0">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" className="flex items-center justify-center gap-1 sm:gap-2 bg-white shadow-sm border-gray-200 h-9 sm:h-10">
+                    <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                    <span className="hidden sm:inline">Export</span>
+                    <ChevronDown className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-44 sm:w-48">
+                  <DropdownMenuItem onClick={handleExportPDF} className="flex items-center gap-1.5 sm:gap-2 cursor-pointer text-xs sm:text-sm">
+                    <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-red-500" />
+                    <span>Export as PDF</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleExportExcel} className="flex items-center gap-1.5 sm:gap-2 cursor-pointer text-xs sm:text-sm">
+                    <FileSpreadsheet className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-green-500" />
+                    <span>Export as Excel</span>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Button 
+                className="bg-primary hover:bg-primary/90 text-white h-9 sm:h-10"
+                onClick={() => setShowAddTransaction(true)}
+              >
+                <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1 sm:mr-2" />
+                <span className="hidden sm:inline">Add Transaction</span>
+                <span className="sm:hidden">Add</span>
+              </Button>
+            </div>
+          </div>
+        </div>
 
-            {/* Filters Section */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
+        {/* Filters Section */}
+        <div className="mt-4 mb-6">
+          <div className="bg-white shadow rounded-xl p-4 space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               {/* Search */}
-              <div className="relative sm:col-span-2 xl:col-span-2">
-                <Search className="absolute left-3 sm:left-4 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 sm:w-5 h-4 sm:h-5" />
+              <div className="relative sm:col-span-2">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                 <Input
                   placeholder="Search transactions..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10 sm:pl-12 pr-4 py-2 sm:py-3 bg-white/50 backdrop-blur border-white/30 rounded-xl sm:rounded-2xl focus:bg-white/80 focus:border-blue-300 focus:ring-blue-200 text-slate-700 placeholder:text-slate-400"
+                  className="pl-9 bg-white shadow-sm border-gray-200 h-9 sm:h-10"
                 />
               </div>
 
               {/* Category Filter */}
               <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-                <SelectTrigger className="bg-white/50 backdrop-blur border-white/30 rounded-xl sm:rounded-2xl focus:bg-white/80 focus:border-blue-300 py-2 sm:py-3">
+                <SelectTrigger className="bg-white shadow-sm border-gray-200 h-9 sm:h-10">
                   <SelectValue placeholder="Category" />
                 </SelectTrigger>
                 <SelectContent>
@@ -440,7 +427,7 @@ export default function Transactions() {
 
               {/* Type Filter */}
               <Select value={selectedType} onValueChange={setSelectedType}>
-                <SelectTrigger className="bg-white/50 backdrop-blur border-white/30 rounded-xl sm:rounded-2xl focus:bg-white/80 focus:border-blue-300 py-2 sm:py-3">
+                <SelectTrigger className="bg-white shadow-sm border-gray-200 h-9 sm:h-10">
                   <SelectValue placeholder="Type" />
                 </SelectTrigger>
                 <SelectContent>
@@ -451,68 +438,67 @@ export default function Transactions() {
               </Select>
 
               {/* Date Range */}
-              <div className="sm:col-span-2 xl:col-span-1 space-y-2 xl:space-y-0 xl:flex xl:items-center xl:gap-2">
+              <div className="col-span-1 sm:col-span-2 grid grid-cols-2 gap-2 items-center">
                 <Input
                   type="date"
                   value={dateRange.start}
                   onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
-                  className="bg-white/50 backdrop-blur border-white/30 rounded-xl sm:rounded-2xl focus:bg-white/80 focus:border-blue-300 text-slate-700 py-2 sm:py-3"
+                  className="bg-white shadow-sm border-gray-200 h-9 sm:h-10"
                 />
-                <span className="hidden xl:inline text-slate-500 text-sm">to</span>
                 <Input
                   type="date"
                   value={dateRange.end}
                   onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
-                  className="bg-white/50 backdrop-blur border-white/30 rounded-xl sm:rounded-2xl focus:bg-white/80 focus:border-blue-300 text-slate-700 py-2 sm:py-3"
+                  className="bg-white shadow-sm border-gray-200 h-9 sm:h-10"
                 />
               </div>
             </div>
-
+            
             {/* Summary Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6 mt-6 sm:mt-8">
-              <Card className="bg-gradient-to-br from-emerald-50 to-green-100 border-emerald-200">
-                <CardContent className="p-4 sm:p-6">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
+              <Card className="border-emerald-100 bg-gradient-to-br from-emerald-50 to-green-50">
+                <CardContent className="p-4">
                   <div className="flex items-center justify-between">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-emerald-600 text-xs sm:text-sm font-medium">Income</p>
-                      <p className="text-lg sm:text-2xl font-bold text-emerald-700 truncate">
+                    <div>
+                      <p className="text-emerald-600 text-sm font-medium">Income</p>
+                      <p className="text-lg sm:text-xl font-bold text-emerald-700">
                         {formatAmount(totalIncome)}
                       </p>
                     </div>
-                    <div className="w-10 sm:w-12 h-10 sm:h-12 bg-emerald-500 rounded-full flex items-center justify-center flex-shrink-0 ml-3">
-                      <span className="text-white text-lg sm:text-xl">💹</span>
+                    <div className="w-10 h-10 bg-emerald-500 rounded-full flex items-center justify-center">
+                      <span className="text-white text-lg">💹</span>
                     </div>
                   </div>
                 </CardContent>
               </Card>
 
-              <Card className="bg-gradient-to-br from-red-50 to-pink-100 border-red-200">
-                <CardContent className="p-4 sm:p-6">
+              <Card className="border-red-100 bg-gradient-to-br from-red-50 to-pink-50">
+                <CardContent className="p-4">
                   <div className="flex items-center justify-between">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-red-600 text-xs sm:text-sm font-medium">Expenses</p>
-                      <p className="text-lg sm:text-2xl font-bold text-red-700 truncate">
+                    <div>
+                      <p className="text-red-600 text-sm font-medium">Expenses</p>
+                      <p className="text-lg sm:text-xl font-bold text-red-700">
                         {formatAmount(totalExpense)}
                       </p>
                     </div>
-                    <div className="w-10 sm:w-12 h-10 sm:h-12 bg-red-500 rounded-full flex items-center justify-center flex-shrink-0 ml-3">
-                      <span className="text-white text-lg sm:text-xl">💸</span>
+                    <div className="w-10 h-10 bg-red-500 rounded-full flex items-center justify-center">
+                      <span className="text-white text-lg">💸</span>
                     </div>
                   </div>
                 </CardContent>
               </Card>
 
-              <Card className="bg-gradient-to-br from-blue-50 to-indigo-100 border-blue-200 sm:col-span-2 lg:col-span-1">
-                <CardContent className="p-4 sm:p-6">
+              <Card className="border-blue-100 bg-gradient-to-br from-blue-50 to-indigo-50">
+                <CardContent className="p-4">
                   <div className="flex items-center justify-between">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-blue-600 text-xs sm:text-sm font-medium">Balance</p>
-                      <p className={`text-lg sm:text-2xl font-bold truncate ${totalIncome - totalExpense >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
+                    <div>
+                      <p className="text-blue-600 text-sm font-medium">Balance</p>
+                      <p className={`text-lg sm:text-xl font-bold ${totalIncome - totalExpense >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>
                         {formatAmount(totalIncome - totalExpense)}
                       </p>
                     </div>
-                    <div className="w-10 sm:w-12 h-10 sm:h-12 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0 ml-3">
-                      <span className="text-white text-lg sm:text-xl">💰</span>
+                    <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center">
+                      <span className="text-white text-lg">💰</span>
                     </div>
                   </div>
                 </CardContent>
@@ -522,28 +508,30 @@ export default function Transactions() {
         </div>
 
         {/* Chart and Transaction Details */}
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 sm:gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
           {/* Chart Section */}
-          <div className="xl:col-span-2">
-            <Card className="bg-white/70 backdrop-blur-xl shadow-xl border-white/20">
-              <CardHeader className="p-4 sm:p-6">
-                <CardTitle className="text-lg sm:text-xl font-semibold text-slate-900">Transaction Chart</CardTitle>
+          <div className="lg:col-span-2">
+            <Card className="shadow border">
+              <CardHeader className="p-4 pb-0">
+                <CardTitle className="text-lg font-semibold text-gray-900">Transaction Chart</CardTitle>
               </CardHeader>
-              <CardContent className="p-4 sm:p-6 pt-0">
-                <div className="h-60 sm:h-80">
+              <CardContent className="p-4 pt-0">
+                <div className="h-60 sm:h-72 mt-2">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={chartData}>
+                    <BarChart data={chartData} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
                       <XAxis 
                         dataKey="date" 
-                        fontSize={12}
-                        tick={{ fontSize: 12 }}
+                        fontSize={10}
+                        tick={{ fontSize: 10 }}
+                        tickMargin={8}
                       />
                       <YAxis 
-                        fontSize={12}
-                        tick={{ fontSize: 12 }}
+                        fontSize={10}
+                        tick={{ fontSize: 10 }}
                         tickFormatter={(value) => formatAmount(value).replace(/\d+/, (match) => 
                           parseInt(match) > 1000 ? `${Math.round(parseInt(match) / 1000)}K` : match
                         )}
+                        width={45}
                       />
                       <Tooltip 
                         formatter={(value: any, name: string) => [
@@ -553,13 +541,15 @@ export default function Transactions() {
                         contentStyle={{
                           backgroundColor: 'rgba(255, 255, 255, 0.95)',
                           border: 'none',
-                          borderRadius: '12px',
+                          borderRadius: '8px',
+                          padding: '8px',
+                          fontSize: '12px',
                           boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)'
                         }}
                       />
-                      <Legend />
-                      <Bar dataKey="income" fill="#10B981" name="income" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="expense" fill="#EF4444" name="expense" radius={[4, 4, 0, 0]} />
+                      <Legend wrapperStyle={{ fontSize: '10px', paddingTop: '10px' }} />
+                      <Bar dataKey="income" fill="#10B981" name="Income" radius={[3, 3, 0, 0]} />
+                      <Bar dataKey="expense" fill="#EF4444" name="Expense" radius={[3, 3, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -568,11 +558,11 @@ export default function Transactions() {
           </div>
 
           {/* Transactions List */}
-          <div>
-            <Card className="bg-white/70 backdrop-blur-xl shadow-xl border-white/20">
-              <CardHeader className="p-4 sm:p-6">
+          <div className="lg:col-span-1">
+            <Card className="shadow border">
+              <CardHeader className="p-4 pb-2">
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg sm:text-xl font-semibold text-slate-900">Transactions</CardTitle>
+                  <CardTitle className="text-lg font-semibold text-gray-900">Transactions</CardTitle>
                   {transactionsLoading && (
                     <div className="flex items-center gap-2 text-blue-600">
                       <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
@@ -581,27 +571,27 @@ export default function Transactions() {
                   )}
                 </div>
               </CardHeader>
-              <CardContent className="p-4 sm:p-6 pt-0">
+              <CardContent className="p-4 pt-0">
                 {paginatedTransactions.length === 0 ? (
-                  <div className="text-center py-8 sm:py-12">
-                    <DollarSign className="w-10 sm:w-12 h-10 sm:h-12 text-slate-400 mx-auto mb-4" />
-                    <p className="text-slate-500 mb-4 text-sm sm:text-base">No transactions found</p>
+                  <div className="text-center py-6">
+                    <DollarSign className="w-10 h-10 text-gray-400 mx-auto mb-3" />
+                    <p className="text-gray-500 mb-3 text-sm">No transactions found</p>
                     <Button 
                       onClick={() => setShowAddTransaction(true)}
-                      className="bg-gradient-to-r from-emerald-500 to-blue-600 hover:from-emerald-600 hover:to-blue-700 text-white px-4 sm:px-6 py-2 rounded-xl"
+                      className="bg-primary hover:bg-primary/90 text-white"
                     >
                       Add Transaction
                     </Button>
                   </div>
                 ) : (
-                  <div className="space-y-3 sm:space-y-4">
+                  <div className="space-y-2">
                     {paginatedTransactions.map((transaction: any) => (
                       <div
                         key={transaction.id}
-                        className="flex items-center justify-between p-3 sm:p-4 border border-slate-200 rounded-xl hover:bg-slate-50/50 transition-colors"
+                        className="flex items-center justify-between p-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
                       >
-                        <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
-                          <div className={`w-8 sm:w-10 h-8 sm:h-10 rounded-lg flex items-center justify-center text-sm sm:text-lg flex-shrink-0 ${
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm flex-shrink-0 ${
                             transaction.type === 'income' 
                               ? 'bg-emerald-100' 
                               : 'bg-red-100'
@@ -611,13 +601,13 @@ export default function Transactions() {
                             </span>
                           </div>
                           <div className="flex-1 min-w-0">
-                            <p className="font-medium text-slate-900 truncate text-sm sm:text-base">
+                            <p className="font-medium text-gray-900 truncate text-sm">
                               {transaction.description}
                             </p>
-                            <div className="flex items-center gap-2 text-xs text-slate-500 mt-1">
+                            <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
                               <Badge 
                                 variant="outline" 
-                                className={`border-0 text-xs px-2 py-0.5 ${
+                                className={`border-0 text-xs px-1.5 py-0.5 ${
                                   transaction.type === 'income' 
                                     ? 'bg-emerald-100 text-emerald-700' 
                                     : 'bg-red-100 text-red-700'
@@ -635,7 +625,7 @@ export default function Transactions() {
                           </div>
                         </div>
                         <div className="text-right flex-shrink-0 ml-2">
-                          <p className={`font-semibold text-sm sm:text-base ${
+                          <p className={`font-semibold text-sm ${
                             transaction.type === 'income' ? 'text-emerald-600' : 'text-red-600'
                           }`}>
                             {transaction.type === 'income' ? '+' : '-'}{formatAmount(transaction.amount, transaction.currency)}
@@ -664,19 +654,19 @@ export default function Transactions() {
 
                     {/* Pagination */}
                     {totalPages > 1 && (
-                      <div className="flex flex-col sm:flex-row items-center justify-between pt-4 border-t border-slate-200 gap-3">
-                        <p className="text-xs sm:text-sm text-slate-600 order-2 sm:order-1">
+                      <div className="flex flex-col sm:flex-row items-center justify-between pt-3 border-t border-gray-200 gap-2 mt-2">
+                        <p className="text-xs text-gray-600 order-2 sm:order-1">
                           Showing {startIndex + 1}-{Math.min(startIndex + itemsPerPage, filteredTransactions.length)} of {filteredTransactions.length}
                         </p>
-                        <div className="flex items-center gap-1 sm:gap-2 order-1 sm:order-2">
+                        <div className="flex items-center gap-1 order-1 sm:order-2">
                           <Button
                             variant="outline"
                             size="sm"
                             onClick={() => handlePageChange(currentPage - 1)}
                             disabled={currentPage === 1}
-                            className="h-7 sm:h-8 w-7 sm:w-8 p-0"
+                            className="h-7 w-7 p-0"
                           >
-                            <ChevronLeft className="w-3 sm:w-4 h-3 sm:h-4" />
+                            <ChevronLeft className="w-3 h-3" />
                           </Button>
                           
                           {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
@@ -697,7 +687,7 @@ export default function Transactions() {
                                 variant={currentPage === page ? "default" : "outline"}
                                 size="sm"
                                 onClick={() => handlePageChange(page)}
-                                className="h-7 sm:h-8 w-7 sm:w-8 p-0 text-xs"
+                                className="h-7 w-7 p-0 text-xs"
                               >
                                 {page}
                               </Button>
@@ -709,9 +699,9 @@ export default function Transactions() {
                             size="sm"
                             onClick={() => handlePageChange(currentPage + 1)}
                             disabled={currentPage === totalPages}
-                            className="h-7 sm:h-8 w-7 sm:w-8 p-0"
+                            className="h-7 w-7 p-0"
                           >
-                            <ChevronRight className="w-3 sm:w-4 h-3 sm:h-4" />
+                            <ChevronRight className="w-3 h-3" />
                           </Button>
                         </div>
                       </div>
@@ -744,39 +734,39 @@ export default function Transactions() {
           isEditing={true}
         />
 
-        {/* Modern Delete Confirmation Dialog */}
+        {/* Delete Confirmation Dialog */}
         <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-          <AlertDialogContent className="sm:max-w-lg bg-white/95 backdrop-blur-xl border-white/20 rounded-3xl">
-            <AlertDialogHeader className="text-center pb-6">
-              <div className="mx-auto w-20 h-20 bg-gradient-to-br from-red-400 to-pink-500 rounded-full flex items-center justify-center mb-4 shadow-lg">
-                <Trash2 className="h-10 w-10 text-white" />
+          <AlertDialogContent className="sm:max-w-lg">
+            <AlertDialogHeader>
+              <div className="mx-auto w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-4">
+                <Trash2 className="h-8 w-8 text-red-600" />
               </div>
-              <AlertDialogTitle className="text-2xl font-bold text-slate-900">
+              <AlertDialogTitle className="text-xl font-bold text-center">
                 Delete Transaction
               </AlertDialogTitle>
-              <AlertDialogDescription className="text-slate-600 text-lg">
+              <AlertDialogDescription className="text-center">
                 This action cannot be undone
               </AlertDialogDescription>
             </AlertDialogHeader>
             
-            <div className="space-y-6">
+            <div className="space-y-4 my-2">
               {transactionToDelete && (
-                <div className="bg-gradient-to-r from-slate-50 to-slate-100 rounded-2xl p-6 border border-slate-200">
-                  <div className="flex items-center gap-4">
-                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-xl shadow-md ${
+                <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center shadow-sm ${
                       transactionToDelete.type === 'income' 
-                        ? 'bg-gradient-to-br from-emerald-400 to-green-500' 
-                        : 'bg-gradient-to-br from-red-400 to-pink-500'
+                        ? 'bg-emerald-500' 
+                        : 'bg-red-500'
                     }`}>
-                      <span className="text-white">
+                      <span className="text-white text-lg">
                         {transactionToDelete.category?.icon || (transactionToDelete.type === 'income' ? '💰' : '💸')}
                       </span>
                     </div>
                     <div className="flex-1">
-                      <div className="font-semibold text-slate-900 text-lg mb-1">
+                      <div className="font-semibold text-gray-900 text-base mb-1">
                         {transactionToDelete.description}
                       </div>
-                      <div className="flex items-center gap-3 text-sm text-slate-600">
+                      <div className="flex items-center flex-wrap gap-2 text-sm text-gray-600">
                         <Badge className={`border-0 ${
                           transactionToDelete.type === 'income' 
                             ? 'bg-emerald-100 text-emerald-700' 
@@ -784,27 +774,27 @@ export default function Transactions() {
                         }`}>
                           {transactionToDelete.category?.name || 'Uncategorized'}
                         </Badge>
-                        <span>📅 {parseTransactionDate(transactionToDelete.date).toLocaleDateString('en-US')}</span>
+                        <span className="text-xs">📅 {parseTransactionDate(transactionToDelete.date).toLocaleDateString('en-US')}</span>
                       </div>
                     </div>
-                    <div className={`text-right font-bold text-lg ${
+                    <div className={`text-right font-bold text-base ${
                       transactionToDelete.type === 'income' ? 'text-emerald-600' : 'text-red-600'
                     }`}>
-                      {transactionToDelete.type === 'income' ? '+' : '-'}${transactionToDelete.amount.toLocaleString('en-US')}
+                      {transactionToDelete.type === 'income' ? '+' : '-'}{formatAmount(transactionToDelete.amount)}
                     </div>
                   </div>
                 </div>
               )}
-              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
-                <p className="text-amber-800 text-center font-medium">
-                  ⚠️ This transaction will be permanently deleted from your financial records
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                <p className="text-amber-800 text-center font-medium text-sm">
+                  ⚠️ This transaction will be permanently deleted from your records
                 </p>
               </div>
             </div>
 
-            <AlertDialogFooter className="flex gap-3 pt-6">
+            <AlertDialogFooter className="flex flex-col sm:flex-row gap-2">
               <AlertDialogCancel 
-                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 border-0 rounded-2xl py-3 font-medium"
+                className="sm:mt-0 border-gray-200"
                 onClick={() => {
                   setIsDeleteDialogOpen(false);
                   setTransactionToDelete(null);
@@ -814,7 +804,7 @@ export default function Transactions() {
               </AlertDialogCancel>
               <AlertDialogAction 
                 onClick={confirmDelete}
-                className="flex-1 bg-gradient-to-r from-red-500 to-pink-600 hover:from-red-600 hover:to-pink-700 text-white border-0 rounded-2xl py-3 font-medium shadow-lg"
+                className="bg-red-600 hover:bg-red-700 text-white"
                 disabled={deleteTransactionMutation.isPending}
               >
                 {deleteTransactionMutation.isPending ? (
@@ -823,7 +813,7 @@ export default function Transactions() {
                     Deleting...
                   </div>
                 ) : (
-                  "🗑️ Delete Transaction"
+                  "Delete Transaction"
                 )}
               </AlertDialogAction>
             </AlertDialogFooter>

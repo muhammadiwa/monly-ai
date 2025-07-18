@@ -51,6 +51,12 @@ app.use((req, res, next) => {
   // importantly only setup vite in development and after
   // setting up all the other routes so the catch-all route
   // doesn't interfere with the other routes
+  
+  // Add an API debug endpoint to help diagnose issues
+  app.get('/api/debug', (req, res) => {
+    res.json({ message: 'API is working correctly', timestamp: new Date().toISOString() });
+  });
+
   if (app.get("env") === "development") {
     await setupVite(app, server);
   } else {

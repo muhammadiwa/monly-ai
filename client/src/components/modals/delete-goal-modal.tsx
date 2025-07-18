@@ -10,8 +10,10 @@ import {
   DollarSign,
   Trash2
 } from 'lucide-react';
-import { formatCurrency } from '@/lib/currencyUtils';
+import { formatCurrency, getUserCurrency } from '@/lib/currencyUtils';
 import { format } from 'date-fns';
+import { useQuery } from '@tanstack/react-query';
+import { apiRequest } from '@/lib/queryClient';
 
 interface Goal {
   id: number;
@@ -34,21 +36,48 @@ interface DeleteGoalModalProps {
   isDeleting?: boolean;
 }
 
-export default function DeleteGoalModal({ 
-  isOpen, 
-  onClose, 
-  goal, 
+export default function DeleteGoalModal({
+  isOpen,
+  onClose,
+  goal,
   onConfirmDelete,
-  isDeleting = false 
+  isDeleting = false
 }: DeleteGoalModalProps) {
+  // Get user preferences for currency formatting
+  const { data: userPreferences } = useQuery({
+    queryKey: ['userPreferences'],
+    queryFn: async () => {
+      const response = await apiRequest('GET', '/api/user/preferences');
+      return response;
+    },
+    enabled: isOpen,
+  });
   
   if (!goal) return null;
 
   const progress = (goal.currentAmount / goal.targetAmount) * 100;
   const deadline = new Date(goal.deadline * 1000);
+  const userCurrency = getUserCurrency(userPreferences);
   const now = new Date();
   const isOverdue = deadline < now;
   const isCompleted = progress >= 100;
+
+  const getCategoryEmoji = (category: string) => {
+    const categoryMap: Record<string, string> = {
+      'emergency': '🆘',
+      'vacation': '🏖️',
+      'house': '🏠',
+      'car': '🚗',
+      'education': '🎓',
+      'wedding': '💒',
+      'retirement': '🏖️',
+      'investment': '📈',
+      'business': '💼',
+      'gadget': '💻',
+      'other': '🎯'
+    };
+    return categoryMap[category] || '🎯';
+  };
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -89,8 +118,9 @@ export default function DeleteGoalModal({
                   {goal.description && (
                     <p className="text-sm text-gray-600 mb-2">{goal.description}</p>
                   )}
-                  <Badge variant="outline" className="text-xs">
-                    {goal.category}
+                  <Badge className="text-xs bg-gray-100 text-gray-800 hover:bg-gray-200 transition-colors px-2 py-1 flex items-center gap-1.5 font-medium border-0">
+                    <span className="text-base leading-none">{getCategoryEmoji(goal.category)}</span>
+                    <span>{goal.category === 'gadget' ? 'Electronics' : goal.category.charAt(0).toUpperCase() + goal.category.slice(1)}</span>
                   </Badge>
                 </div>
                 <div className="text-right">
@@ -118,7 +148,7 @@ export default function DeleteGoalModal({
                     Current Amount
                   </div>
                   <div className="font-semibold">
-                    {formatCurrency(goal.currentAmount, 'USD')}
+                    {formatCurrency(goal.currentAmount, userCurrency)}
                   </div>
                 </div>
                 <div>
@@ -127,7 +157,7 @@ export default function DeleteGoalModal({
                     Target Amount
                   </div>
                   <div className="font-semibold">
-                    {formatCurrency(goal.targetAmount, 'USD')}
+                    {formatCurrency(goal.targetAmount, userCurrency)}
                   </div>
                 </div>
               </div>
@@ -169,7 +199,7 @@ export default function DeleteGoalModal({
               <div className="flex items-center gap-2 text-amber-800">
                 <AlertTriangle className="h-4 w-4" />
                 <span className="text-sm font-medium">
-                  This is a completed goal with {formatCurrency(goal.currentAmount, 'USD')} saved.
+                  This is a completed goal with {formatCurrency(goal.currentAmount, userCurrency)} saved.
                 </span>
               </div>
             </div>
@@ -180,7 +210,7 @@ export default function DeleteGoalModal({
               <div className="flex items-center gap-2 text-blue-800">
                 <Target className="h-4 w-4" />
                 <span className="text-sm font-medium">
-                  You have {formatCurrency(goal.currentAmount, 'USD')} progress towards this goal.
+                  You have {formatCurrency(goal.currentAmount, userCurrency)} progress towards this goal.
                 </span>
               </div>
             </div>

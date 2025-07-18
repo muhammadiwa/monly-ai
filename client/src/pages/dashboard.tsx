@@ -2,7 +2,7 @@ import React, { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { formatCurrency } from "@/lib/currencyUtils";
+import { formatCurrency, getUserCurrency } from "@/lib/currencyUtils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -20,7 +20,7 @@ import {
 import AddTransactionModal from "@/components/modals/add-transaction-modal";
 
 // Real-time components
-import PredictiveAnalytics from "@/components/dashboard/predictive-analytics";
+
 import LiveCashFlow from "@/components/dashboard/live-cashflow";
 import AIFinancialIntelligence from "@/components/dashboard/ai-financial-intelligence";
 
@@ -113,18 +113,6 @@ export default function Dashboard() {
     enabled: isAuthenticated && !isLoading,
   });
 
-  const { data: aiInsights, refetch: refetchAI } = useQuery({
-    queryKey: ["/api/ai/insights"],
-    refetchInterval: 30000, // Update every 30 seconds
-    enabled: isAuthenticated && !isLoading,
-  });
-
-  const { data: predictions } = useQuery({
-    queryKey: ["/api/ai/predictions"],
-    refetchInterval: 60000, // Update every minute
-    enabled: isAuthenticated && !isLoading,
-  });
-
   // Real data queries
   const { data: transactions } = useQuery({
     queryKey: ["/api/transactions"],
@@ -166,7 +154,7 @@ export default function Dashboard() {
     return 2.1;
   };
 
-  const userCurrency = (userPreferences as any)?.defaultCurrency || 'IDR';
+  const userCurrency = getUserCurrency(userPreferences);
 
   // Calculate real financial data from dashboard API and transactions
   const financialData = useMemo(() => {
@@ -395,7 +383,6 @@ export default function Dashboard() {
 
   const handleRefresh = () => {
     refetchDashboard();
-    refetchAI();
     toast({
       title: "Data Updated",
       description: "Dashboard refreshed with latest information",
@@ -409,76 +396,80 @@ export default function Dashboard() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading dashboard...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="w-full max-w-none space-y-3 sm:space-y-4 lg:space-y-6 p-3 sm:p-4 lg:p-6">
-      {/* Header with AI-powered greeting */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl md:text-2xl lg:text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-              Good {(() => {
-                const hour = new Date().getHours();
-                if (hour < 12) return 'Morning';
-                if (hour < 17) return 'Afternoon';
-                return 'Evening';
-              })()}, {user?.firstName || 'User'}
-            </h1>
-            <Sparkles className="h-4 w-4 md:h-5 md:w-5 lg:h-6 lg:w-6 text-purple-500" />
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+      <div className="px-2 sm:px-4 lg:px-6 w-full max-w-[100vw] overflow-x-hidden space-y-3 sm:space-y-4 py-2 sm:py-3">
+        {/* Header with AI-powered greeting */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3 mb-2">
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
+                Good {(() => {
+                  const hour = new Date().getHours();
+                  if (hour < 12) return 'Morning';
+                  if (hour < 17) return 'Afternoon';
+                  return 'Evening';
+                })()}, {user?.firstName || 'User'}
+              </h1>
+              <Sparkles className="h-5 w-5 text-purple-500" />
+            </div>
+            <p className="mt-0.5 text-sm text-gray-600">
+              Your financial intelligence at a glance • Updated {new Date().toLocaleTimeString()}
+            </p>
           </div>
-          <p className="text-sm md:text-base text-muted-foreground">
-            Your financial intelligence at a glance • Updated {new Date().toLocaleTimeString()}
-          </p>
+          
+          <div className="flex flex-wrap items-center gap-2 mt-1 sm:mt-0">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRefresh}
+              className="h-9 bg-white shadow-sm border-gray-200"
+            >
+              <RefreshCw className="h-4 w-4 mr-1.5" />
+              <span className="hidden sm:inline">Refresh</span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowBalance(!showBalance)}
+              className="h-9 bg-white shadow-sm border-gray-200"
+            >
+              {showBalance ? <EyeOff className="h-4 w-4 mr-1.5" /> : <Eye className="h-4 w-4 mr-1.5" />}
+              <span className="hidden sm:inline">{showBalance ? 'Hide' : 'Show'}</span>
+            </Button>
+            <Button
+              onClick={() => setShowAddTransaction(true)}
+              className="h-9 bg-primary hover:bg-primary/90"
+              size="sm"
+            >
+              <Plus className="h-4 w-4 mr-1.5" />
+              <span>Add Transaction</span>
+            </Button>
+          </div>
         </div>
-        
-        <div className="flex flex-wrap items-center gap-2 md:gap-3">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleRefresh}
-            className="gap-2 text-xs md:text-sm"
-          >
-            <RefreshCw className="h-3 w-3 md:h-4 md:w-4" />
-            <span className="hidden sm:inline">Refresh</span>
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setShowBalance(!showBalance)}
-            className="gap-2 text-xs md:text-sm"
-          >
-            {showBalance ? <EyeOff className="h-3 w-3 md:h-4 md:w-4" /> : <Eye className="h-3 w-3 md:h-4 md:w-4" />}
-            <span className="hidden sm:inline">{showBalance ? 'Hide' : 'Show'}</span>
-          </Button>
-          <Button
-            onClick={() => setShowAddTransaction(true)}
-            className="gap-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-xs md:text-sm"
-          >
-            <Plus className="h-3 w-3 md:h-4 md:w-4" />
-            Add Transaction
-          </Button>
-        </div>
-      </div>
 
       {/* Financial Score & Quick Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 lg:gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         {/* Financial Score */}
-        <Card className="relative overflow-hidden">
-          <div className={`absolute inset-0 ${getFinancialScoreStyles(safeData.financialScore).bgClass}`} />
-          <CardHeader className="relative pb-2">
+        <Card className="shadow border">
+          <CardHeader className="p-4 pb-2">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-medium text-gray-600">Financial Score</CardTitle>
+              <CardTitle className="text-sm font-medium text-gray-700">Financial Score</CardTitle>
               <Shield className={`h-4 w-4 ${getFinancialScoreStyles(safeData.financialScore).iconClass}`} />
             </div>
           </CardHeader>
-          <CardContent className="relative">
+          <CardContent className="p-4 pt-0">
             <div className="flex items-center gap-3">
-              <div className={`text-3xl font-bold ${getFinancialScoreStyles(safeData.financialScore).textClass}`}>
+              <div className={`text-2xl font-bold ${getFinancialScoreStyles(safeData.financialScore).textClass}`}>
                 {safeData.financialScore}
               </div>
               <div className="flex-1">
@@ -492,21 +483,20 @@ export default function Dashboard() {
         </Card>
 
         {/* Net Worth */}
-        <Card className="relative overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-to-br from-blue-50 to-indigo-100" />
-          <CardHeader className="relative pb-2">
+        <Card className="shadow border">
+          <CardHeader className="p-4 pb-2">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-medium text-gray-600">Net Worth</CardTitle>
+              <CardTitle className="text-sm font-medium text-gray-700">Net Worth</CardTitle>
               <TrendingUp className="h-4 w-4 text-blue-600" />
             </div>
           </CardHeader>
-          <CardContent className="relative">
-            <div className="text-2xl font-bold text-blue-700">
+          <CardContent className="p-4 pt-0">
+            <div className="text-2xl font-bold text-gray-800">
               {showBalance ? formatCurrency(safeData.netWorth, userCurrency) : '••••••'}
             </div>
             <div className="flex items-center gap-1 mt-1">
               {React.createElement(getNetWorthChangeStyles(safeData.netWorthChange).icon, { 
-                className: `h-3 w-3 ${getNetWorthChangeStyles(safeData.netWorthChange).textClass.replace('text-', 'text-')}`
+                className: `h-3 w-3 ${getNetWorthChangeStyles(safeData.netWorthChange).textClass}`
               })}
               <span className={`text-xs ${getNetWorthChangeStyles(safeData.netWorthChange).textClass}`}>
                 {getNetWorthChangeStyles(safeData.netWorthChange).sign}{Math.abs(safeData.netWorthChange)}% this month
@@ -516,17 +506,16 @@ export default function Dashboard() {
         </Card>
 
         {/* Monthly Cash Flow */}
-        <Card className="relative overflow-hidden">
-          <div className={`absolute inset-0 ${getCashFlowStyles(safeData.monthlyCashFlow).bgClass}`} />
-          <CardHeader className="relative pb-2">
+        <Card className="shadow border">
+          <CardHeader className="p-4 pb-2">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-medium text-gray-600">Monthly Cash Flow</CardTitle>
+              <CardTitle className="text-sm font-medium text-gray-700">Monthly Cash Flow</CardTitle>
               {React.createElement(getCashFlowStyles(safeData.monthlyCashFlow).icon, { 
                 className: `h-4 w-4 ${getCashFlowStyles(safeData.monthlyCashFlow).iconClass}` 
               })}
             </div>
           </CardHeader>
-          <CardContent className="relative">
+          <CardContent className="p-4 pt-0">
             <div className={`text-2xl font-bold ${getCashFlowStyles(safeData.monthlyCashFlow).textClass}`}>
               {showBalance ? formatCurrency(safeData.monthlyCashFlow, userCurrency) : '••••••'}
             </div>
@@ -540,15 +529,14 @@ export default function Dashboard() {
         </Card>
 
         {/* Today's Spending */}
-        <Card className="relative overflow-hidden">
-          <div className={`absolute inset-0 ${getSpendingStyles(safeData.weeklyBudgetUsed).bgClass}`} />
-          <CardHeader className="relative pb-2">
+        <Card className="shadow border">
+          <CardHeader className="p-4 pb-2">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-medium text-gray-600">Today's Spending</CardTitle>
+              <CardTitle className="text-sm font-medium text-gray-700">Today's Spending</CardTitle>
               <Wallet className={`h-4 w-4 ${getSpendingStyles(safeData.weeklyBudgetUsed).iconClass}`} />
             </div>
           </CardHeader>
-          <CardContent className="relative">
+          <CardContent className="p-4 pt-0">
             <div className={`text-2xl font-bold ${getSpendingStyles(safeData.weeklyBudgetUsed).textClass}`}>
               {showBalance ? formatCurrency(safeData.todaySpending, userCurrency) : '••••••'}
             </div>
@@ -563,25 +551,18 @@ export default function Dashboard() {
       </div>
 
       {/* Main Dashboard Grid */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-3 sm:gap-4 lg:gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Left Column - AI Insights & Analytics */}
-        <div className="lg:col-span-2 space-y-3 sm:space-y-4 lg:space-y-6">
+        <div className="lg:col-span-2">
           {/* AI Financial Intelligence */}
           <AIFinancialIntelligence 
-            currency={userCurrency}
-            showBalance={showBalance}
-          />
-
-          {/* Predictive Analytics */}
-          <PredictiveAnalytics 
-            predictions={predictions}
             currency={userCurrency}
             showBalance={showBalance}
           />
         </div>
 
         {/* Right Column - Live Data & Actions */}
-        <div className="space-y-6">
+        <div>
           {/* Live Cash Flow */}
           <LiveCashFlow 
             data={safeData}
@@ -596,6 +577,7 @@ export default function Dashboard() {
         isOpen={showAddTransaction}
         onClose={() => setShowAddTransaction(false)}
       />
+      </div>
     </div>
   );
 }

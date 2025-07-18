@@ -19,7 +19,7 @@ export default function Layout({ children }: LayoutProps) {
       <Sidebar />
       
       {/* Main content area */}
-      <div className="lg:pl-64 pt-16">
+      <div className="lg:pl-64 pt-5 px-4 sm:px-5 lg:px-5">
         <div className="min-h-screen w-full">
           <div className="w-full max-w-none">
             {children}
