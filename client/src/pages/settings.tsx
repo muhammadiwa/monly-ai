@@ -273,8 +273,8 @@ export default function Settings() {
         <div className="mb-1">
           <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">Settings</h1>
-              <p className="mt-0.5 text-sm sm:text-lg text-gray-600">Manage your account and preferences</p>
+              <h1 className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">Settings</h1>
+              <p className="mt-0.5 text-sm text-gray-600">Manage your account and preferences</p>
             </div>
           </div>
         </div>

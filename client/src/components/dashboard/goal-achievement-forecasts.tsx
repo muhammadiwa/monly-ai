@@ -261,7 +261,7 @@ export default function GoalAchievementForecasts({ currency, showBalance }: Goal
                   </div>
 
                   {/* Action Buttons */}
-                  <div className="flex gap-2">
+                  <div className="flex flex-col sm:flex-row gap-2">
                     <Button 
                       variant="outline" 
                       size="sm" 
@@ -304,7 +304,7 @@ export default function GoalAchievementForecasts({ currency, showBalance }: Goal
                       }}
                     >
                       <Calendar className="h-4 w-4 mr-2" />
-                      Adjust Goal
+                      <span className="whitespace-nowrap">Adjust Goal</span>
                     </Button>
                     <Button 
                       variant="outline" 
@@ -354,7 +354,7 @@ export default function GoalAchievementForecasts({ currency, showBalance }: Goal
                       }}
                     >
                       <TrendingUp className="h-4 w-4 mr-2" />
-                      Boost Savings
+                      <span className="whitespace-nowrap">Boost Savings</span>
                     </Button>
                   </div>
                 </div>

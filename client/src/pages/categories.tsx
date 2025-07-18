@@ -234,7 +234,7 @@ export default function Categories() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-0">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Categories</h1>
+          <h1 className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">Categories</h1>
           <p className="text-sm sm:text-base text-gray-600">Manage transaction categories for better financial organization</p>
         </div>
         

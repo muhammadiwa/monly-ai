@@ -356,8 +356,8 @@ export default function Transactions() {
         <div className="mb-2 sm:mb-1">
           <div className="flex flex-col gap-2 sm:gap-1 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
-                💰 Transactions
+              <h1 className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
+                Transactions
               </h1>
               <p className="mt-0.5 text-sm text-gray-600">
                 Manage all your income and expense transactions

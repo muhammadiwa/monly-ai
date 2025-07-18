@@ -310,10 +310,10 @@ export default function Reports() {
         <div className="mb-2 sm:mb-1">
           <div className="flex flex-col gap-2 sm:gap-1 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
+              <h1 className="text-xl sm:text-2xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
                 Financial Reports
               </h1>
-              <p className="mt-0.5 text-sm sm:text-lg text-gray-600">
+              <p className="mt-0.5 text-sm text-gray-600">
                 Comprehensive insights into your financial health
               </p>
             </div>
