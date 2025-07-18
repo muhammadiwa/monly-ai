@@ -16,6 +16,7 @@ import Budgets from "@/pages/budgets";
 import Goals from "@/pages/goals";
 import Reports from "@/pages/reports";
 import Settings from "@/pages/settings";
+import WhatsAppIntegration from "@/pages/whatsapp-integration";
 
 function Router() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -54,6 +55,7 @@ function Router() {
             <Route path="/budgets" component={Budgets} />
             <Route path="/goals" component={Goals} />
             <Route path="/reports" component={Reports} />
+            <Route path="/whatsapp-integration" component={WhatsAppIntegration} />
             <Route path="/settings" component={Settings} />
             <Route component={NotFound} />
           </Switch>

@@ -6,6 +6,7 @@ import { insertTransactionSchema, insertBudgetSchema, insertCategorySchema, inse
 import { requireAuth, hashPassword, verifyPassword, generateToken, type AuthRequest } from "./auth";
 import { AIFinancialIntelligenceEngine } from './ai-intelligence';
 import whatsappRoutes from './whatsapp-routes';
+import whatsappMultiAccountRoutes from './whatsapp-multi-account-routes';
 import multer from "multer";
 import { z } from "zod";
 import session from "express-session";
@@ -52,6 +53,7 @@ const loginSchema = z.object({
 export async function registerRoutes(app: Express): Promise<Server> {
   // Register WhatsApp routes
   app.use('/api', whatsappRoutes);
+  app.use('/api', whatsappMultiAccountRoutes);
   
   // Session middleware
   app.use(session({

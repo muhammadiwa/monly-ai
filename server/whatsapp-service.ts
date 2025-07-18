@@ -251,18 +251,54 @@ export const registerMessageHandlers = (userId: string): boolean => {
   connection.client.on('message', async (message: WAMessage) => {
     console.log(`Message received from ${message.from}: ${message.body}`);
 
-    // Simple expense tracking pattern: "spent $X on Y"
-    const expensePattern = /spent\s+[$£€]?(\d+(?:\.\d+)?)\s+(?:on|for)\s+(.*)/i;
-    const expenseMatch = RegExp.prototype.exec.call(expensePattern, message.body);
+    // Check for activation command: "AKTIVASI: CODE"
+    const activationPattern = /^AKTIVASI:\s*([A-Z0-9]{6})$/i;
+    const activationMatch = message.body.match(activationPattern);
 
-    if (expenseMatch) {
-      const amount = parseFloat(expenseMatch[1]);
-      const category = expenseMatch[2].trim();
+    if (activationMatch) {
+      const code = activationMatch[1].toUpperCase();
+      const whatsappNumber = message.from.replace('@c.us', ''); // Remove WhatsApp suffix
       
-      // Here you would integrate with your expense tracking system
-      // For example: trackExpense(userId, amount, category);
-      
-      await message.reply(`✅ Recorded expense: ${amount} for ${category}`);
+      try {
+        // Call activation API
+        const response = await fetch('/api/whatsapp/activate', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            code,
+            whatsapp_number: whatsappNumber,
+            name: message._data.notifyName || null, // Optional: WhatsApp display name
+          }),
+        });
+
+        const result = await response.json();
+        
+        if (result.success) {
+          await message.reply('✅ Akun WhatsApp Anda telah berhasil terhubung ke Monly AI.');
+        } else {
+          await message.reply(`❌ ${result.message || 'Kode aktivasi tidak valid atau sudah kadaluarsa.'}`);
+        }
+      } catch (error) {
+        console.error('Error processing activation:', error);
+        await message.reply('❌ Terjadi kesalahan saat memproses aktivasi. Silakan coba lagi.');
+      }
+    }
+    // Simple expense tracking pattern: "spent $X on Y"
+    else if (message.body.match(/spent\s+[$£€]?(\d+(?:\.\d+)?)\s+(?:on|for)\s+(.*)/i)) {
+      const expensePattern = /spent\s+[$£€]?(\d+(?:\.\d+)?)\s+(?:on|for)\s+(.*)/i;
+      const expenseMatch = RegExp.prototype.exec.call(expensePattern, message.body);
+
+      if (expenseMatch) {
+        const amount = parseFloat(expenseMatch[1]);
+        const category = expenseMatch[2].trim();
+        
+        // Here you would integrate with your expense tracking system
+        // For example: trackExpense(userId, amount, category);
+        
+        await message.reply(`✅ Recorded expense: ${amount} for ${category}`);
+      }
     } 
     // Simple balance inquiry
     else if (message.body.toLowerCase().includes('balance') || message.body.toLowerCase() === 'saldo') {
@@ -275,6 +311,7 @@ export const registerMessageHandlers = (userId: string): boolean => {
     else if (message.body.toLowerCase() === 'help' || message.body.toLowerCase() === 'bantuan') {
       await message.reply(
         "🤖 *Monly AI Bot Commands*\n\n" +
+        "- 'AKTIVASI: [KODE]' - Hubungkan WhatsApp ke akun\n" +
         "- 'spent $X on Y' - Track an expense\n" +
         "- 'balance' - Check your balance\n" +
         "- 'help' - Show this help message"
