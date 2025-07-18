@@ -5,6 +5,7 @@ import { analyzeTransactionText, processReceiptImage } from "./openai";
 import { insertTransactionSchema, insertBudgetSchema, insertCategorySchema, insertGoalSchema, updateUserPreferencesSchema } from "@shared/schema";
 import { requireAuth, hashPassword, verifyPassword, generateToken, type AuthRequest } from "./auth";
 import { AIFinancialIntelligenceEngine } from './ai-intelligence';
+import whatsappRoutes from './whatsapp-routes';
 import multer from "multer";
 import { z } from "zod";
 import session from "express-session";
@@ -49,6 +50,9 @@ const loginSchema = z.object({
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Register WhatsApp routes
+  app.use('/api', whatsappRoutes);
+  
   // Session middleware
   app.use(session({
     store: new MemStore({
