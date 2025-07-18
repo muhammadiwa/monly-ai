@@ -408,8 +408,8 @@ export function ChatWidget({ isOpen, onToggle }: ChatWidgetProps) {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed bottom-6 right-6 z-50">
-      <Card className={`w-96 bg-white shadow-2xl border-0 overflow-hidden transition-all duration-300 ${isMinimized ? 'h-16' : 'h-[32rem]'}`}>
+    <div className="fixed bottom-20 sm:bottom-6 left-0 right-0 mx-auto sm:left-auto sm:right-6 md:right-8 lg:right-10 z-50 w-full max-w-96">
+      <Card className={`w-full bg-white shadow-2xl border-0 overflow-hidden transition-all duration-300 ${isMinimized ? 'h-16' : 'h-[32rem]'}`}>
         {/* Header */}
         <div className="bg-gradient-to-r from-emerald-500 to-blue-600 text-white p-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -608,7 +608,7 @@ export function ChatFAB({ onClick }: { onClick: () => void }) {
   return (
     <Button
       onClick={onClick}
-      className="fixed bottom-6 right-6 w-16 h-16 rounded-full bg-gradient-to-r from-emerald-500 to-blue-600 hover:from-emerald-600 hover:to-blue-700 shadow-2xl z-40 transition-all duration-300 hover:scale-110"
+      className="fixed bottom-20 sm:bottom-6 right-6 md:right-8 lg:right-10 w-16 h-16 rounded-full bg-gradient-to-r from-emerald-500 to-blue-600 hover:from-emerald-600 hover:to-blue-700 shadow-2xl z-40 transition-all duration-300 hover:scale-110"
       size="icon"
     >
       <Bot className="w-8 h-8 text-white" />
