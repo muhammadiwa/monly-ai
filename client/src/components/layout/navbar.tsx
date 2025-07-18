@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -15,10 +15,11 @@ import {
   User, 
   LogOut, 
   Settings,
-  Check
+  Check,
+  Loader2
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 interface NavbarProps {
   readonly className?: string;
@@ -27,26 +28,94 @@ interface NavbarProps {
 export default function Navbar({ className }: NavbarProps) {
   const { user, logout } = useAuth();
   const [selectedLanguage, setSelectedLanguage] = useState('en');
-  const [selectedCurrency, setSelectedCurrency] = useState('IDR');
+  const [isChangingLanguage, setIsChangingLanguage] = useState(false);
+  const queryClient = useQueryClient();
 
-  // Fetch user preferences (remove unused)
-  const { refetch: refetchPreferences } = useQuery({
+  // Fetch user preferences with proper error handling
+  const { data: userPreferences } = useQuery({
     queryKey: ["/api/user/preferences"],
-    retry: false,
+    queryFn: async () => {
+      try {
+        // Get auth token from localStorage
+        const authToken = localStorage.getItem('auth-token');
+        
+        const response = await fetch('/api/user/preferences', {
+          headers: {
+            'Authorization': `Bearer ${authToken}`,
+          },
+          credentials: 'include'
+        });
+        
+        if (!response.ok) {
+          // If unauthorized, just return default preferences instead of throwing
+          if (response.status === 401) {
+            console.log("User not authenticated, using default preferences");
+            return { language: 'en' };
+          }
+          throw new Error(`Failed to fetch user preferences: ${response.status}`);
+        }
+        return response.json();
+      } catch (error) {
+        console.error("Error fetching user preferences:", error);
+        // Return default preferences on error to avoid UI issues
+        return { language: 'en' };
+      }
+    },
+    retry: 1,
+    // Only run this query if user is authenticated
+    enabled: !!user,
   });
+  
+  // Initialize language from user preferences
+  useEffect(() => {
+    if (userPreferences) {
+      setSelectedLanguage(userPreferences.language || 'en');
+    }
+  }, [userPreferences]);
 
   const handleLanguageChange = async (langCode: string) => {
-    setSelectedLanguage(langCode);
-    // Implement language change API call
-    console.log('Language changed to:', langCode);
+    try {
+      setIsChangingLanguage(true);
+      setSelectedLanguage(langCode);
+      
+      // Get auth token from localStorage
+      const authToken = localStorage.getItem('auth-token');
+      if (!authToken) {
+        throw new Error('No authentication token available');
+      }
+      
+      // Update user preferences in the database
+      const response = await fetch('/api/user/preferences', {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: JSON.stringify({
+          language: langCode
+        }),
+        credentials: 'include'
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to update language preference: ${response.status} ${errorText}`);
+      }
+      
+      // Refresh preferences data in all components
+      queryClient.invalidateQueries({ queryKey: ['/api/user/preferences'] });
+    } catch (error) {
+      console.error('Error updating language preference:', error);
+      // Revert to previous language if there was an error
+      if (userPreferences) {
+        setSelectedLanguage(userPreferences.language || 'en');
+      }
+    } finally {
+      setIsChangingLanguage(false);
+    }
   };
 
-  const handleCurrencyChange = async (currencyCode: string) => {
-    setSelectedCurrency(currencyCode);
-    // Implement currency change API call
-    console.log('Currency changed to:', currencyCode);
-    refetchPreferences();
-  };
+  // We removed the handleCurrencyChange function as it's not needed in this component
 
   const handleSignOut = () => {
     logout();
@@ -99,45 +168,58 @@ export default function Navbar({ className }: NavbarProps) {
               </DropdownMenuContent>
             </DropdownMenu>
 
-            {/* Language Selector */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="flex items-center space-x-1 h-9 px-2 hover:bg-gray-100">
-                  <Globe className="h-4 w-4" />
-                  <span className="text-sm font-medium hidden sm:inline">
-                    {selectedLanguage === 'en' ? 'EN' : 'ID'}
-                  </span>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-40">
-                <DropdownMenuLabel>Language</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={() => handleLanguageChange('en')}
-                  className="flex items-center justify-between"
-                >
-                  <div className="flex items-center space-x-2">
-                    <span>🇺🇸</span>
-                    <span>EN</span>
-                  </div>
-                  {selectedLanguage === 'en' && (
-                    <Check className="h-4 w-4 text-green-600" />
-                  )}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => handleLanguageChange('id')}
-                  className="flex items-center justify-between"
-                >
-                  <div className="flex items-center space-x-2">
-                    <span>🇮🇩</span>
-                    <span>ID</span>
-                  </div>
-                  {selectedLanguage === 'id' && (
-                    <Check className="h-4 w-4 text-green-600" />
-                  )}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            {/* Language Selector - only show when authenticated */}
+            {user && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="flex items-center space-x-1 h-9 px-2 hover:bg-gray-100"
+                    disabled={isChangingLanguage}
+                  >
+                    {isChangingLanguage ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Globe className="h-4 w-4" />
+                    )}
+                    <span className="text-sm font-medium hidden sm:inline">
+                      {selectedLanguage === 'en' ? 'EN' : 'ID'}
+                    </span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-40">
+                  <DropdownMenuLabel>Language</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() => handleLanguageChange('en')}
+                    className="flex items-center justify-between"
+                    disabled={isChangingLanguage || selectedLanguage === 'en'}
+                  >
+                    <div className="flex items-center space-x-2">
+                      <span>🇺🇸</span>
+                      <span>EN</span>
+                    </div>
+                    {selectedLanguage === 'en' && (
+                      <Check className="h-4 w-4 text-green-600" />
+                    )}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={() => handleLanguageChange('id')}
+                    className="flex items-center justify-between"
+                    disabled={isChangingLanguage || selectedLanguage === 'id'}
+                  >
+                    <div className="flex items-center space-x-2">
+                      <span>🇮🇩</span>
+                      <span>ID</span>
+                    </div>
+                    {selectedLanguage === 'id' && (
+                      <Check className="h-4 w-4 text-green-600" />
+                    )}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
 
             {/* Profile Dropdown */}
             <DropdownMenu>
