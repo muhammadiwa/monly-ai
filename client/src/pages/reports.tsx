@@ -305,10 +305,10 @@ export default function Reports() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-      <div className="px-2 sm:px-4 lg:px-6 w-full">
+      <div className="px-3 sm:px-4 lg:px-6 w-full max-w-[100vw] overflow-x-hidden">
         {/* Modern Header */}
-        <div className="mb-1">
-          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mb-2 sm:mb-1">
+          <div className="flex flex-col gap-2 sm:gap-1 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
                 Financial Reports
@@ -317,9 +317,9 @@ export default function Reports() {
                 Comprehensive insights into your financial health
               </p>
             </div>
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 mt-3 sm:mt-0">
               <Select value={selectedPeriod} onValueChange={setSelectedPeriod}>
-                <SelectTrigger className="w-full sm:w-40 bg-white shadow-sm border-gray-200">
+                <SelectTrigger className="w-full sm:w-40 bg-white shadow-sm border-gray-200 h-9 sm:h-10">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -337,7 +337,7 @@ export default function Reports() {
                 presets={true}
               />
               <Button 
-                className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 shadow-lg"
+                className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 shadow-lg w-full sm:w-auto"
                 onClick={() => {
                   // Export functionality
                   const exportData = {
@@ -369,14 +369,14 @@ export default function Reports() {
         </div>
 
         {/* Enhanced Summary Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-4 sm:mb-3">
           {/* Net Income Card */}
           <Card className="bg-gradient-to-br from-green-50 to-emerald-50 border-green-200 shadow-lg hover:shadow-xl transition-all duration-300">
-            <CardContent className="p-3 sm:p-4">
+            <CardContent className="p-4 sm:p-5">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs sm:text-sm font-medium text-green-700">Net Income</p>
-                  <p className="text-xl sm:text-2xl font-bold text-green-800">
+                  <p className="text-lg sm:text-xl md:text-2xl font-bold text-green-800 mt-1">
                     {formatCurrency(processedData.incomeVsExpenses.income - processedData.incomeVsExpenses.expenses, userCurrency)}
                   </p>
                 </div>
@@ -394,11 +394,11 @@ export default function Reports() {
 
           {/* Total Expenses Card */}
           <Card className="bg-gradient-to-br from-red-50 to-rose-50 border-red-200 shadow-lg hover:shadow-xl transition-all duration-300">
-            <CardContent className="p-4 sm:p-6">
+            <CardContent className="p-4 sm:p-5">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs sm:text-sm font-medium text-red-700">Total Expenses</p>
-                  <p className="text-xl sm:text-2xl font-bold text-red-800">
+                  <p className="text-lg sm:text-xl md:text-2xl font-bold text-red-800 mt-1">
                     {formatCurrency(processedData.incomeVsExpenses.expenses, userCurrency)}
                   </p>
                 </div>
@@ -462,41 +462,41 @@ export default function Reports() {
         </div>
 
         {/* Main Content with Tabs */}
-        <Tabs defaultValue="overview" className="space-y-3">
-          <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 lg:w-fit lg:grid-cols-4 bg-white shadow-sm border border-gray-200">
-            <TabsTrigger value="overview" className="flex items-center space-x-1 text-xs sm:text-sm">
-              <BarChart3 className="h-3 w-3 sm:h-4 sm:w-4" />
+        <Tabs defaultValue="overview" className="space-y-4 sm:space-y-3">
+          <TabsList className="grid w-full grid-cols-4 bg-white shadow-sm border border-gray-200 p-0.5">
+            <TabsTrigger value="overview" className="flex items-center justify-center space-x-1 text-xs sm:text-sm py-1.5 sm:py-2">
+              <BarChart3 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
               <span className="hidden sm:inline">Overview</span>
-              <span className="sm:hidden">Overview</span>
+              <span className="sm:hidden ml-0">O</span>
             </TabsTrigger>
-            <TabsTrigger value="trends" className="flex items-center space-x-1 sm:space-x-2 text-xs sm:text-sm">
-              <TrendingUp className="h-3 w-3 sm:h-4 sm:w-4" />
+            <TabsTrigger value="trends" className="flex items-center justify-center space-x-1 text-xs sm:text-sm py-1.5 sm:py-2">
+              <TrendingUp className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
               <span className="hidden sm:inline">Trends</span>
-              <span className="sm:hidden">Trends</span>
+              <span className="sm:hidden ml-0">T</span>
             </TabsTrigger>
-            <TabsTrigger value="categories" className="flex items-center space-x-1 sm:space-x-2 text-xs sm:text-sm">
-              <PieChart className="h-3 w-3 sm:h-4 sm:w-4" />
+            <TabsTrigger value="categories" className="flex items-center justify-center space-x-1 text-xs sm:text-sm py-1.5 sm:py-2">
+              <PieChart className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
               <span className="hidden sm:inline">Categories</span>
-              <span className="sm:hidden">Categories</span>
+              <span className="sm:hidden ml-0">C</span>
             </TabsTrigger>
-            <TabsTrigger value="budgets" className="flex items-center space-x-1 sm:space-x-2 text-xs sm:text-sm">
-              <Target className="h-3 w-3 sm:h-4 sm:w-4" />
+            <TabsTrigger value="budgets" className="flex items-center justify-center space-x-1 text-xs sm:text-sm py-1.5 sm:py-2">
+              <Target className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
               <span className="hidden sm:inline">Budgets</span>
-              <span className="sm:hidden">Budgets</span>
+              <span className="sm:hidden ml-0">B</span>
             </TabsTrigger>
           </TabsList>
 
           {/* Overview Tab */}
-          <TabsContent value="overview" className="space-y-4 sm:space-y-6">
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6">
+          <TabsContent value="overview" className="space-y-5 sm:space-y-6">
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 sm:gap-6">
               {/* Income vs Expenses Chart */}
-              <Card className="shadow-lg border-0 bg-white">
-                <CardHeader className="pb-2 sm:pb-3">
-                  <CardTitle className="text-lg sm:text-xl font-semibold text-gray-900">Income vs Expenses</CardTitle>
-                  <CardDescription className="text-sm">Monthly comparison over the last 6 months</CardDescription>
+              <Card className="shadow-lg border-0 bg-white overflow-hidden">
+                <CardHeader className="pb-1 sm:pb-3 px-3 sm:px-6 pt-3 sm:pt-6">
+                  <CardTitle className="text-base sm:text-lg md:text-xl font-semibold text-gray-900">Income vs Expenses</CardTitle>
+                  <CardDescription className="text-xs sm:text-sm">Monthly comparison over the last 6 months</CardDescription>
                 </CardHeader>
-                <CardContent>
-                  <div className="h-60 sm:h-80">
+                <CardContent className="px-2 sm:px-6 pb-4 sm:pb-6">
+                  <div className="h-52 sm:h-60 md:h-80">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={processedData.monthlyTrends} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
                         <XAxis 
@@ -541,13 +541,13 @@ export default function Reports() {
               </Card>
 
               {/* Weekly Spending Pattern */}
-              <Card className="shadow-lg border-0 bg-white">
-                <CardHeader className="pb-3 sm:pb-4">
-                  <CardTitle className="text-lg sm:text-xl font-semibold text-gray-900">Weekly Spending Pattern</CardTitle>
-                  <CardDescription className="text-sm">Your spending distribution this month</CardDescription>
+              <Card className="shadow-lg border-0 bg-white overflow-hidden">
+                <CardHeader className="pb-1 sm:pb-3 px-3 sm:px-6 pt-3 sm:pt-6">
+                  <CardTitle className="text-base sm:text-lg md:text-xl font-semibold text-gray-900">Weekly Spending Pattern</CardTitle>
+                  <CardDescription className="text-xs sm:text-sm">Your spending distribution this month</CardDescription>
                 </CardHeader>
-                <CardContent>
-                  <div className="h-60 sm:h-80">
+                <CardContent className="px-2 sm:px-6 pb-4 sm:pb-6">
+                  <div className="h-52 sm:h-60 md:h-80">
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={processedData.weeklySpending} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
                         <XAxis 
@@ -599,30 +599,30 @@ export default function Reports() {
             </div>
 
             {/* Top Expenses */}
-            <Card className="shadow-lg border-0 bg-white">
-              <CardHeader className="pb-3 sm:pb-4">
-                <CardTitle className="text-lg sm:text-xl font-semibold text-gray-900">Top Expenses This Month</CardTitle>
-                <CardDescription className="text-sm">Your largest transactions</CardDescription>
+            <Card className="shadow-lg border-0 bg-white overflow-hidden">
+              <CardHeader className="pb-2 sm:pb-3 px-3 sm:px-6 pt-3 sm:pt-6">
+                <CardTitle className="text-base sm:text-lg md:text-xl font-semibold text-gray-900">Top Expenses This Month</CardTitle>
+                <CardDescription className="text-xs sm:text-sm">Your largest transactions</CardDescription>
               </CardHeader>
-              <CardContent>
-                <div className="space-y-3 sm:space-y-4">
+              <CardContent className="px-3 sm:px-6 pb-4 sm:pb-6">
+                <div className="space-y-2 sm:space-y-3">
                   {processedData.topExpenses.length > 0 ? (
                     processedData.topExpenses.map((expense, index) => (
-                      <div key={expense.id} className="flex items-center justify-between p-3 sm:p-4 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors">
-                        <div className="flex items-center space-x-3 sm:space-x-4">
-                          <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-gray-200 to-gray-300 rounded-lg flex items-center justify-center">
+                      <div key={expense.id} className="flex items-center justify-between p-2.5 sm:p-4 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors">
+                        <div className="flex items-center space-x-2 sm:space-x-4">
+                          <div className="w-7 h-7 sm:w-10 sm:h-10 bg-gradient-to-br from-gray-200 to-gray-300 rounded-lg flex items-center justify-center">
                             <span className="text-xs sm:text-sm font-bold text-gray-700">#{index + 1}</span>
                           </div>
                           <div>
-                            <p className="font-medium text-gray-900 text-sm sm:text-base">{expense.description}</p>
-                            <p className="text-xs sm:text-sm text-gray-600">{expense.category}</p>
+                            <p className="font-medium text-gray-900 text-xs sm:text-base truncate max-w-[150px] sm:max-w-none">{expense.description}</p>
+                            <p className="text-xs text-gray-600">{expense.category}</p>
                           </div>
                         </div>
-                        <div className="text-right">
-                          <p className="font-semibold text-gray-900 text-sm sm:text-base">
+                        <div className="text-right ml-2">
+                          <p className="font-semibold text-gray-900 text-xs sm:text-base">
                             {formatCurrency(expense.amount, userCurrency)}
                           </p>
-                          <p className="text-xs sm:text-sm text-gray-600">
+                          <p className="text-xs text-gray-600">
                             {expense.date.toLocaleDateString()}
                           </p>
                         </div>
@@ -640,16 +640,16 @@ export default function Reports() {
           </TabsContent>
 
           {/* Trends Tab */}
-          <TabsContent value="trends" className="space-y-4 sm:space-y-6">
-            <div className="grid grid-cols-1 gap-4 sm:gap-6">
+          <TabsContent value="trends" className="space-y-5 sm:space-y-6">
+            <div className="grid grid-cols-1 gap-5 sm:gap-6">
               {/* Monthly Trends Chart */}
-              <Card className="shadow-lg border-0 bg-white">
-                <CardHeader className="pb-3 sm:pb-4">
-                  <CardTitle className="text-lg sm:text-xl font-semibold text-gray-900">6-Month Financial Trends</CardTitle>
-                  <CardDescription className="text-sm">Track your financial progress over time</CardDescription>
+              <Card className="shadow-lg border-0 bg-white overflow-hidden">
+                <CardHeader className="pb-1 sm:pb-3 px-3 sm:px-6 pt-3 sm:pt-6">
+                  <CardTitle className="text-base sm:text-lg md:text-xl font-semibold text-gray-900">6-Month Financial Trends</CardTitle>
+                  <CardDescription className="text-xs sm:text-sm">Track your financial progress over time</CardDescription>
                 </CardHeader>
-                <CardContent>
-                  <div className="h-72 sm:h-96">
+                <CardContent className="px-2 sm:px-6 pb-4 sm:pb-6">
+                  <div className="h-60 sm:h-72 md:h-96">
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={processedData.monthlyTrends} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
                         <XAxis 
@@ -729,15 +729,15 @@ export default function Reports() {
               </Card>
 
               {/* Financial Health Indicators */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 sm:gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-6">
                 <Card className="shadow-lg border-0 bg-gradient-to-br from-green-50 to-emerald-50">
-                  <CardContent className="p-4 sm:p-6">
+                  <CardContent className="p-3 sm:p-4 md:p-6">
                     <div className="text-center">
-                      <div className="w-12 h-12 sm:w-16 sm:h-16 bg-green-600 rounded-full flex items-center justify-center mx-auto mb-3 sm:mb-4">
-                        <Wallet className="h-6 w-6 sm:h-8 sm:w-8 text-white" />
+                      <div className="w-10 h-10 sm:w-12 sm:h-12 md:w-16 md:h-16 bg-green-600 rounded-full flex items-center justify-center mx-auto mb-2 sm:mb-3 md:mb-4">
+                        <Wallet className="h-5 w-5 sm:h-6 sm:w-6 md:h-8 md:w-8 text-white" />
                       </div>
-                      <h3 className="text-base sm:text-lg font-semibold text-green-800 mb-2">Savings Rate</h3>
-                      <p className="text-2xl sm:text-3xl font-bold text-green-700 mb-2">
+                      <h3 className="text-sm sm:text-base md:text-lg font-semibold text-green-800 mb-1 sm:mb-2">Savings Rate</h3>
+                      <p className="text-xl sm:text-2xl md:text-3xl font-bold text-green-700 mb-1 sm:mb-2">
                         {processedData.savingsRate.toFixed(1)}%
                       </p>
                       <p className="text-xs sm:text-sm text-green-600">
@@ -752,13 +752,13 @@ export default function Reports() {
                 </Card>
 
                 <Card className="shadow-lg border-0 bg-gradient-to-br from-blue-50 to-indigo-50">
-                  <CardContent className="p-4 sm:p-6">
+                  <CardContent className="p-3 sm:p-4 md:p-6">
                     <div className="text-center">
-                      <div className="w-12 h-12 sm:w-16 sm:h-16 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-3 sm:mb-4">
-                        <Activity className="h-6 w-6 sm:h-8 sm:w-8 text-white" />
+                      <div className="w-10 h-10 sm:w-12 sm:h-12 md:w-16 md:h-16 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-2 sm:mb-3 md:mb-4">
+                        <Activity className="h-5 w-5 sm:h-6 sm:w-6 md:h-8 md:w-8 text-white" />
                       </div>
-                      <h3 className="text-base sm:text-lg font-semibold text-blue-800 mb-2">Monthly Growth</h3>
-                      <p className="text-2xl sm:text-3xl font-bold text-blue-700 mb-2">
+                      <h3 className="text-sm sm:text-base md:text-lg font-semibold text-blue-800 mb-1 sm:mb-2">Monthly Growth</h3>
+                      <p className="text-xl sm:text-2xl md:text-3xl font-bold text-blue-700 mb-1 sm:mb-2">
                         +{Math.abs(processedData.savingsRate / 2).toFixed(1)}%
                       </p>
                       <p className="text-xs sm:text-sm text-blue-600">vs Previous Month</p>
@@ -767,13 +767,13 @@ export default function Reports() {
                 </Card>
 
                 <Card className="shadow-lg border-0 bg-gradient-to-br from-purple-50 to-violet-50">
-                  <CardContent className="p-4 sm:p-6">
+                  <CardContent className="p-3 sm:p-4 md:p-6">
                     <div className="text-center">
-                      <div className="w-12 h-12 sm:w-16 sm:h-16 bg-purple-600 rounded-full flex items-center justify-center mx-auto mb-3 sm:mb-4">
-                        <Target className="h-6 w-6 sm:h-8 sm:w-8 text-white" />
+                      <div className="w-10 h-10 sm:w-12 sm:h-12 md:w-16 md:h-16 bg-purple-600 rounded-full flex items-center justify-center mx-auto mb-2 sm:mb-3 md:mb-4">
+                        <Target className="h-5 w-5 sm:h-6 sm:w-6 md:h-8 md:w-8 text-white" />
                       </div>
-                      <h3 className="text-base sm:text-lg font-semibold text-purple-800 mb-2">Budget Health</h3>
-                      <p className="text-2xl sm:text-3xl font-bold text-purple-700 mb-2">
+                      <h3 className="text-sm sm:text-base md:text-lg font-semibold text-purple-800 mb-1 sm:mb-2">Budget Health</h3>
+                      <p className="text-xl sm:text-2xl md:text-3xl font-bold text-purple-700 mb-1 sm:mb-2">
                         {budgetProgress.filter(b => b.status === 'good').length}/{budgetProgress.length}
                       </p>
                       <p className="text-xs sm:text-sm text-purple-600">On Track</p>
@@ -785,9 +785,9 @@ export default function Reports() {
           </TabsContent>
 
           {/* Categories Tab */}
-          <TabsContent value="categories" className="space-y-6">
+          <TabsContent value="categories" className="space-y-5 sm:space-y-6">
             {/* Top Spending Categories - Grid Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4 md:gap-6">
               {processedData.categoryBreakdown.length > 0 ? (
                 processedData.categoryBreakdown.slice(0, 8).map((category, index) => {
                   const percentage = processedData.incomeVsExpenses.expenses > 0 
@@ -800,23 +800,23 @@ export default function Reports() {
                         className="absolute top-0 left-0 w-full h-1"
                         style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }}
                       ></div>
-                      <CardContent className="p-4 sm:p-6">
-                        <div className="flex items-start justify-between mb-4">
-                          <div className="flex items-center space-x-3">
+                      <CardContent className="p-3 sm:p-4 md:p-6">
+                        <div className="flex items-start justify-between mb-3 sm:mb-4">
+                          <div className="flex items-center space-x-2 sm:space-x-3">
                             <div 
-                              className="w-12 h-12 rounded-xl flex items-center justify-center shadow-lg"
+                              className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center shadow-lg"
                               style={{ backgroundColor: `${CHART_COLORS[index % CHART_COLORS.length]}20` }}
                             >
                               <div 
-                                className="w-6 h-6 rounded-lg"
+                                className="w-5 h-5 sm:w-6 sm:h-6 rounded-lg"
                                 style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }}
                               ></div>
                             </div>
                             <div>
-                              <h3 className="font-semibold text-gray-900 text-sm sm:text-base group-hover:text-gray-700 transition-colors">
+                              <h3 className="font-semibold text-gray-900 text-xs sm:text-sm md:text-base group-hover:text-gray-700 transition-colors truncate max-w-[140px] sm:max-w-none">
                                 {category.categoryName}
                               </h3>
-                              <p className="text-xs sm:text-sm text-gray-500">{percentage.toFixed(1)}% of total</p>
+                              <p className="text-xs text-gray-500">{percentage.toFixed(1)}% of total</p>
                             </div>
                           </div>
                         </div>
@@ -860,18 +860,18 @@ export default function Reports() {
             </div>
 
             {/* Detailed Analytics */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 sm:gap-6">
               {/* Monthly Category Trends */}
-              <Card className="shadow-lg border-0 bg-white">
-                <CardHeader className="pb-4">
-                  <CardTitle className="text-lg font-semibold text-gray-900 flex items-center">
-                    <TrendingUp className="h-5 w-5 mr-2 text-blue-600" />
+              <Card className="shadow-lg border-0 bg-white overflow-hidden">
+                <CardHeader className="pb-1 sm:pb-3 px-3 sm:px-6 pt-3 sm:pt-6">
+                  <CardTitle className="text-base sm:text-lg font-semibold text-gray-900 flex items-center">
+                    <TrendingUp className="h-4 w-4 sm:h-5 sm:w-5 mr-1.5 sm:mr-2 text-blue-600" />
                     Category Trends
                   </CardTitle>
-                  <CardDescription className="text-sm">Monthly spending comparison</CardDescription>
+                  <CardDescription className="text-xs sm:text-sm">Monthly spending comparison</CardDescription>
                 </CardHeader>
-                <CardContent>
-                  <div className="h-64 sm:h-80">
+                <CardContent className="px-2 sm:px-6 pb-4 sm:pb-6">
+                  <div className="h-52 sm:h-60 md:h-80">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={processedData.categoryBreakdown.slice(0, 6)} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
                         <XAxis 
@@ -921,15 +921,15 @@ export default function Reports() {
               </Card>
 
               {/* Category Insights */}
-              <Card className="shadow-lg border-0 bg-white">
-                <CardHeader className="pb-4">
-                  <CardTitle className="text-lg font-semibold text-gray-900 flex items-center">
-                    <Target className="h-5 w-5 mr-2 text-purple-600" />
+              <Card className="shadow-lg border-0 bg-white overflow-hidden">
+                <CardHeader className="pb-1 sm:pb-3 px-3 sm:px-6 pt-3 sm:pt-6">
+                  <CardTitle className="text-base sm:text-lg font-semibold text-gray-900 flex items-center">
+                    <Target className="h-4 w-4 sm:h-5 sm:w-5 mr-1.5 sm:mr-2 text-purple-600" />
                     Spending Insights
                   </CardTitle>
-                  <CardDescription className="text-sm">Category analysis and recommendations</CardDescription>
+                  <CardDescription className="text-xs sm:text-sm">Category analysis and recommendations</CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-4">
+                <CardContent className="space-y-3 sm:space-y-4 px-3 sm:px-6 pb-4 sm:pb-6">
                   {processedData.categoryBreakdown.length > 0 ? (
                     <>
                       {/* Highest Spending Category */}
@@ -998,15 +998,15 @@ export default function Reports() {
           </TabsContent>
 
           {/* Budgets Tab */}
-          <TabsContent value="budgets" className="space-y-4 sm:space-y-6">
-            <div className="grid grid-cols-1 gap-4 sm:gap-6">
+          <TabsContent value="budgets" className="space-y-5 sm:space-y-6">
+            <div className="grid grid-cols-1 gap-5 sm:gap-6">
               {/* Budget Overview */}
-              <Card className="shadow-lg border-0 bg-white">
-                <CardHeader className="pb-3 sm:pb-4">
-                  <CardTitle className="text-lg sm:text-xl font-semibold text-gray-900">
+              <Card className="shadow-lg border-0 bg-white overflow-hidden">
+                <CardHeader className="pb-1 sm:pb-3 px-3 sm:px-6 pt-3 sm:pt-6">
+                  <CardTitle className="text-base sm:text-lg md:text-xl font-semibold text-gray-900">
                     Budget Progress - {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
                   </CardTitle>
-                  <CardDescription className="text-sm">
+                  <CardDescription className="text-xs sm:text-sm">
                     Track your current month spending progress against your budgets
                     <br />
                     <span className="text-xs text-blue-600 font-medium">
@@ -1018,8 +1018,8 @@ export default function Reports() {
                     </span>
                   </CardDescription>
                 </CardHeader>
-                <CardContent>
-                  <div className="space-y-4 sm:space-y-6">
+                <CardContent className="px-3 sm:px-6 pb-4 sm:pb-6">
+                  <div className="space-y-3 sm:space-y-4 md:space-y-6">
                     {budgetProgress.length > 0 ? (
                       budgetProgress.map((budget) => (
                         <div key={budget.id} className="p-3 sm:p-4 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors">
