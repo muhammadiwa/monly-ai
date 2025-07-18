@@ -305,15 +305,15 @@ export default function Reports() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-      <div className="px-2 py-4 sm:px-4 lg:px-6 w-full">
+      <div className="px-2 sm:px-4 lg:px-6 w-full">
         {/* Modern Header */}
-        <div className="mb-6 sm:mb-8">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mb-1">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
                 Financial Reports
               </h1>
-              <p className="mt-2 text-sm sm:text-lg text-gray-600">
+              <p className="mt-0.5 text-sm sm:text-lg text-gray-600">
                 Comprehensive insights into your financial health
               </p>
             </div>
@@ -369,10 +369,10 @@ export default function Reports() {
         </div>
 
         {/* Enhanced Summary Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-6 sm:mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-3">
           {/* Net Income Card */}
           <Card className="bg-gradient-to-br from-green-50 to-emerald-50 border-green-200 shadow-lg hover:shadow-xl transition-all duration-300">
-            <CardContent className="p-4 sm:p-6">
+            <CardContent className="p-3 sm:p-4">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs sm:text-sm font-medium text-green-700">Net Income</p>
@@ -462,9 +462,9 @@ export default function Reports() {
         </div>
 
         {/* Main Content with Tabs */}
-        <Tabs defaultValue="overview" className="space-y-4 sm:space-y-6">
+        <Tabs defaultValue="overview" className="space-y-3">
           <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 lg:w-fit lg:grid-cols-4 bg-white shadow-sm border border-gray-200">
-            <TabsTrigger value="overview" className="flex items-center space-x-1 sm:space-x-2 text-xs sm:text-sm">
+            <TabsTrigger value="overview" className="flex items-center space-x-1 text-xs sm:text-sm">
               <BarChart3 className="h-3 w-3 sm:h-4 sm:w-4" />
               <span className="hidden sm:inline">Overview</span>
               <span className="sm:hidden">Overview</span>
@@ -491,7 +491,7 @@ export default function Reports() {
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6">
               {/* Income vs Expenses Chart */}
               <Card className="shadow-lg border-0 bg-white">
-                <CardHeader className="pb-3 sm:pb-4">
+                <CardHeader className="pb-2 sm:pb-3">
                   <CardTitle className="text-lg sm:text-xl font-semibold text-gray-900">Income vs Expenses</CardTitle>
                   <CardDescription className="text-sm">Monthly comparison over the last 6 months</CardDescription>
                 </CardHeader>

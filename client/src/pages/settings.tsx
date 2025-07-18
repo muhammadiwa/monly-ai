@@ -242,12 +242,10 @@ export default function Settings() {
   if (isLoading || preferencesLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
-        <div className="text-center space-y-4">
-          <div className="animate-spin rounded-full h-16 w-16 border-4 border-primary border-t-transparent mx-auto"></div>
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900">Loading Settings</h3>
-            <p className="text-gray-600">Please wait while we load your preferences...</p>
-          </div>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-4 border-primary border-t-transparent mx-auto mb-3"></div>
+          <h2 className="text-2xl font-semibold text-gray-900 mb-1">Loading Settings</h2>
+          <p className="text-gray-600">Please wait while we load your preferences...</p>
         </div>
       </div>
     );
@@ -256,13 +254,11 @@ export default function Settings() {
   if (preferencesError) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
-        <div className="text-center space-y-4 max-w-md mx-auto p-6">
-          <XCircle className="h-16 w-16 text-red-500 mx-auto" />
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900">Unable to Load Settings</h3>
-            <p className="text-gray-600">There was an error loading your preferences. Please try refreshing the page.</p>
-          </div>
-          <Button onClick={() => window.location.reload()} className="mt-4">
+        <div className="text-center max-w-md mx-auto p-4">
+          <XCircle className="h-16 w-16 text-red-500 mx-auto mb-3" />
+          <h2 className="text-2xl font-semibold text-gray-900 mb-1">Unable to Load Settings</h2>
+          <p className="text-gray-600 mb-4">There was an error loading your preferences. Please try refreshing the page.</p>
+          <Button onClick={() => window.location.reload()}>
             Retry
           </Button>
         </div>
@@ -272,52 +268,49 @@ export default function Settings() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-      <div className="container mx-auto px-4 py-8 w-full max-w-none">
+      <div className="px-2 sm:px-4 lg:px-6 w-full">
         {/* Header */}
-        <div className="mb-8">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="p-2 bg-primary/10 rounded-lg">
-              <SettingsIcon className="h-6 w-6 text-primary" />
-            </div>
+        <div className="mb-1">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">Settings</h1>
-              <p className="text-gray-600">Manage your account and preferences</p>
+              <h1 className="text-2xl sm:text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">Settings</h1>
+              <p className="mt-0.5 text-sm sm:text-lg text-gray-600">Manage your account and preferences</p>
             </div>
           </div>
         </div>
 
-        <Tabs defaultValue="profile" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4 lg:w-fit">
-            <TabsTrigger value="profile" className="flex items-center gap-2">
-              <User className="h-4 w-4" />
-              Profile
+        <Tabs defaultValue="profile" className="space-y-3">
+          <TabsList className="grid w-full grid-cols-4 lg:w-fit lg:grid-cols-4 bg-white shadow-sm border border-gray-200">
+            <TabsTrigger value="profile" className="flex items-center space-x-1 text-xs sm:text-sm">
+              <User className="h-3 w-3 sm:h-4 sm:w-4" />
+              <span>Profile</span>
             </TabsTrigger>
-            <TabsTrigger value="financial" className="flex items-center gap-2">
-              <CreditCard className="h-4 w-4" />
-              Financial
+            <TabsTrigger value="financial" className="flex items-center space-x-1 text-xs sm:text-sm">
+              <CreditCard className="h-3 w-3 sm:h-4 sm:w-4" />
+              <span>Financial</span>
             </TabsTrigger>
-            <TabsTrigger value="preferences" className="flex items-center gap-2">
-              <Bell className="h-4 w-4" />
-              Preferences
+            <TabsTrigger value="preferences" className="flex items-center space-x-1 text-xs sm:text-sm">
+              <Bell className="h-3 w-3 sm:h-4 sm:w-4" />
+              <span>Preferences</span>
             </TabsTrigger>
-            <TabsTrigger value="security" className="flex items-center gap-2">
-              <Shield className="h-4 w-4" />
-              Security
+            <TabsTrigger value="security" className="flex items-center space-x-1 text-xs sm:text-sm">
+              <Shield className="h-3 w-3 sm:h-4 sm:w-4" />
+              <span>Security</span>
             </TabsTrigger>
           </TabsList>
 
           {/* Profile Tab */}
-          <TabsContent value="profile" className="space-y-6">
-            <Card className="shadow-lg border-0 bg-white/50 backdrop-blur">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-3">
-                  <User className="h-5 w-5 text-primary" />
+          <TabsContent value="profile" className="space-y-3">
+            <Card className="shadow-lg border-0 bg-white">
+              <CardHeader className="pb-2 sm:pb-3">
+                <CardTitle className="text-lg sm:text-xl font-semibold text-gray-900 flex items-center gap-2">
+                  <User className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
                   Profile Information
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="flex items-center space-x-6">
-                  <Avatar className="h-20 w-20">
+              <CardContent className="space-y-4">
+                <div className="flex items-center space-x-4">
+                  <Avatar className="h-16 w-16 sm:h-20 sm:w-20">
                     <AvatarImage src={profileData.profileImageUrl} />
                     <AvatarFallback className="text-lg font-semibold bg-primary/10 text-primary">
                       {profileData.firstName?.[0]}{profileData.lastName?.[0]}
@@ -335,7 +328,7 @@ export default function Settings() {
                 
                 <Separator />
                 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="firstName">First Name</Label>
                     <Input 
