@@ -655,7 +655,7 @@ const createTransactionFromAnalysis = async (
         currency: userPreferences?.defaultCurrency || "USD",
         description: analysis.description,
         type: analysis.type,
-        date: Math.floor(Date.now() / 1000),
+        date: analysis.date || Math.floor(Date.now() / 1000), // Use parsed date or current timestamp
         aiGenerated: true,
       });
 
@@ -730,12 +730,33 @@ const processTextMessage = async (message: any, userId: string) => {
       if (result.success) {
         const formattedAmount = formatCurrency(analysis.amount, userPreferences?.defaultCurrency);
         
+        // Format date if transaction is not for today
+        let dateInfo = '';
+        if (analysis.date && analysis.date !== Math.floor(Date.now() / 1000)) {
+          const transactionDate = new Date(analysis.date * 1000);
+          const today = new Date();
+          
+          // Check if it's today
+          const isToday = transactionDate.toDateString() === today.toDateString();
+          
+          if (!isToday) {
+            const options: Intl.DateTimeFormatOptions = { 
+              year: 'numeric', 
+              month: 'long', 
+              day: 'numeric',
+              timeZone: 'Asia/Jakarta'
+            };
+            dateInfo = `📅 Tanggal: ${transactionDate.toLocaleDateString('id-ID', options)}\n`;
+          }
+        }
+        
         await message.reply(
           `✅ *Transaksi Berhasil Dicatat!*\n\n` +
           `💰 Jumlah: ${formattedAmount}\n` +
           `📝 Deskripsi: ${analysis.description}\n` +
           `📂 Kategori: ${analysis.category}\n` +
           `📊 Jenis: ${analysis.type === 'expense' ? 'Pengeluaran' : 'Pemasukan'}\n` +
+          dateInfo +
           `🎯 Tingkat Kepercayaan: ${Math.round(analysis.confidence * 100)}%\n\n` +
           `_Transaksi telah disimpan dalam akun Anda_`
         );
@@ -752,9 +773,13 @@ const processTextMessage = async (message: any, userId: string) => {
         `Maaf, saya tidak dapat memahami pesan Anda sebagai transaksi keuangan.\n\n` +
         `Contoh format yang bisa dipahami:\n` +
         `• "Makan siang di McD 75000"\n` +
-        `• "Beli bensin 50000"\n` +
-        `• "Gaji bulan ini 5000000"\n` +
-        `• "Transfer dari ayah 200000"\n\n` +
+        `• "Kemarin beli bensin 50000"\n` +
+        `• "Tanggal 15 Juli gaji bulan ini 5000000"\n` +
+        `• "2 hari lalu transfer dari ayah 200000"\n` +
+        `• "Minggu lalu beli groceries 150000"\n\n` +
+        `💡 *Tips tanggal:*\n` +
+        `• Gunakan kata seperti "kemarin", "2 hari lalu", "minggu lalu"\n` +
+        `• Atau sebutkan tanggal spesifik "15 Juli", "1 Agustus"\n\n` +
         `Atau ketik *"bantuan"* untuk melihat daftar perintah.`
       );
     }
@@ -834,6 +859,26 @@ const processVoiceMessage = async (message: any, userId: string) => {
       if (result.success) {
         const formattedAmount = formatCurrency(analysis.amount, userPreferences?.defaultCurrency);
         
+        // Format date if transaction is not for today
+        let dateInfo = '';
+        if (analysis.date && analysis.date !== Math.floor(Date.now() / 1000)) {
+          const transactionDate = new Date(analysis.date * 1000);
+          const today = new Date();
+          
+          // Check if it's today
+          const isToday = transactionDate.toDateString() === today.toDateString();
+          
+          if (!isToday) {
+            const options: Intl.DateTimeFormatOptions = { 
+              year: 'numeric', 
+              month: 'long', 
+              day: 'numeric',
+              timeZone: 'Asia/Jakarta'
+            };
+            dateInfo = `📅 Tanggal: ${transactionDate.toLocaleDateString('id-ID', options)}\n`;
+          }
+        }
+        
         await message.reply(
           `🎤 *Pesan Suara Berhasil Diproses!*\n\n` +
           `📝 Saya dengar: "${transcribedText}"\n\n` +
@@ -842,6 +887,7 @@ const processVoiceMessage = async (message: any, userId: string) => {
           `📝 Deskripsi: ${analysis.description}\n` +
           `📂 Kategori: ${analysis.category}\n` +
           `📊 Jenis: ${analysis.type === 'expense' ? 'Pengeluaran' : 'Pemasukan'}\n` +
+          dateInfo +
           `🎯 Tingkat Kepercayaan: ${Math.round(analysis.confidence * 100)}%`
         );
       } else {
@@ -928,8 +974,29 @@ const processImageMessage = async (message: any, userId: string) => {
         if (transactionResult.success) {
           successCount++;
           const formattedAmount = formatCurrency(transaction.amount, userPreferences?.defaultCurrency);
+          
+          // Format date if transaction is not for today
+          let dateInfo = '';
+          if (transaction.date && transaction.date !== Math.floor(Date.now() / 1000)) {
+            const transactionDate = new Date(transaction.date * 1000);
+            const today = new Date();
+            
+            // Check if it's today
+            const isToday = transactionDate.toDateString() === today.toDateString();
+            
+            if (!isToday) {
+              const options: Intl.DateTimeFormatOptions = { 
+                year: 'numeric', 
+                month: 'long', 
+                day: 'numeric',
+                timeZone: 'Asia/Jakarta'
+              };
+              dateInfo = ` (${transactionDate.toLocaleDateString('id-ID', options)})`;
+            }
+          }
+          
           responses.push(
-            `✅ ${transaction.description}\n` +
+            `✅ ${transaction.description}${dateInfo}\n` +
             `💰 ${formattedAmount} (${transaction.category})`
           );
         }
