@@ -2,7 +2,7 @@ import pkg from 'whatsapp-web.js';
 const { Client, LocalAuth, MessageMedia } = pkg;
 import qrcode from 'qrcode';
 import OpenAI from 'openai';
-import { analyzeTransactionText, processReceiptImage } from './openai';
+import { analyzeTransactionText, processReceiptImage, analyzeFinancialProfile, generateBudgetRecommendations } from './openai';
 import { storage } from './storage';
 
 // Initialize OpenAI client
@@ -676,15 +676,66 @@ const createTransactionFromAnalysis = async (
       
       // Check for budget alerts after creating expense transaction
       let budgetAlert = null;
+      let budgetRecommendation = null;
+      
       if (analysis.type === 'expense') {
-        budgetAlert = await checkBudgetAlerts(userId, matchingCategory.id, userPreferences);
+        // First check if category has existing budget
+        const existingBudget = await storage.getBudgetByCategory(userId, matchingCategory.id);
+        console.log(`Budget check for category ${matchingCategory.name} (ID: ${matchingCategory.id}):`, existingBudget ? 'EXISTS' : 'NOT FOUND');
+        
+        if (!existingBudget) {
+          // No budget exists for this category - generate AI recommendation
+          console.log(`No budget found for category ${matchingCategory.name}, generating AI recommendation...`);
+          
+          try {
+            // Get recent transactions for financial profile analysis
+            const transactions = await storage.getTransactions(userId);
+            console.log(`Retrieved ${transactions.length} transactions for financial analysis`);
+            
+            // Get financial profile
+            const financialProfile = await analyzeFinancialProfile(userId, transactions, userPreferences);
+            console.log('Financial profile generated:', financialProfile);
+            
+            // Generate budget recommendation for this specific category
+            const recommendations = await generateBudgetRecommendations(
+              userId, 
+              financialProfile, 
+              categories,
+              matchingCategory.name,
+              userPreferences,
+              transactions  // Pass raw transactions for detailed analysis
+            );
+            console.log('Budget recommendations received:', recommendations);
+            
+            if (recommendations && recommendations.length > 0) {
+              const categoryBudget = recommendations[0];
+              budgetRecommendation = {
+                category: matchingCategory.name,
+                suggestedAmount: categoryBudget.recommendedAmount,
+                reasoning: categoryBudget.reasoning,
+                riskLevel: 'medium', // Default risk level
+                recommendation: recommendations
+              };
+              
+              console.log('Budget recommendation generated:', budgetRecommendation);
+            } else {
+              console.log('No budget recommendations generated');
+            }
+          } catch (error) {
+            console.error('Error generating budget recommendation:', error);
+          }
+        } else {
+          // Check for budget alerts on existing budget
+          budgetAlert = await checkBudgetAlerts(userId, matchingCategory.id, userPreferences);
+        }
       }
       
       return {
         success: true,
         transaction,
         analysis,
-        budgetAlert
+        budgetAlert,
+        budgetRecommendation
       };
     }
     
@@ -781,6 +832,20 @@ const processTextMessage = async (message: any, userId: string) => {
         // Add budget alert if exists
         if (result.budgetAlert) {
           replyMessage += `\n\n` + result.budgetAlert.message;
+        }
+        
+        // Add budget recommendation if no budget exists for this category
+        if (result.budgetRecommendation) {
+          const rec = result.budgetRecommendation;
+          const formattedBudget = formatCurrency(rec.suggestedAmount, userPreferences?.defaultCurrency);
+          
+          replyMessage += `\n\n💡 *Rekomendasi Budget AI*\n\n` +
+            `📂 Kategori: ${rec.category}\n` +
+            `💰 Budget Disarankan: ${formattedBudget}/bulan\n` +
+            `🤖 Alasan: ${rec.reasoning}\n` +
+            `⚠️ Tingkat Risiko: ${rec.riskLevel === 'low' ? 'Rendah 🟢' : rec.riskLevel === 'medium' ? 'Sedang 🟡' : 'Tinggi 🔴'}\n\n` +
+            `Ingin mengatur budget ini? Ketik:\n` +
+            `*"set budget ${rec.category} ${rec.suggestedAmount}"*`;
         }
         
         await message.reply(replyMessage);
@@ -918,6 +983,20 @@ const processVoiceMessage = async (message: any, userId: string) => {
           replyMessage += `\n\n` + result.budgetAlert.message;
         }
         
+        // Add budget recommendation if no budget exists for this category
+        if (result.budgetRecommendation) {
+          const rec = result.budgetRecommendation;
+          const formattedBudget = formatCurrency(rec.suggestedAmount, userPreferences?.defaultCurrency);
+          
+          replyMessage += `\n\n💡 *Rekomendasi Budget AI*\n\n` +
+            `📂 Kategori: ${rec.category}\n` +
+            `💰 Budget Disarankan: ${formattedBudget}/bulan\n` +
+            `🤖 Alasan: ${rec.reasoning}\n` +
+            `⚠️ Tingkat Risiko: ${rec.riskLevel === 'low' ? 'Rendah 🟢' : rec.riskLevel === 'medium' ? 'Sedang 🟡' : 'Tinggi 🔴'}\n\n` +
+            `Ingin mengatur budget ini? Ketik:\n` +
+            `*"set budget ${rec.category} ${rec.suggestedAmount}"*`;
+        }
+        
         await message.reply(replyMessage);
       } else {
         await message.reply(
@@ -991,6 +1070,7 @@ const processImageMessage = async (message: any, userId: string) => {
     if (result.confidence > 0.6 && result.transactions.length > 0) {
       let successCount = 0;
       let responses: string[] = [];
+      let budgetRecommendations: any[] = [];
       
       for (const transaction of result.transactions) {
         const transactionResult = await createTransactionFromAnalysis(
@@ -1028,17 +1108,38 @@ const processImageMessage = async (message: any, userId: string) => {
             `✅ ${transaction.description}${dateInfo}\n` +
             `💰 ${formattedAmount} (${transaction.category})`
           );
+          
+          // Collect budget recommendations
+          if (transactionResult.budgetRecommendation) {
+            budgetRecommendations.push(transactionResult.budgetRecommendation);
+          }
         }
       }
       
       if (successCount > 0) {
-        await message.reply(
-          `📸 *Struk Berhasil Diproses!*\n\n` +
+        let replyMessage = `📸 *Struk Berhasil Diproses!*\n\n` +
           `📝 Teks yang ditemukan:\n"${result.text}"\n\n` +
           `✅ *${successCount} Transaksi Dicatat:*\n\n` +
           responses.join('\n\n') +
-          `\n\n🎯 Tingkat Kepercayaan: ${Math.round(result.confidence * 100)}%`
-        );
+          `\n\n🎯 Tingkat Kepercayaan: ${Math.round(result.confidence * 100)}%`;
+        
+        // Add budget recommendations if any
+        if (budgetRecommendations.length > 0) {
+          replyMessage += `\n\n💡 *Rekomendasi Budget AI*\n\n`;
+          
+          budgetRecommendations.forEach((rec, index) => {
+            const formattedBudget = formatCurrency(rec.suggestedAmount, userPreferences?.defaultCurrency);
+            
+            replyMessage += `${index + 1}. 📂 ${rec.category}\n` +
+              `💰 Budget Disarankan: ${formattedBudget}/bulan\n` +
+              `🤖 Alasan: ${rec.reasoning}\n` +
+              `⚠️ Tingkat Risiko: ${rec.riskLevel === 'low' ? 'Rendah 🟢' : rec.riskLevel === 'medium' ? 'Sedang 🟡' : 'Tinggi 🔴'}\n\n`;
+          });
+          
+          replyMessage += `Ingin mengatur budget? Ketik:\n*"set budget [kategori] [jumlah]"*`;
+        }
+        
+        await message.reply(replyMessage);
       } else {
         await message.reply(
           `📸 *Struk Diproses, Tapi...*\n\n` +
@@ -1075,6 +1176,9 @@ const showHelpMessage = async (message: any) => {
     `📝 *Cara Mencatat Transaksi:*\n\n` +
     `1️⃣ *Pesan Teks:*\n` +
     `• "Makan siang di McD 75000"\n` +
+    `• "Beli bensin 50000"\n` +
+    `• "Gaji bulan ini 5000000"\n` +
+    `• "Transfer dari ayah 200000"\n\n` +
     `• "Kemarin beli bensin 50000"\n` +
     `• "Tanggal 15 Juli gaji 5000000"\n` +
     `• "2 hari lalu transfer dari ayah 200000"\n\n` +
@@ -1092,7 +1196,7 @@ const showHelpMessage = async (message: any) => {
     `• ketik "bantuan" - Lihat pesan ini\n` +
     `• ketik "saldo" - Cek ringkasan keuangan\n` +
     `• ketik "status" - Status koneksi akun\n\n` +
-    `💡 *Tips:* Bot akan otomatis memberikan peringatan jika budget Anda mendekati atau melebihi batas!`
+    `💡 *Tips:* Semakin jelas informasi yang Anda berikan, semakin akurat pencatatan transaksi!`
   );
 };
 
