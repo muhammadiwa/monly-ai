@@ -1,21 +1,37 @@
 import express from 'express';
 import { Response } from 'express';
 import { 
-  initializeWhatsAppClient, 
-  getWhatsAppConnectionStatus,
-  generateQRCode,
-  disconnectWhatsApp,
+  initializeUserWhatsAppClient, 
+  getConnectionState,
+  disconnectUserWhatsApp,
   registerMessageHandlers
 } from './whatsapp-service';
 import { requireAuth, AuthRequest } from './auth';
 
 const router = express.Router();
 
-// Get WhatsApp connection status
+// Get WhatsApp connection status for current user
 router.get('/whatsapp/status', requireAuth, async (req: AuthRequest, res: Response) => {
   try {
-    const status = getWhatsAppConnectionStatus();
-    res.json(status);
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'User not authenticated' });
+    }
+
+    const connectionState = getConnectionState(userId);
+    
+    if (!connectionState) {
+      return res.json({
+        connected: false,
+        status: 'disconnected'
+      });
+    }
+
+    res.json({
+      connected: connectionState.status === 'ready' || connectionState.status === 'authenticated',
+      status: connectionState.status,
+      qrCode: connectionState.qrCode
+    });
   } catch (error) {
     console.error('Error getting WhatsApp status:', error);
     res.status(500).json({
@@ -29,7 +45,12 @@ router.get('/whatsapp/status', requireAuth, async (req: AuthRequest, res: Respon
 // Generate QR code for WhatsApp Web connection
 router.post('/whatsapp/connect', requireAuth, async (req: AuthRequest, res: Response) => {
   try {
-    const result = await generateQRCode();
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'User not authenticated' });
+    }
+
+    const result = await initializeUserWhatsAppClient(userId);
     res.json(result);
   } catch (error) {
     console.error('Error generating WhatsApp QR code:', error);
@@ -44,7 +65,12 @@ router.post('/whatsapp/connect', requireAuth, async (req: AuthRequest, res: Resp
 // Disconnect WhatsApp Web
 router.post('/whatsapp/disconnect', requireAuth, async (req: AuthRequest, res: Response) => {
   try {
-    const result = await disconnectWhatsApp();
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'User not authenticated' });
+    }
+
+    const result = await disconnectUserWhatsApp(userId);
     res.json(result);
   } catch (error) {
     console.error('Error disconnecting WhatsApp:', error);
@@ -58,8 +84,21 @@ router.post('/whatsapp/disconnect', requireAuth, async (req: AuthRequest, res: R
 // Initialize message handlers
 router.post('/whatsapp/init-handlers', requireAuth, async (req: AuthRequest, res: Response) => {
   try {
-    // Use a default user ID for demo
-    const success = registerMessageHandlers('default-user');
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'User not authenticated' });
+    }
+
+    // Check if user has an active connection
+    const connectionState = getConnectionState(userId);
+    if (!connectionState || connectionState.status !== 'ready') {
+      return res.status(400).json({
+        success: false,
+        message: 'WhatsApp client not ready. Please connect first.'
+      });
+    }
+
+    const success = registerMessageHandlers(userId);
     
     if (success) {
       res.json({
