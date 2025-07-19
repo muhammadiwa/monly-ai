@@ -1,10 +1,18 @@
 import pkg from 'whatsapp-web.js';
-const { Client, LocalAuth } = pkg;
+const { Client, LocalAuth, MessageMedia } = pkg;
 import qrcode from 'qrcode';
+import OpenAI from 'openai';
+import { analyzeTransactionText, processReceiptImage } from './openai';
+import { storage } from './storage';
+
+// Initialize OpenAI client
+const openai = new OpenAI({ 
+  apiKey: process.env.OPENAI_API_KEY || process.env.OPENAI_KEY || "default_key"
+});
 
 // Type definitions for WhatsApp Web.js
 type WAClient = InstanceType<typeof Client>;
-type WAMessage = any; // We'll use any for message type since the library doesn't export it properly
+type WAMessage = any; // WhatsApp message type
 
 interface WhatsAppConnection {
   client: WAClient;
@@ -17,7 +25,7 @@ interface WhatsAppConnection {
 const connections: Map<string, WhatsAppConnection> = new Map();
 
 /**
- * Initialize WhatsApp client for a user
+ * Initialize WhatsApp client for a user with enhanced message handling
  * @param userId The user ID to associate with the WhatsApp client
  * @returns The WhatsApp connection object
  */
@@ -33,7 +41,20 @@ export const initializeWhatsAppClient = (userId: string): WhatsAppConnection => 
     authStrategy: new LocalAuth({ clientId: userId }),
     puppeteer: {
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
+      args: [
+        '--no-sandbox', 
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--no-first-run',
+        '--no-zygote',
+        '--single-process',
+        '--disable-gpu'
+      ]
+    },
+    webVersionCache: {
+      type: 'remote',
+      remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html'
     }
   });
 
@@ -63,6 +84,14 @@ export const initializeWhatsAppClient = (userId: string): WhatsAppConnection => 
     console.log(`WhatsApp client ready for user ${userId}`);
     connection.status = 'ready';
     connection.qrCode = null;
+    
+    // Register message handlers when client is ready
+    registerMessageHandlers(userId);
+    
+    // Send welcome message to user's own number if possible
+    client.getChats().then(chats => {
+      console.log(`User ${userId} has ${chats.length} chats available`);
+    }).catch(console.error);
   });
 
   client.on('authenticated', () => {
@@ -81,6 +110,13 @@ export const initializeWhatsAppClient = (userId: string): WhatsAppConnection => 
     
     // Clean up connection
     connections.delete(userId);
+  });
+
+  client.on('message_create', (message) => {
+    // Log outgoing messages for debugging
+    if (message.fromMe) {
+      console.log(`Sent message to ${message.to}: ${message.body}`);
+    }
   });
 
   // Store the connection
@@ -113,12 +149,175 @@ export const getConnectionState = (userId: string) => {
 };
 
 /**
- * Get the current WhatsApp connection status
- * Global status function for the service (not user-specific)
+ * Get all active connections
+ * @returns Array of connection states
+ */
+export const getAllConnections = () => {
+  const result = [];
+  const entries = Array.from(connections.entries());
+  for (const [userId, connection] of entries) {
+    result.push({
+      userId,
+      status: connection.status,
+      qrCode: connection.qrCode
+    });
+  }
+  return result;
+};
+
+/**
+ * Initialize WhatsApp client for specific user (used by multi-account system)
+ * @param userId The user ID to initialize client for
+ * @returns Promise with connection result
+ */
+export const initializeUserWhatsAppClient = async (userId: string): Promise<{ success: boolean; status: string; qrCode?: string; message?: string }> => {
+  try {
+    // Check if user already has an active connection
+    const existingConnection = connections.get(userId);
+    if (existingConnection) {
+      if (existingConnection.status === 'ready' || existingConnection.status === 'authenticated') {
+        return {
+          success: true,
+          status: existingConnection.status,
+          message: 'WhatsApp already connected'
+        };
+      } else if (existingConnection.status === 'qr_received' && existingConnection.qrCode) {
+        return {
+          success: true,
+          status: existingConnection.status,
+          qrCode: existingConnection.qrCode
+        };
+      }
+    }
+    
+    // Initialize new client
+    const connection = initializeWhatsAppClient(userId);
+    
+    // Wait for QR code or ready state
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        resolve({
+          success: false,
+          status: 'timeout',
+          message: 'Connection timeout'
+        });
+      }, 60000); // 60 second timeout
+      
+      const checkInterval = setInterval(() => {
+        if (connection.qrCode && connection.status === 'qr_received') {
+          clearTimeout(timeout);
+          clearInterval(checkInterval);
+          resolve({
+            success: true,
+            status: connection.status,
+            qrCode: connection.qrCode
+          });
+        } else if (connection.status === 'ready' || connection.status === 'authenticated') {
+          clearTimeout(timeout);
+          clearInterval(checkInterval);
+          resolve({
+            success: true,
+            status: connection.status,
+            message: 'WhatsApp connected successfully'
+          });
+        } else if (connection.status === 'disconnected') {
+          clearTimeout(timeout);
+          clearInterval(checkInterval);
+          resolve({
+            success: false,
+            status: connection.status,
+            message: 'Connection failed'
+          });
+        }
+      }, 1000);
+    });
+    
+  } catch (error) {
+    console.error('Error initializing user WhatsApp client:', error);
+    return {
+      success: false,
+      status: 'error',
+      message: 'Failed to initialize WhatsApp client'
+    };
+  }
+};
+
+/**
+ * Disconnect specific user's WhatsApp client
+ * @param userId The user ID to disconnect
+ * @returns Promise with result
+ */
+export const disconnectUserWhatsApp = async (userId: string): Promise<{ success: boolean; message: string }> => {
+  try {
+    const connection = connections.get(userId);
+    if (!connection) {
+      return {
+        success: false,
+        message: 'No WhatsApp connection found for this user'
+      };
+    }
+    
+    await connection.client.destroy();
+    connections.delete(userId);
+    
+    return {
+      success: true,
+      message: 'WhatsApp disconnected successfully'
+    };
+  } catch (error) {
+    console.error('Error disconnecting user WhatsApp:', error);
+    return {
+      success: false,
+      message: 'Failed to disconnect WhatsApp'
+    };
+  }
+};
+
+/**
+ * Send a message to specific WhatsApp number (for notifications)
+ * @param userId The user ID
+ * @param whatsappNumber The target WhatsApp number
+ * @param message The message to send
+ * @returns Promise with result
+ */
+export const sendWhatsAppMessage = async (
+  userId: string, 
+  whatsappNumber: string, 
+  message: string
+): Promise<{ success: boolean; message?: string }> => {
+  try {
+    const connection = connections.get(userId);
+    if (!connection || connection.status !== 'ready') {
+      return {
+        success: false,
+        message: 'WhatsApp client not ready'
+      };
+    }
+    
+    // Format the number correctly
+    const chatId = whatsappNumber.includes('@c.us') ? whatsappNumber : `${whatsappNumber}@c.us`;
+    
+    await connection.client.sendMessage(chatId, message);
+    
+    return {
+      success: true
+    };
+    
+  } catch (error) {
+    console.error('Error sending WhatsApp message:', error);
+    return {
+      success: false,
+      message: 'Failed to send message'
+    };
+  }
+};
+
+/**
+ * Get the current WhatsApp connection status (legacy function for backward compatibility)
+ * @deprecated Use getConnectionState(userId) instead
  */
 export const getWhatsAppConnectionStatus = () => {
-  // For now, just return a global status - in a real implementation, this would be user-specific
-  // Get the first connection from the map or return disconnected state
+  // For backward compatibility, return the first connection's status
   if (connections.size === 0) {
     return {
       connected: false,
@@ -126,7 +325,6 @@ export const getWhatsAppConnectionStatus = () => {
     };
   }
 
-  // Return the first connection's status (this is a simplification)
   const firstConnection = Array.from(connections.values())[0];
   return {
     connected: firstConnection.status === 'ready' || firstConnection.status === 'authenticated',
@@ -136,65 +334,16 @@ export const getWhatsAppConnectionStatus = () => {
 };
 
 /**
- * Generate QR code for WhatsApp Web connection
- * Since we're using a simplified approach without user-specific clients for now,
- * this will initialize a generic client if none exists
+ * Generate QR code for WhatsApp Web connection (legacy function)
+ * @deprecated Use initializeUserWhatsAppClient(userId) instead
  */
 export const generateQRCode = async (): Promise<{ success: boolean; status: string; qrCode?: string }> => {
   try {
-    // Use a temporary user ID for demo purposes
+    // Use a temporary user ID for demo purposes (backward compatibility)
     const tempUserId = 'default-user';
     
-    // Initialize client
-    const connection = initializeWhatsAppClient(tempUserId);
-    
-    // If QR code is already available, return it immediately
-    if (connection.qrCode && connection.status === 'qr_received') {
-      return {
-        success: true,
-        status: connection.status,
-        qrCode: connection.qrCode
-      };
-    }
-    
-    // If client is already authenticated or ready, return that status
-    if (connection.status === 'ready' || connection.status === 'authenticated') {
-      return {
-        success: true,
-        status: connection.status
-      };
-    }
-    
-    // Wait for QR code to be generated
-    return new Promise((resolve) => {
-      // Set a timeout
-      const timeout = setTimeout(() => {
-        resolve({
-          success: false,
-          status: 'timeout',
-        });
-      }, 30000); // 30 second timeout
-      
-      // Listen for QR code event
-      const checkInterval = setInterval(() => {
-        if (connection.qrCode && connection.status === 'qr_received') {
-          clearInterval(checkInterval);
-          clearTimeout(timeout);
-          resolve({
-            success: true,
-            status: connection.status,
-            qrCode: connection.qrCode
-          });
-        } else if (connection.status === 'ready' || connection.status === 'authenticated') {
-          clearInterval(checkInterval);
-          clearTimeout(timeout);
-          resolve({
-            success: true,
-            status: connection.status
-          });
-        }
-      }, 1000);
-    });
+    const result = await initializeUserWhatsAppClient(tempUserId);
+    return result;
   } catch (error) {
     console.error('Error generating QR code:', error);
     return {
@@ -205,8 +354,8 @@ export const generateQRCode = async (): Promise<{ success: boolean; status: stri
 };
 
 /**
- * Disconnect WhatsApp client
- * For now just disconnects the first client in the map
+ * Disconnect WhatsApp client (legacy function)
+ * @deprecated Use disconnectUserWhatsApp(userId) instead
  */
 export const disconnectWhatsApp = async (): Promise<{ success: boolean; message: string }> => {
   try {
@@ -217,17 +366,9 @@ export const disconnectWhatsApp = async (): Promise<{ success: boolean; message:
       };
     }
     
-    const firstConnectionEntry = Array.from(connections.entries())[0];
-    const userId = firstConnectionEntry[0];
-    const connection = firstConnectionEntry[1];
-    
-    await connection.client.destroy();
-    connections.delete(userId);
-    
-    return {
-      success: true,
-      message: 'WhatsApp disconnected successfully'
-    };
+    // Disconnect the first connection (for backward compatibility)
+    const firstUserId = Array.from(connections.keys())[0];
+    return await disconnectUserWhatsApp(firstUserId);
   } catch (error) {
     console.error('Error disconnecting WhatsApp:', error);
     return {
@@ -238,7 +379,7 @@ export const disconnectWhatsApp = async (): Promise<{ success: boolean; message:
 };
 
 /**
- * Register message handlers for financial operations
+ * Register message handlers for financial operations with full AI integration
  * @param userId The user ID to register handlers for
  */
 export const registerMessageHandlers = (userId: string): boolean => {
@@ -247,83 +388,184 @@ export const registerMessageHandlers = (userId: string): boolean => {
     return false;
   }
 
-  // Handle incoming messages
+  // Handle incoming messages with comprehensive AI processing
   connection.client.on('message', async (message: WAMessage) => {
     console.log(`Message received from ${message.from}: ${message.body}`);
+    
+    // Get WhatsApp number without suffix
+    const whatsappNumber = message.from.replace('@c.us', '');
+    
+    // Skip messages from groups or status updates
+    if (message.from.includes('@g.us') || message.from.includes('status@broadcast')) {
+      return;
+    }
+    
+    // Get user ID from WhatsApp number
+    const messageUserId = await getUserIdFromWhatsApp(whatsappNumber);
+    
+    if (!messageUserId) {
+      // Check for activation command first
+      const activationPattern = /^AKTIVASI:\s*([A-Z0-9]{6})$/i;
+      const activationMatch = message.body.match(activationPattern);
 
-    // Check for activation command: "AKTIVASI: CODE"
-    const activationPattern = /^AKTIVASI:\s*([A-Z0-9]{6})$/i;
-    const activationMatch = message.body.match(activationPattern);
-
-    if (activationMatch) {
-      const code = activationMatch[1].toUpperCase();
-      const whatsappNumber = message.from.replace('@c.us', ''); // Remove WhatsApp suffix
-      
-      try {
-        // Call activation API using internal database call instead of fetch
-        // Import needed for internal API call
-        const { db } = await import('./db');
-        const { whatsappActivationCodes, whatsappIntegrations } = await import('@shared/schema');
-        const { eq, and, gt, isNull } = await import('drizzle-orm');
-        
-        console.log(`Processing activation code: ${code} for WhatsApp: ${whatsappNumber}`);
-        
-        // Check if activation code exists and is still valid
-        const currentTime = Date.now();
-        const activationCode = await db.select()
-          .from(whatsappActivationCodes)
-          .where(
-            and(
-              eq(whatsappActivationCodes.code, code),
-              gt(whatsappActivationCodes.expiresAt, currentTime),
-              isNull(whatsappActivationCodes.usedAt)
-            )
-          )
-          .limit(1);
-
-        if (activationCode.length === 0) {
-          await message.reply('❌ Kode aktivasi tidak valid atau sudah kadaluarsa.');
-          return;
-        }
-
-        const codeData = activationCode[0];
-
-        // Check if this WhatsApp number is already connected
-        const existingConnection = await db.select()
-          .from(whatsappIntegrations)
-          .where(eq(whatsappIntegrations.whatsappNumber, whatsappNumber))
-          .limit(1);
-
-        if (existingConnection.length > 0) {
-          await message.reply('❌ Nomor WhatsApp ini sudah terhubung ke akun lain.');
-          return;
-        }
-
-        // Create new WhatsApp integration
-        await db.insert(whatsappIntegrations).values({
-          userId: codeData.userId,
-          whatsappNumber,
-          displayName: message._data.notifyName || null,
-          status: 'active',
-          activatedAt: Date.now(),
-        });
-
-        // Mark activation code as used
-        await db.update(whatsappActivationCodes)
-          .set({ usedAt: Date.now() })
-          .where(eq(whatsappActivationCodes.id, codeData.id));
-
-        await message.reply('✅ Akun WhatsApp Anda telah berhasil terhubung ke Monly AI! Ketik "bantuan" untuk melihat daftar perintah.');
-        console.log(`WhatsApp ${whatsappNumber} successfully activated for user ${codeData.userId}`);
-        
-      } catch (error) {
-        console.error('Error processing activation:', error);
-        await message.reply('❌ Terjadi kesalahan saat memproses aktivasi. Silakan coba lagi.');
+      if (activationMatch) {
+        await handleActivationCode(message, activationMatch[1].toUpperCase(), whatsappNumber);
+      } else {
+        await message.reply(
+          `🔒 *Akun Belum Terhubung*\n\n` +
+          `Nomor WhatsApp Anda belum terhubung ke akun Monly AI.\n\n` +
+          `📱 *Cara Menghubungkan:*\n` +
+          `1. Buka aplikasi Monly AI\n` +
+          `2. Masuk ke menu "Integrasi WhatsApp"\n` +
+          `3. Buat kode aktivasi\n` +
+          `4. Kirim pesan: AKTIVASI: [KODE]\n\n` +
+          `💡 Contoh: AKTIVASI: ABC123`
+        );
       }
+      return;
+    }
+
+    // Handle different message types for authenticated users
+    try {
+      // Handle text commands
+      if (message.type === 'chat' && message.body) {
+        const messageText = message.body.toLowerCase().trim();
+        
+        // Special commands
+        if (messageText === 'bantuan' || messageText === 'help') {
+          await showHelpMessage(message);
+          return;
+        }
+        
+        if (messageText === 'saldo' || messageText === 'balance' || messageText === 'ringkasan') {
+          await showBalanceSummary(message, messageUserId);
+          return;
+        }
+        
+        if (messageText === 'status') {
+          await message.reply(
+            `✅ *Status Koneksi*\n\n` +
+            `🔗 WhatsApp terhubung dengan akun Monly AI\n` +
+            `📱 Nomor: ${whatsappNumber}\n` +
+            `🤖 Bot aktif dan siap mencatat transaksi\n\n` +
+            `Kirim "bantuan" untuk melihat cara penggunaan.`
+          );
+          return;
+        }
+        
+        // Process as transaction text
+        await processTextMessage(message, messageUserId);
+      }
+      
+      // Handle voice messages
+      else if (message.type === 'ptt' || message.type === 'audio') {
+        await message.reply('🎤 Memproses pesan suara...');
+        await processVoiceMessage(message, messageUserId);
+      }
+      
+      // Handle image messages (receipts)
+      else if (message.type === 'image') {
+        await message.reply('📸 Memproses gambar struk...');
+        await processImageMessage(message, messageUserId);
+      }
+      
+      // Handle unsupported message types
+      else {
+        await message.reply(
+          `🤖 *Jenis Pesan Tidak Didukung*\n\n` +
+          `Saya dapat memproses:\n` +
+          `• 📝 Pesan teks (untuk transaksi)\n` +
+          `• 🎤 Pesan suara (untuk transaksi)\n` +
+          `• 📸 Foto struk/nota\n\n` +
+          `Kirim "bantuan" untuk panduan lengkap.`
+        );
+      }
+      
+    } catch (error) {
+      console.error('Error processing WhatsApp message:', error);
+      await message.reply(
+        `❌ *Terjadi Kesalahan*\n\n` +
+        `Maaf, terjadi kesalahan dalam memproses pesan Anda. Silakan coba lagi nanti atau hubungi support.`
+      );
     }
   });
 
   return true;
+};
+
+// Helper function to handle activation code
+const handleActivationCode = async (message: any, code: string, whatsappNumber: string) => {
+  try {
+    // Import needed modules
+    const { db } = await import('./db');
+    const { whatsappActivationCodes, whatsappIntegrations } = await import('@shared/schema');
+    const { eq, and, gt, isNull } = await import('drizzle-orm');
+    
+    console.log(`Processing activation code: ${code} for WhatsApp: ${whatsappNumber}`);
+    
+    // Check if activation code exists and is still valid
+    const currentTime = Date.now();
+    const activationCode = await db.select()
+      .from(whatsappActivationCodes)
+      .where(
+        and(
+          eq(whatsappActivationCodes.code, code),
+          gt(whatsappActivationCodes.expiresAt, currentTime),
+          isNull(whatsappActivationCodes.usedAt)
+        )
+      )
+      .limit(1);
+
+    if (activationCode.length === 0) {
+      await message.reply('❌ Kode aktivasi tidak valid atau sudah kadaluarsa.');
+      return;
+    }
+
+    const codeData = activationCode[0];
+
+    // Check if this WhatsApp number is already connected
+    const existingConnection = await db.select()
+      .from(whatsappIntegrations)
+      .where(eq(whatsappIntegrations.whatsappNumber, whatsappNumber))
+      .limit(1);
+
+    if (existingConnection.length > 0) {
+      await message.reply('❌ Nomor WhatsApp ini sudah terhubung ke akun lain.');
+      return;
+    }
+
+    // Create new WhatsApp integration
+    await db.insert(whatsappIntegrations).values({
+      userId: codeData.userId,
+      whatsappNumber,
+      displayName: message._data.notifyName || null,
+      status: 'active',
+      activatedAt: Date.now(),
+    });
+
+    // Mark activation code as used
+    await db.update(whatsappActivationCodes)
+      .set({ usedAt: Date.now() })
+      .where(eq(whatsappActivationCodes.id, codeData.id));
+
+    await message.reply(
+      `✅ *Akun WhatsApp Berhasil Terhubung!*\n\n` +
+      `🎉 Selamat! WhatsApp Anda telah terhubung ke Monly AI.\n\n` +
+      `🤖 *Fitur yang Tersedia:*\n` +
+      `• 📝 Catat transaksi via teks\n` +
+      `• 🎤 Catat transaksi via suara\n` +
+      `• 📸 Scan struk/nota otomatis\n` +
+      `• 📊 Cek ringkasan keuangan\n\n` +
+      `💡 Ketik "bantuan" untuk panduan lengkap atau langsung mulai dengan mengirim transaksi seperti:\n` +
+      `"Makan siang 50000"`
+    );
+    
+    console.log(`WhatsApp ${whatsappNumber} successfully activated for user ${codeData.userId}`);
+    
+  } catch (error) {
+    console.error('Error processing activation:', error);
+    await message.reply('❌ Terjadi kesalahan saat memproses aktivasi. Silakan coba lagi.');
+  }
 };
 
 // Helper function to get user ID from WhatsApp number
@@ -342,5 +584,472 @@ const getUserIdFromWhatsApp = async (whatsappNumber: string): Promise<string | n
   } catch (error) {
     console.error('Error getting user ID from WhatsApp:', error);
     return null;
+  }
+};
+
+// Helper function to get user preferences
+const getUserPreferences = async (userId: string) => {
+  try {
+    return await storage.getUserPreferences(userId);
+  } catch (error) {
+    console.error('Error getting user preferences:', error);
+    return null;
+  }
+};
+
+// Helper function to get user categories
+const getUserCategories = async (userId: string) => {
+  try {
+    return await storage.getCategories(userId);
+  } catch (error) {
+    console.error('Error getting user categories:', error);
+    return [];
+  }
+};
+
+// Helper function to create transaction
+const createTransactionFromAnalysis = async (
+  userId: string,
+  analysis: any,
+  userPreferences: any,
+  categories: any[]
+) => {
+  try {
+    let matchingCategory = categories.find(c => 
+      c.name.toLowerCase() === analysis.category.toLowerCase()
+    );
+    
+    // Auto-categorization: create new category if none exists and auto-categorize is enabled
+    if (!matchingCategory && userPreferences?.autoCategorize && analysis.suggestedNewCategory) {
+      console.log('Creating new category:', analysis.suggestedNewCategory);
+      
+      try {
+        const newCategory = await storage.createCategory({
+          name: analysis.suggestedNewCategory.name,
+          icon: analysis.suggestedNewCategory.icon,
+          color: analysis.suggestedNewCategory.color,
+          type: analysis.suggestedNewCategory.type,
+          userId: userId,
+          isDefault: false
+        });
+        
+        matchingCategory = newCategory;
+        console.log('New category created:', newCategory);
+      } catch (categoryError) {
+        console.error('Failed to create new category:', categoryError);
+      }
+    }
+    
+    // Fallback to "Other" category if still no match
+    if (!matchingCategory) {
+      matchingCategory = categories.find(c => c.name.toLowerCase() === 'other');
+    }
+    
+    if (matchingCategory && analysis.amount > 0) {
+      const { insertTransactionSchema } = await import('@shared/schema');
+      
+      const validatedData = insertTransactionSchema.parse({
+        userId: userId,
+        categoryId: matchingCategory.id,
+        amount: parseFloat(analysis.amount.toString()),
+        currency: userPreferences?.defaultCurrency || "USD",
+        description: analysis.description,
+        type: analysis.type,
+        date: Math.floor(Date.now() / 1000),
+        aiGenerated: true,
+      });
+
+      const transaction = await storage.createTransaction(validatedData);
+      console.log('Transaction created from WhatsApp:', transaction);
+      
+      return {
+        success: true,
+        transaction,
+        analysis
+      };
+    }
+    
+    return {
+      success: false,
+      message: 'Tidak dapat menemukan kategori yang sesuai atau jumlah tidak valid'
+    };
+    
+  } catch (error) {
+    console.error('Error creating transaction:', error);
+    return {
+      success: false,
+      message: 'Gagal menyimpan transaksi'
+    };
+  }
+};
+
+// Helper function to format currency
+const formatCurrency = (amount: number, currency: string = 'USD') => {
+  const symbols: Record<string, string> = {
+    'USD': '$',
+    'EUR': '€',
+    'GBP': '£',
+    'JPY': '¥',
+    'IDR': 'Rp',
+    'CNY': '¥',
+    'KRW': '₩',
+    'SGD': 'S$',
+    'MYR': 'RM',
+    'THB': '฿',
+    'VND': '₫'
+  };
+  
+  const symbol = symbols[currency] || currency;
+  const formatter = new Intl.NumberFormat('id-ID');
+  
+  return `${symbol}${formatter.format(amount)}`;
+};
+
+// Helper function to process text message
+const processTextMessage = async (message: any, userId: string) => {
+  try {
+    const userPreferences = await getUserPreferences(userId);
+    const categories = await getUserCategories(userId);
+    
+    // Create preferences object for AI analysis
+    const aiPreferences = {
+      defaultCurrency: userPreferences?.defaultCurrency || 'USD',
+      language: userPreferences?.language || 'id',
+      autoCategorize: userPreferences?.autoCategorize || false
+    };
+    
+    console.log(`Analyzing text message for user ${userId}: ${message.body}`);
+    
+    // Analyze the message with AI
+    const analysis = await analyzeTransactionText(message.body, categories, aiPreferences);
+    console.log('WhatsApp text analysis result:', analysis);
+    
+    if (analysis.confidence > 0.7) {
+      const result = await createTransactionFromAnalysis(userId, analysis, userPreferences, categories);
+      
+      if (result.success) {
+        const formattedAmount = formatCurrency(analysis.amount, userPreferences?.defaultCurrency);
+        
+        await message.reply(
+          `✅ *Transaksi Berhasil Dicatat!*\n\n` +
+          `💰 Jumlah: ${formattedAmount}\n` +
+          `📝 Deskripsi: ${analysis.description}\n` +
+          `📂 Kategori: ${analysis.category}\n` +
+          `📊 Jenis: ${analysis.type === 'expense' ? 'Pengeluaran' : 'Pemasukan'}\n` +
+          `🎯 Tingkat Kepercayaan: ${Math.round(analysis.confidence * 100)}%\n\n` +
+          `_Transaksi telah disimpan dalam akun Anda_`
+        );
+      } else {
+        await message.reply(
+          `❌ *Gagal Mencatat Transaksi*\n\n` +
+          `${result.message}\n\n` +
+          `Silakan coba lagi atau hubungi support.`
+        );
+      }
+    } else {
+      await message.reply(
+        `🤔 *Pesan Tidak Dipahami*\n\n` +
+        `Maaf, saya tidak dapat memahami pesan Anda sebagai transaksi keuangan.\n\n` +
+        `Contoh format yang bisa dipahami:\n` +
+        `• "Makan siang di McD 75000"\n` +
+        `• "Beli bensin 50000"\n` +
+        `• "Gaji bulan ini 5000000"\n` +
+        `• "Transfer dari ayah 200000"\n\n` +
+        `Atau ketik *"bantuan"* untuk melihat daftar perintah.`
+      );
+    }
+    
+  } catch (error) {
+    console.error('Error processing text message:', error);
+    await message.reply(
+      `❌ *Terjadi Kesalahan*\n\n` +
+      `Maaf, terjadi kesalahan dalam memproses pesan Anda. Silakan coba lagi nanti.`
+    );
+  }
+};
+
+// Helper function to process voice message
+const processVoiceMessage = async (message: any, userId: string) => {
+  try {
+    console.log('Processing voice message from WhatsApp...');
+    
+    const userPreferences = await getUserPreferences(userId);
+    const categories = await getUserCategories(userId);
+    
+    // Download the audio
+    const media = await message.downloadMedia();
+    
+    if (!media?.data) {
+      await message.reply(
+        `❌ *Gagal Memproses Audio*\n\n` +
+        `Tidak dapat mengunduh file audio. Silakan coba kirim ulang.`
+      );
+      return;
+    }
+    
+    // Convert base64 to buffer
+    const audioBuffer = Buffer.from(media.data, 'base64');
+    
+    // Create a file-like object for OpenAI Whisper
+    const audioFile = new File([audioBuffer], 'audio.ogg', { 
+      type: media.mimetype || 'audio/ogg' 
+    });
+
+    console.log('Transcribing audio with OpenAI Whisper...');
+    
+    // Use OpenAI Whisper for speech-to-text
+    const transcription = await openai.audio.transcriptions.create({
+      file: audioFile,
+      model: 'whisper-1',
+      language: userPreferences?.language || 'id',
+      response_format: 'text',
+      temperature: 0.2,
+    });
+
+    const transcribedText = transcription.trim();
+    console.log('Transcribed text:', transcribedText);
+
+    if (!transcribedText || transcribedText.length === 0) {
+      await message.reply(
+        `🎤 *Tidak Dapat Mendengar*\n\n` +
+        `Saya tidak dapat mendengar dengan jelas. Silakan coba berbicara lebih jelas atau kirim pesan teks.`
+      );
+      return;
+    }
+    
+    // Create preferences object for AI analysis
+    const aiPreferences = {
+      defaultCurrency: userPreferences?.defaultCurrency || 'USD',
+      language: userPreferences?.language || 'id',
+      autoCategorize: userPreferences?.autoCategorize || false
+    };
+    
+    // Analyze the transcribed text
+    const analysis = await analyzeTransactionText(transcribedText, categories, aiPreferences);
+    console.log('Voice analysis result:', analysis);
+
+    if (analysis.confidence > 0.6) {
+      const result = await createTransactionFromAnalysis(userId, analysis, userPreferences, categories);
+      
+      if (result.success) {
+        const formattedAmount = formatCurrency(analysis.amount, userPreferences?.defaultCurrency);
+        
+        await message.reply(
+          `🎤 *Pesan Suara Berhasil Diproses!*\n\n` +
+          `📝 Saya dengar: "${transcribedText}"\n\n` +
+          `✅ *Transaksi Dicatat:*\n` +
+          `💰 Jumlah: ${formattedAmount}\n` +
+          `📝 Deskripsi: ${analysis.description}\n` +
+          `📂 Kategori: ${analysis.category}\n` +
+          `📊 Jenis: ${analysis.type === 'expense' ? 'Pengeluaran' : 'Pemasukan'}\n` +
+          `🎯 Tingkat Kepercayaan: ${Math.round(analysis.confidence * 100)}%`
+        );
+      } else {
+        await message.reply(
+          `🎤 *Pesan Suara Diproses, Tapi...*\n\n` +
+          `📝 Saya dengar: "${transcribedText}"\n\n` +
+          `❌ Gagal mencatat transaksi: ${result.message}`
+        );
+      }
+    } else {
+      await message.reply(
+        `🎤 *Pesan Suara Tidak Dipahami*\n\n` +
+        `📝 Saya dengar: "${transcribedText}"\n\n` +
+        `🤔 Maaf, saya tidak dapat memahami ini sebagai transaksi keuangan.\n\n` +
+        `Coba ucapkan seperti:\n` +
+        `• "Makan siang di McD tujuh puluh lima ribu"\n` +
+        `• "Beli bensin lima puluh ribu"\n` +
+        `• "Gaji bulan ini lima juta"`
+      );
+    }
+    
+  } catch (error) {
+    console.error('Error processing voice message:', error);
+    await message.reply(
+      `❌ *Gagal Memproses Pesan Suara*\n\n` +
+      `Terjadi kesalahan dalam memproses pesan suara Anda. Silakan coba lagi atau kirim pesan teks.`
+    );
+  }
+};
+
+// Helper function to process image message
+const processImageMessage = async (message: any, userId: string) => {
+  try {
+    console.log('Processing image message from WhatsApp...');
+    
+    const userPreferences = await getUserPreferences(userId);
+    const categories = await getUserCategories(userId);
+    
+    // Download the image
+    const media = await message.downloadMedia();
+    
+    if (!media?.data) {
+      await message.reply(
+        `❌ *Gagal Memproses Gambar*\n\n` +
+        `Tidak dapat mengunduh gambar. Silakan coba kirim ulang.`
+      );
+      return;
+    }
+    
+    // Validate image type
+    if (!media.mimetype?.startsWith('image/')) {
+      await message.reply(
+        `❌ *Format File Tidak Didukung*\n\n` +
+        `Silakan kirim file gambar (JPG, PNG, dll) yang berisi struk atau nota.`
+      );
+      return;
+    }
+    
+    console.log('Processing receipt image with OpenAI Vision...');
+    
+    // Create preferences object for AI analysis
+    const aiPreferences = {
+      defaultCurrency: userPreferences?.defaultCurrency || 'USD',
+      language: userPreferences?.language || 'id',
+      autoCategorize: userPreferences?.autoCategorize || false
+    };
+    
+    // Process the image with AI
+    const result = await processReceiptImage(media.data, categories, aiPreferences);
+    console.log('Image analysis result:', result);
+    
+    if (result.confidence > 0.6 && result.transactions.length > 0) {
+      let successCount = 0;
+      let responses: string[] = [];
+      
+      for (const transaction of result.transactions) {
+        const transactionResult = await createTransactionFromAnalysis(
+          userId, 
+          transaction, 
+          userPreferences, 
+          categories
+        );
+        
+        if (transactionResult.success) {
+          successCount++;
+          const formattedAmount = formatCurrency(transaction.amount, userPreferences?.defaultCurrency);
+          responses.push(
+            `✅ ${transaction.description}\n` +
+            `💰 ${formattedAmount} (${transaction.category})`
+          );
+        }
+      }
+      
+      if (successCount > 0) {
+        await message.reply(
+          `📸 *Struk Berhasil Diproses!*\n\n` +
+          `📝 Teks yang ditemukan:\n"${result.text}"\n\n` +
+          `✅ *${successCount} Transaksi Dicatat:*\n\n` +
+          responses.join('\n\n') +
+          `\n\n🎯 Tingkat Kepercayaan: ${Math.round(result.confidence * 100)}%`
+        );
+      } else {
+        await message.reply(
+          `📸 *Struk Diproses, Tapi...*\n\n` +
+          `📝 Teks yang ditemukan:\n"${result.text}"\n\n` +
+          `❌ Tidak ada transaksi yang berhasil dicatat. Silakan periksa gambar atau coba lagi.`
+        );
+      }
+    } else {
+      await message.reply(
+        `📸 *Gambar Tidak Dapat Diproses*\n\n` +
+        `🤔 Maaf, saya tidak dapat menemukan informasi transaksi yang jelas dalam gambar ini.\n\n` +
+        `💡 *Tips untuk hasil terbaik:*\n` +
+        `• Pastikan struk/nota terlihat jelas\n` +
+        `• Hindari bayangan atau pantulan\n` +
+        `• Pastikan teks dapat dibaca\n` +
+        `• Foto dari jarak yang tepat\n\n` +
+        `Atau coba kirim detail transaksi via teks/suara.`
+      );
+    }
+    
+  } catch (error) {
+    console.error('Error processing image message:', error);
+    await message.reply(
+      `❌ *Gagal Memproses Gambar*\n\n` +
+      `Terjadi kesalahan dalam memproses gambar Anda. Silakan coba lagi atau kirim detail transaksi via teks.`
+    );
+  }
+};
+
+// Helper function to show help message
+const showHelpMessage = async (message: any) => {
+  await message.reply(
+    `🤖 *Monly AI - Asisten Keuangan WhatsApp*\n\n` +
+    `📝 *Cara Mencatat Transaksi:*\n\n` +
+    `1️⃣ *Pesan Teks:*\n` +
+    `• "Makan siang di McD 75000"\n` +
+    `• "Beli bensin 50000"\n` +
+    `• "Gaji bulan ini 5000000"\n` +
+    `• "Transfer dari ayah 200000"\n\n` +
+    `2️⃣ *Pesan Suara:*\n` +
+    `Tekan dan tahan tombol mikrofon, lalu ucapkan transaksi Anda\n\n` +
+    `3️⃣ *Kirim Foto:*\n` +
+    `Foto struk/nota belanja untuk pencatatan otomatis\n\n` +
+    `📱 *Perintah Lain:*\n` +
+    `• ketik "bantuan" - Lihat pesan ini\n` +
+    `• ketik "saldo" - Cek ringkasan keuangan\n` +
+    `• ketik "status" - Status koneksi akun\n\n` +
+    `💡 *Tips:* Semakin jelas informasi yang Anda berikan, semakin akurat pencatatan transaksi!`
+  );
+};
+
+// Helper function to show balance/summary
+const showBalanceSummary = async (message: any, userId: string) => {
+  try {
+    // Get recent transactions and summary
+    const transactions = await storage.getTransactions(userId);
+    const userPreferences = await getUserPreferences(userId);
+    
+    if (!transactions || transactions.length === 0) {
+      await message.reply(
+        `📊 *Ringkasan Keuangan*\n\n` +
+        `Belum ada transaksi yang tercatat.\n\n` +
+        `Mulai catat transaksi Anda dengan mengirim pesan seperti:\n` +
+        `"Makan siang 50000" atau foto struk belanja.`
+      );
+      return;
+    }
+    
+    // Calculate totals for current month
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthlyTransactions = transactions.filter(t => 
+      new Date(t.date * 1000) >= startOfMonth
+    );
+    
+    const monthlyIncome = monthlyTransactions
+      .filter(t => t.type === 'income')
+      .reduce((sum, t) => sum + t.amount, 0);
+    
+    const monthlyExpense = monthlyTransactions
+      .filter(t => t.type === 'expense')
+      .reduce((sum, t) => sum + t.amount, 0);
+    
+    const balance = monthlyIncome - monthlyExpense;
+    const currency = userPreferences?.defaultCurrency || 'USD';
+    
+    // Format recent transactions
+    const recentList = transactions.slice(0, 3).map(t => {
+      const amount = formatCurrency(t.amount, currency);
+      const type = t.type === 'expense' ? '📤' : '📥';
+      return `${type} ${amount} - ${t.description}`;
+    }).join('\n');
+    
+    await message.reply(
+      `📊 *Ringkasan Keuangan (${now.toLocaleString('id-ID', { month: 'long', year: 'numeric' })})*\n\n` +
+      `📥 *Pemasukan:* ${formatCurrency(monthlyIncome, currency)}\n` +
+      `📤 *Pengeluaran:* ${formatCurrency(monthlyExpense, currency)}\n` +
+      `💰 *Saldo:* ${formatCurrency(balance, currency)}\n\n` +
+      `📋 *Transaksi Terbaru:*\n${recentList}\n\n` +
+      `_Akses dashboard lengkap di aplikasi Monly AI_`
+    );
+    
+  } catch (error) {
+    console.error('Error showing balance summary:', error);
+    await message.reply(
+      `❌ *Gagal Mengambil Data*\n\n` +
+      `Terjadi kesalahan saat mengambil ringkasan keuangan. Silakan coba lagi nanti.`
+    );
   }
 };
