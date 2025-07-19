@@ -44,6 +44,34 @@ export const userPreferences = sqliteTable("user_preferences", {
   updatedAt: integer("updated_at"), // Unix timestamp
 });
 
+// WhatsApp integrations table
+export const whatsappIntegrations = sqliteTable("whatsapp_integrations", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: text("user_id").references(() => users.id).notNull(),
+  whatsappNumber: text("whatsapp_number").notNull(),
+  displayName: text("display_name"),
+  activatedAt: integer("activated_at"), // Unix timestamp
+  status: text("status", { enum: ["active", "inactive"] }).notNull().default("active"),
+  createdAt: integer("created_at"), // Unix timestamp
+}, (table) => [
+  index("idx_whatsapp_integrations_user_id").on(table.userId),
+  index("idx_whatsapp_integrations_number").on(table.whatsappNumber),
+]);
+
+// WhatsApp activation codes table
+export const whatsappActivationCodes = sqliteTable("whatsapp_activation_codes", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: text("user_id").references(() => users.id).notNull(),
+  code: text("code").notNull().unique(),
+  expiresAt: integer("expires_at").notNull(), // Unix timestamp
+  usedAt: integer("used_at"), // Unix timestamp
+  createdAt: integer("created_at"), // Unix timestamp
+}, (table) => [
+  index("idx_whatsapp_activation_codes_user_id").on(table.userId),
+  index("idx_whatsapp_activation_codes_code").on(table.code),
+  index("idx_whatsapp_activation_codes_expires_at").on(table.expiresAt),
+]);
+
 // Categories table
 export const categories = sqliteTable("categories", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -205,6 +233,22 @@ export const goalSavingsPlansRelations = relations(goalSavingsPlans, ({ one }) =
   }),
 }));
 
+// WhatsApp integrations relations
+export const whatsappIntegrationsRelations = relations(whatsappIntegrations, ({ one }) => ({
+  user: one(users, {
+    fields: [whatsappIntegrations.userId],
+    references: [users.id],
+  }),
+}));
+
+// WhatsApp activation codes relations
+export const whatsappActivationCodesRelations = relations(whatsappActivationCodes, ({ one }) => ({
+  user: one(users, {
+    fields: [whatsappActivationCodes.userId],
+    references: [users.id],
+  }),
+}));
+
 // Insert schemas
 export const insertCategorySchema = createInsertSchema(categories).omit({
   id: true,
@@ -239,6 +283,16 @@ export const updateUserPreferencesSchema = insertUserPreferencesSchema.omit({
   userId: true,
 });
 
+export const insertWhatsappIntegrationSchema = createInsertSchema(whatsappIntegrations).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertWhatsappActivationCodeSchema = createInsertSchema(whatsappActivationCodes).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -255,3 +309,7 @@ export type Goal = typeof goals.$inferSelect;
 export type InsertUserPreferences = z.infer<typeof insertUserPreferencesSchema>;
 export type UpdateUserPreferences = z.infer<typeof updateUserPreferencesSchema>;
 export type UserPreferences = typeof userPreferences.$inferSelect;
+export type WhatsappIntegration = typeof whatsappIntegrations.$inferSelect;
+export type InsertWhatsappIntegration = z.infer<typeof insertWhatsappIntegrationSchema>;
+export type WhatsappActivationCode = typeof whatsappActivationCodes.$inferSelect;
+export type InsertWhatsappActivationCode = z.infer<typeof insertWhatsappActivationCodeSchema>;

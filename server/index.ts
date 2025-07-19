@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
+import { initializeWhatsAppClient, registerMessageHandlers } from "./whatsapp-service";
 
 const app = express();
 app.use(express.json());
@@ -73,5 +74,39 @@ app.use((req, res, next) => {
     reusePort: true,
   }, () => {
     log(`serving on port ${port}`);
+    
+    // Initialize WhatsApp bot for multi-account support
+    try {
+      const botUserId = 'monly-ai-bot';
+      log('Initializing WhatsApp bot...');
+      const connection = initializeWhatsAppClient(botUserId);
+      
+      // Register message handlers once the client is ready
+      const checkReady = setInterval(() => {
+        if (connection.status === 'ready') {
+          log('WhatsApp bot is ready! Registering message handlers...');
+          const handlersRegistered = registerMessageHandlers(botUserId);
+          if (handlersRegistered) {
+            log('✅ WhatsApp bot message handlers registered successfully');
+          } else {
+            log('❌ Failed to register WhatsApp bot message handlers');
+          }
+          clearInterval(checkReady);
+        } else if (connection.status === 'qr_received') {
+          log('WhatsApp QR code received. Please scan with your WhatsApp bot account.');
+        }
+      }, 2000);
+      
+      // Clear interval after 5 minutes if still not ready
+      setTimeout(() => {
+        clearInterval(checkReady);
+        if (connection.status !== 'ready') {
+          log('WhatsApp bot initialization timed out');
+        }
+      }, 300000); // 5 minutes
+      
+    } catch (error) {
+      log(`Failed to initialize WhatsApp bot: ${error}`);
+    }
   });
 })();

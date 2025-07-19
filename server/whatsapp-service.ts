@@ -251,36 +251,96 @@ export const registerMessageHandlers = (userId: string): boolean => {
   connection.client.on('message', async (message: WAMessage) => {
     console.log(`Message received from ${message.from}: ${message.body}`);
 
-    // Simple expense tracking pattern: "spent $X on Y"
-    const expensePattern = /spent\s+[$£€]?(\d+(?:\.\d+)?)\s+(?:on|for)\s+(.*)/i;
-    const expenseMatch = RegExp.prototype.exec.call(expensePattern, message.body);
+    // Check for activation command: "AKTIVASI: CODE"
+    const activationPattern = /^AKTIVASI:\s*([A-Z0-9]{6})$/i;
+    const activationMatch = message.body.match(activationPattern);
 
-    if (expenseMatch) {
-      const amount = parseFloat(expenseMatch[1]);
-      const category = expenseMatch[2].trim();
+    if (activationMatch) {
+      const code = activationMatch[1].toUpperCase();
+      const whatsappNumber = message.from.replace('@c.us', ''); // Remove WhatsApp suffix
       
-      // Here you would integrate with your expense tracking system
-      // For example: trackExpense(userId, amount, category);
-      
-      await message.reply(`✅ Recorded expense: ${amount} for ${category}`);
-    } 
-    // Simple balance inquiry
-    else if (message.body.toLowerCase().includes('balance') || message.body.toLowerCase() === 'saldo') {
-      // Here you would fetch the actual balance
-      // For example: const balance = await getBalance(userId);
-      
-      await message.reply(`💰 Your current balance: $1,234.56`);
-    }
-    // Help command
-    else if (message.body.toLowerCase() === 'help' || message.body.toLowerCase() === 'bantuan') {
-      await message.reply(
-        "🤖 *Monly AI Bot Commands*\n\n" +
-        "- 'spent $X on Y' - Track an expense\n" +
-        "- 'balance' - Check your balance\n" +
-        "- 'help' - Show this help message"
-      );
+      try {
+        // Call activation API using internal database call instead of fetch
+        // Import needed for internal API call
+        const { db } = await import('./db');
+        const { whatsappActivationCodes, whatsappIntegrations } = await import('@shared/schema');
+        const { eq, and, gt, isNull } = await import('drizzle-orm');
+        
+        console.log(`Processing activation code: ${code} for WhatsApp: ${whatsappNumber}`);
+        
+        // Check if activation code exists and is still valid
+        const currentTime = Date.now();
+        const activationCode = await db.select()
+          .from(whatsappActivationCodes)
+          .where(
+            and(
+              eq(whatsappActivationCodes.code, code),
+              gt(whatsappActivationCodes.expiresAt, currentTime),
+              isNull(whatsappActivationCodes.usedAt)
+            )
+          )
+          .limit(1);
+
+        if (activationCode.length === 0) {
+          await message.reply('❌ Kode aktivasi tidak valid atau sudah kadaluarsa.');
+          return;
+        }
+
+        const codeData = activationCode[0];
+
+        // Check if this WhatsApp number is already connected
+        const existingConnection = await db.select()
+          .from(whatsappIntegrations)
+          .where(eq(whatsappIntegrations.whatsappNumber, whatsappNumber))
+          .limit(1);
+
+        if (existingConnection.length > 0) {
+          await message.reply('❌ Nomor WhatsApp ini sudah terhubung ke akun lain.');
+          return;
+        }
+
+        // Create new WhatsApp integration
+        await db.insert(whatsappIntegrations).values({
+          userId: codeData.userId,
+          whatsappNumber,
+          displayName: message._data.notifyName || null,
+          status: 'active',
+          activatedAt: Date.now(),
+        });
+
+        // Mark activation code as used
+        await db.update(whatsappActivationCodes)
+          .set({ usedAt: Date.now() })
+          .where(eq(whatsappActivationCodes.id, codeData.id));
+
+        await message.reply('✅ Akun WhatsApp Anda telah berhasil terhubung ke Monly AI! Ketik "bantuan" untuk melihat daftar perintah.');
+        console.log(`WhatsApp ${whatsappNumber} successfully activated for user ${codeData.userId}`);
+        
+      } catch (error) {
+        console.error('Error processing activation:', error);
+        await message.reply('❌ Terjadi kesalahan saat memproses aktivasi. Silakan coba lagi.');
+      }
     }
   });
 
   return true;
+};
+
+// Helper function to get user ID from WhatsApp number
+const getUserIdFromWhatsApp = async (whatsappNumber: string): Promise<string | null> => {
+  try {
+    const { db } = await import('./db');
+    const { whatsappIntegrations } = await import('@shared/schema');
+    const { eq } = await import('drizzle-orm');
+    
+    const connection = await db.select()
+      .from(whatsappIntegrations)
+      .where(eq(whatsappIntegrations.whatsappNumber, whatsappNumber))
+      .limit(1);
+      
+    return connection.length > 0 ? connection[0].userId : null;
+  } catch (error) {
+    console.error('Error getting user ID from WhatsApp:', error);
+    return null;
+  }
 };
