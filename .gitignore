@@ -178,3 +178,7 @@ vite.config.ts.*
 # Misc
 .yarnrc.yml
 .pnp.*
+
+# cache whatsapp
+.wwebjs_cache
+.wwebjs_auth
