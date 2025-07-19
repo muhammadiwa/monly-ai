@@ -23,6 +23,45 @@ function getCurrencySymbol(currency: string): string {
   return symbols[currency] || currency;
 }
 
+// Helper function to parse Indonesian amount formats
+function parseIndonesianAmount(text: string): number {
+  // Remove common prefixes and normalize
+  const cleanText = text.toLowerCase()
+    .replace(/bayar|beli|transfer|gaji|biaya|pendaftaran|kuliah|sekolah|dari|untuk|ke|di|dengan/g, '')
+    .trim();
+  
+  // Patterns for Indonesian amounts
+  const patterns = [
+    // "500rb", "500ribu" 
+    /(\d+(?:[.,]\d+)?)\s*(?:rb|ribu)/i,
+    // "2jt", "2juta"
+    /(\d+(?:[.,]\d+)?)\s*(?:jt|juta)/i,
+    // "1m", "1miliar"
+    /(\d+(?:[.,]\d+)?)\s*(?:m|miliar)/i,
+    // Plain numbers "500000"
+    /(\d{3,})/
+  ];
+  
+  for (const pattern of patterns) {
+    const match = cleanText.match(pattern);
+    if (match) {
+      const num = parseFloat(match[1].replace(',', '.'));
+      
+      if (pattern.source.includes('rb|ribu')) {
+        return num * 1000;
+      } else if (pattern.source.includes('jt|juta')) {
+        return num * 1000000;
+      } else if (pattern.source.includes('m|miliar')) {
+        return num * 1000000000;
+      } else {
+        return num;
+      }
+    }
+  }
+  
+  return 0;
+}
+
 export interface TransactionAnalysis {
   amount: number;
   description: string;
@@ -316,6 +355,13 @@ export async function analyzeTransactionText(
           5. Make descriptions clear and concise
           6. ALWAYS analyze for date information in the message
           
+          AMOUNT PARSING RULES FOR INDONESIAN:
+          - "rb" or "ribu" = thousand (×1,000)
+          - "jt" or "juta" = million (×1,000,000)
+          - "m" or "miliar" = billion (×1,000,000,000)
+          - Examples: "500rb" = 500,000 | "2jt" = 2,000,000 | "1.5juta" = 1,500,000
+          - NEVER interpret "rb" as millions - it's always thousands!
+          
           DATE PARSING INSTRUCTIONS:
           - Look for date references like "kemarin" (yesterday), "tanggal 15 juli", "3 hari lalu", etc.
           - If NO date is mentioned, DO NOT include date field (will default to today)
@@ -355,8 +401,10 @@ export async function analyzeTransactionText(
           EXAMPLES for ${language}:
           ${language === 'Indonesian' ? `
           - "kemarin gaji 5000000" → {"amount": 5000000, "description": "Gaji", "category": "Salary", "type": "income", "confidence": 1, "date": [yesterday_timestamp]}
+          - "bayar biaya pendaftaran kuliah 500rb" → {"amount": 500000, "description": "Bayar Biaya Pendaftaran Kuliah", "category": "Education", "type": "expense", "confidence": 0.95}
           - "tanggal 15 juli makan siang di mcdonald 75000" → {"amount": 75000, "description": "Makan Siang di McDonald's", "category": "Food & Dining", "type": "expense", "confidence": 0.95, "date": [july_15_timestamp]}
           - "beli kopi 25000" → {"amount": 25000, "description": "Beli Kopi", "category": "Food & Dining", "type": "expense", "confidence": 0.9} (no date = today)
+          - "transfer 2jt dari ayah" → {"amount": 2000000, "description": "Transfer dari Ayah", "category": "Other", "type": "income", "confidence": 0.9}
           ` : `
           - "yesterday salary $1000" → {"amount": 1000, "description": "Salary", "category": "Salary", "type": "income", "confidence": 1, "date": [yesterday_timestamp]}
           - "july 15 lunch at mcdonald's $25" → {"amount": 25, "description": "Lunch at McDonald's", "category": "Food & Dining", "type": "expense", "confidence": 0.95, "date": [july_15_timestamp]}
@@ -375,6 +423,18 @@ export async function analyzeTransactionText(
 
     const result = JSON.parse(response.choices[0].message.content || "{}");
     
+    // Fallback parsing for Indonesian number formats if AI fails
+    let amount = Math.abs(parseFloat(result.amount || "0"));
+    
+    if (amount === 0 || amount < 100) {
+      // Try to parse Indonesian format manually as fallback
+      const indonesianAmount = parseIndonesianAmount(text);
+      if (indonesianAmount > 0) {
+        amount = indonesianAmount;
+        console.log(`Fallback parsing detected amount: ${amount} from text: "${text}"`);
+      }
+    }
+    
     // Parse date if provided by AI, otherwise use fallback parsing
     let transactionDate: number | undefined;
     
@@ -390,7 +450,7 @@ export async function analyzeTransactionText(
     }
     
     const analysis: TransactionAnalysis = {
-      amount: Math.abs(parseFloat(result.amount || "0")),
+      amount: amount,  // Use processed amount (either from AI or fallback)
       description: result.description || "Transaction",
       category: result.category || "Other",
       type: result.type || "expense",
@@ -750,4 +810,320 @@ export async function generateBudgetAlert(
     alertType,
     message
   };
+}
+
+export interface BudgetRecommendation {
+  category: string;
+  categoryId: number;
+  recommendedAmount: number;
+  period: "monthly" | "weekly";
+  reasoning: string;
+  confidence: number;
+}
+
+export interface FinancialProfile {
+  totalIncome: number;
+  totalExpenses: number;
+  savingsRate: number;
+  topCategories: Array<{category: string; amount: number; percentage: number}>;
+  monthlyPattern: any[];
+  riskLevel: "conservative" | "moderate" | "aggressive";
+}
+
+export async function analyzeFinancialProfile(
+  userId: string,
+  transactions: any[],
+  userPreferences?: UserPreferences
+): Promise<FinancialProfile> {
+  try {
+    const now = new Date();
+    const threeMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 3, 1);
+    
+    // Filter recent transactions (last 3 months)
+    const recentTransactions = transactions.filter(t => 
+      new Date(t.date * 1000) >= threeMonthsAgo
+    );
+    
+    const income = recentTransactions
+      .filter(t => t.type === 'income')
+      .reduce((sum, t) => sum + t.amount, 0);
+    
+    const expenses = recentTransactions
+      .filter(t => t.type === 'expense')
+      .reduce((sum, t) => sum + t.amount, 0);
+    
+    const monthlyIncome = income / 3;
+    const monthlyExpenses = expenses / 3;
+    const savingsRate = monthlyIncome > 0 ? ((monthlyIncome - monthlyExpenses) / monthlyIncome) * 100 : 0;
+    
+    // Analyze spending by category
+    const categorySpending: Record<string, number> = {};
+    recentTransactions
+      .filter(t => t.type === 'expense')
+      .forEach(t => {
+        const categoryName = t.category?.name || 'Other';
+        categorySpending[categoryName] = (categorySpending[categoryName] || 0) + t.amount;
+      });
+    
+    const topCategories = Object.entries(categorySpending)
+      .map(([category, amount]) => ({
+        category,
+        amount: amount / 3, // Monthly average
+        percentage: (amount / expenses) * 100
+      }))
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 5);
+    
+    // Determine risk level based on savings rate
+    let riskLevel: "conservative" | "moderate" | "aggressive";
+    if (savingsRate >= 20) {
+      riskLevel = "aggressive";
+    } else if (savingsRate >= 10) {
+      riskLevel = "moderate";
+    } else {
+      riskLevel = "conservative";
+    }
+    
+    return {
+      totalIncome: monthlyIncome,
+      totalExpenses: monthlyExpenses,
+      savingsRate,
+      topCategories,
+      monthlyPattern: [], // Could be enhanced later
+      riskLevel
+    };
+  } catch (error) {
+    console.error('Error analyzing financial profile:', error);
+    throw error;
+  }
+}
+
+export async function generateBudgetRecommendations(
+  userId: string,
+  financialProfile: FinancialProfile,
+  availableCategories: any[],
+  missingCategory?: string,
+  userPreferences?: UserPreferences,
+  rawTransactions?: any[]
+): Promise<BudgetRecommendation[]> {
+  try {
+    const language = userPreferences?.language === 'id' ? 'Indonesian' : 'English';
+    const currency = userPreferences?.defaultCurrency || 'USD';
+    const currencySymbol = getCurrencySymbol(currency);
+    
+    // Create financial summary for AI
+    const financialSummary = {
+      monthlyIncome: financialProfile.totalIncome,
+      monthlyExpenses: financialProfile.totalExpenses,
+      savingsRate: financialProfile.savingsRate,
+      riskLevel: financialProfile.riskLevel,
+      topSpendingCategories: financialProfile.topCategories
+    };
+    
+    // Filter transactions for the specific category if we have raw transaction data
+    let categoryTransactions: any[] = [];
+    if (rawTransactions && missingCategory) {
+      categoryTransactions = rawTransactions.filter(t => 
+        t.category?.name === missingCategory || 
+        (typeof t.category === 'string' && t.category === missingCategory)
+      );
+      console.log(`[BUDGET AI DEBUG] Found ${categoryTransactions.length} transactions for category ${missingCategory}:`, 
+        categoryTransactions.map(t => ({ description: t.description, amount: t.amount, category: t.category }))
+      );
+    }
+    
+    const categoryList = availableCategories.map(cat => 
+      `- ${cat.name} (ID: ${cat.id})`
+    ).join('\n');
+    
+    let prompt = '';
+    
+    if (missingCategory) {
+      // Single category recommendation
+      prompt = `As a financial advisor AI, recommend a budget for the "${missingCategory}" category based on this user's financial profile.`;
+    } else {
+      // All categories recommendation
+      prompt = `As a financial advisor AI, recommend budgets for ALL available categories based on this user's financial profile.`;
+    }
+    
+    const response = await openai.chat.completions.create({
+      model: "gpt-4.1-nano",
+      messages: [
+        {
+          role: "system",
+          content: `You are an expert financial advisor. Create realistic budget recommendations in ${language}.
+          
+          User's Financial Profile:
+          ${JSON.stringify(financialSummary, null, 2)}
+          
+          ${categoryTransactions.length > 0 ? `
+          =================== ACTUAL TRANSACTIONS TO ANALYZE ===================
+          FOR CATEGORY "${missingCategory}", THESE ARE THE REAL TRANSACTIONS:
+          ${categoryTransactions.map((t, i) => 
+            `${i + 1}. DESCRIPTION: "${t.description}" - AMOUNT: ${currencySymbol}${t.amount.toLocaleString()}`
+          ).join('\n          ')}
+          
+          YOU MUST CLASSIFY EACH TRANSACTION ABOVE AS ONE-TIME OR RECURRING FIRST
+          ================================================================
+          ` : ''}
+          
+          Available Categories:
+          ${categoryList}
+          
+          Currency: ${currency} (${currencySymbol})
+          
+          BUDGET RECOMMENDATION RULES:
+          1. Total recommended budgets should not exceed 80% of monthly income
+          2. Keep 20% buffer for savings and unexpected expenses
+          3. Prioritize essential categories (Food, Transportation, Bills)
+          4. Consider user's historical spending patterns
+          5. Adjust based on risk level (conservative = lower budgets, aggressive = higher budgets)
+          6. Recommend monthly budgets by default
+          7. For one-time expenses (like education fees), calculate reasonable monthly allocation
+          8. IMPORTANT: If a large one-time expense was just recorded, don't use it as baseline for monthly budget
+          
+          CRITICAL EXPENSE TYPE ANALYSIS:
+          STEP 1: First, analyze ALL transactions in the category and classify each one:
+          
+          ONE-TIME EXPENSES (COMPLETELY EXCLUDE from budget calculation):
+          Keywords: "pendaftaran", "uang pangkal", "biaya masuk", "registration", "enrollment", "deposit", "down payment", "setup", "activation", "administrasi awal"
+          
+          RECURRING EXPENSES (USE ONLY THESE for budget calculation):
+          Keywords: "SPP", "uang sekolah", "tuition", "monthly", "bulanan", "les", "kursus", "course", "transport sekolah", "buku"
+          
+          STEP 2: Budget Calculation Method:
+          - MANDATORY: List each transaction with its classification first
+          - Take ONLY recurring transactions from the category  
+          - Calculate average of recurring transactions only
+          - Add 15-20% buffer to recurring average
+          - If NO recurring transactions exist, recommend minimum 150,000-200,000 for the category
+          - NEVER include one-time expenses in the average calculation
+          
+          CRITICAL: REASONING MUST SOUND NATURAL AND PROFESSIONAL
+          - Write like a human financial advisor explaining to a client
+          - Avoid robotic phrases like "kata mengandung", "diklasifikasi", "menunjukkan"
+          - Focus on the practical financial planning aspect
+          - Explain the logic behind separating one-time vs recurring costs
+          - Make it sound like professional advice, not technical analysis
+          
+          SMART AMOUNT CALCULATION:
+          - CRITICAL: Analyze transaction description to identify expense type FIRST
+          - One-time expenses: "biaya pendaftaran", "uang pangkal", "uang masuk", "down payment", "biaya administrasi awal"
+          - Recurring expenses: "SPP", "uang sekolah bulanan", "les", "kursus", "transport sekolah", "buku"
+          - NEVER mix one-time and recurring for budget calculation
+          - For recurring expenses: Use ONLY recurring amounts + 15-20% buffer
+          - For categories with mix: Base budget on recurring expenses only, ignore one-time
+          - Example: "biaya pendaftaran 500rb" (ignore) + "SPP 300rb" (use) → Budget: 350rb-400rb/month
+          - Minimum budget: 50,000 for any category
+          
+          ${language === 'Indonesian' ? `
+          WAJIB IKUTI CONTOH ANALISA STEP-BY-STEP INDONESIA:
+          
+          Scenario: Kategori Education punya transaksi:
+          1. "Biaya Pendaftaran" - Rp500.000
+          2. "SPP Sekolah" - Rp300.000
+          
+          STEP 1 - ANALISA TRANSAKSI SATU PER SATU:
+          ❌ Transaksi 1: "Biaya Pendaftaran" Rp500.000 = ONE-TIME (kata "pendaftaran" = diabaikan)
+          ✅ Transaksi 2: "SPP Sekolah" Rp300.000 = RECURRING (kata "SPP" = digunakan)
+          
+          STEP 2 - PERHITUNGAN BUDGET FINAL:
+          - Transaksi ONE-TIME yang diabaikan: Rp500.000 (pendaftaran)  
+          - Transaksi RECURRING yang dipakai: Rp300.000 (SPP)
+          - Rata-rata dari RECURRING saja: Rp300.000
+          - Budget final: Rp300.000 + 20% buffer = Rp360.000/bulan
+          
+          REASONING WAJIB: "Saya lihat ada biaya pendaftaran Rp500.000 yang tentu saja cuma dibayar sekali waktu daftar. Yang rutin tiap bulan adalah SPP Rp300.000. Makanya budget yang saya sarankan itu Rp360.000/bulan - dari SPP ditambah sedikit buffer buat jaga-jaga, sekitar 20%. Biaya pendaftaran tadi ga usah diitung karena kan cuma sekali aja."
+          
+          CONTOH LAIN - JIKA SEMUA ONE-TIME:
+          Jika hanya ada "Biaya Pendaftaran" Rp500.000 (semua one-time):
+          - Hasil: Budget minimum Rp150.000/bulan untuk kebutuhan rutin kategori ini
+          - Reasoning: "Saya lihat cuma ada biaya pendaftaran Rp500.000 aja nih, yang jelas ini cuma bayar sekali waktu daftar. Nah tapi buat kebutuhan sekolah sehari-hari kayak buku, alat tulis, atau keperluan kecil lainnya, sebaiknya siap-siap budget sekitar Rp150.000/bulan deh."
+          ` : `
+          EXAMPLE STEP-BY-STEP ANALYSIS ENGLISH:
+          
+          Scenario: Education category has transactions:
+          1. "Registration Fee Payment" - $500
+          2. "Monthly Tuition Payment" - $300
+          
+          STEP 1 - Classification:
+          ❌ "Registration Fee Payment" = ONE-TIME (contains "registration" = ignored)
+          ✅ "Monthly Tuition Payment" = RECURRING (contains "tuition" = used)
+          
+          STEP 2 - Budget Calculation:
+          - ONE-TIME transactions to ignore: $500 (registration)
+          - RECURRING transactions to use: $300 (tuition)
+          - Average recurring: $300 (only 1 recurring transaction)
+          - Budget recommendation: $300 + 20% buffer = $360/month
+          
+          REASONING: "$360/month budget based on recurring tuition $300/month with 20% buffer. Registration fee $500 excluded as it contains 'registration' keyword indicating one-time expense."
+          `}
+          
+          ${language === 'Indonesian' ? `
+          REASONING DALAM BAHASA INDONESIA - GUNAKAN BAHASA YANG NATURAL DAN SANTAI:
+          - WAJIB: Tulis seperti teman yang kasih saran keuangan, BUKAN seperti robot atau bank formal
+          - Gunakan bahasa sehari-hari yang natural dan mudah dipahami
+          - Boleh pakai kata "saya lihat", "makanya", "buat", "kayak", "nih", "deh" 
+          - SANGAT DILARANG kata teknis: "mengandung kata", "diklasifikasi", "menunjukkan bahwa", "oleh karena itu"
+          - Contoh reasoning yang BAGUS (pakai ini sebagai template):
+            * "Saya lihat ada biaya pendaftaran Rp500.000 yang tentu saja cuma dibayar sekali waktu daftar. Yang rutin tiap bulan adalah SPP Rp300.000. Makanya budget yang saya sarankan itu Rp360.000/bulan - dari SPP ditambah sedikit buffer buat jaga-jaga, sekitar 20%. Biaya pendaftaran tadi ga usah diitung karena kan cuma sekali aja."
+            * "Dari data pengeluaran, cuma ada biaya pendaftaran Rp500.000 yang jelas ini pembayaran sekali aja waktu daftar. Buat keperluan sekolah harian kayak buku, alat tulis, saya saranin budget Rp150.000/bulan sebagai persiapan."
+          - Contoh reasoning yang BURUK (JANGAN PAKAI):
+            * "Kata 'pendaftaran' menunjukkan pengeluaran satu kali, sehingga diklasifikasi sebagai pengeluaran sekali bayar"
+            * "Berdasarkan transaksi yang tercatat, terdapat pengeluaran dengan deskripsi yang mengandung kata..."
+            * "Oleh karena itu, untuk perencanaan budget bulanan, kami fokus pada..."
+          ` : `
+          REASONING IN ENGLISH - USE NATURAL LANGUAGE:
+          - Explain like a professional financial advisor, not like a bot
+          - Avoid technical phrases like "contains keyword", "classified as", "one-time payment"
+          - Use natural, easy-to-understand language
+          - Example GOOD reasoning:
+            * "Based on your spending history, the $500 registration fee is a one-time cost that only occurs when enrolling. However, the $300 tuition is a monthly recurring expense. For monthly budget planning, we focus on recurring expenses like tuition and add a 20% buffer, resulting in $360/month."
+          - Example BAD reasoning (AVOID):
+            * "Transaction contains 'registration' keyword indicating one-time expense"
+            * "Transaction classified as recurring based on 'tuition' keyword"
+          `}
+          
+          Return JSON array with objects containing:
+          - category: category name (exact match from available categories)
+          - categoryId: category ID number
+          - recommendedAmount: recommended monthly budget amount
+          - period: "monthly" (default)
+          - reasoning: explanation in ${language}
+          - confidence: 0-1 confidence score
+          
+          Example format:
+          [
+            {
+              "category": "Food & Dining",
+              "categoryId": 1,
+              "recommendedAmount": 1500000,
+              "period": "monthly",
+              "reasoning": "${language === 'Indonesian' ? 'Saya lihat rata-rata pengeluaran makanan sekitar Rp1.200.000/bulan. Buat kasih sedikit ruang gerak, saya saranin budget Rp1.500.000/bulan. Jadi masih bisa fleksibel tapi tetap terkontrol.' : 'Based on your average food spending of $400, we recommend $500 budget to provide flexibility while staying controlled.'}",
+              "confidence": 0.85
+            }
+          ]`,
+        },
+        {
+          role: "user",
+          content: missingCategory 
+            ? `Please recommend a budget for "${missingCategory}" category only. CRITICAL: Make sure to analyze each transaction individually to classify one-time vs recurring expenses first. Show your step-by-step classification in the reasoning.`
+            : `Please recommend budgets for all available categories.`
+        },
+      ],
+      response_format: { type: "json_object" },
+    });
+    
+    console.log(`[BUDGET AI DEBUG] AI Response for category ${missingCategory}:`, response.choices[0].message.content);
+
+    const result = JSON.parse(response.choices[0].message.content || "{}");
+    const recommendations = result.recommendations || result || [];
+    
+    // Ensure recommendations is an array
+    return Array.isArray(recommendations) ? recommendations : [recommendations];
+    
+  } catch (error) {
+    console.error('Error generating budget recommendations:', error);
+    throw error;
+  }
 }
