@@ -453,6 +453,18 @@ export const registerMessageHandlers = (userId: string): boolean => {
           return;
         }
         
+        // Check if it's a budget command
+        if (messageText.includes('budget') || 
+            messageText.includes('set budget') || 
+            messageText.includes('atur budget') ||
+            messageText.includes('cek budget') ||
+            messageText.includes('hapus budget') ||
+            messageText.includes('daftar budget') ||
+            messageText.includes('list budget')) {
+          await processBudgetCommand(message, messageUserId);
+          return;
+        }
+        
         // Process as transaction text
         await processTextMessage(message, messageUserId);
       }
@@ -662,10 +674,17 @@ const createTransactionFromAnalysis = async (
       const transaction = await storage.createTransaction(validatedData);
       console.log('Transaction created from WhatsApp:', transaction);
       
+      // Check for budget alerts after creating expense transaction
+      let budgetAlert = null;
+      if (analysis.type === 'expense') {
+        budgetAlert = await checkBudgetAlerts(userId, matchingCategory.id, userPreferences);
+      }
+      
       return {
         success: true,
         transaction,
-        analysis
+        analysis,
+        budgetAlert
       };
     }
     
@@ -750,16 +769,21 @@ const processTextMessage = async (message: any, userId: string) => {
           }
         }
         
-        await message.reply(
-          `✅ *Transaksi Berhasil Dicatat!*\n\n` +
+        let replyMessage = `✅ *Transaksi Berhasil Dicatat!*\n\n` +
           `💰 Jumlah: ${formattedAmount}\n` +
           `📝 Deskripsi: ${analysis.description}\n` +
           `📂 Kategori: ${analysis.category}\n` +
           `📊 Jenis: ${analysis.type === 'expense' ? 'Pengeluaran' : 'Pemasukan'}\n` +
           dateInfo +
           `🎯 Tingkat Kepercayaan: ${Math.round(analysis.confidence * 100)}%\n\n` +
-          `_Transaksi telah disimpan dalam akun Anda_`
-        );
+          `_Transaksi telah disimpan dalam akun Anda_`;
+        
+        // Add budget alert if exists
+        if (result.budgetAlert) {
+          replyMessage += `\n\n` + result.budgetAlert.message;
+        }
+        
+        await message.reply(replyMessage);
       } else {
         await message.reply(
           `❌ *Gagal Mencatat Transaksi*\n\n` +
@@ -879,8 +903,7 @@ const processVoiceMessage = async (message: any, userId: string) => {
           }
         }
         
-        await message.reply(
-          `🎤 *Pesan Suara Berhasil Diproses!*\n\n` +
+        let replyMessage = `🎤 *Pesan Suara Berhasil Diproses!*\n\n` +
           `📝 Saya dengar: "${transcribedText}"\n\n` +
           `✅ *Transaksi Dicatat:*\n` +
           `💰 Jumlah: ${formattedAmount}\n` +
@@ -888,8 +911,14 @@ const processVoiceMessage = async (message: any, userId: string) => {
           `📂 Kategori: ${analysis.category}\n` +
           `📊 Jenis: ${analysis.type === 'expense' ? 'Pengeluaran' : 'Pemasukan'}\n` +
           dateInfo +
-          `🎯 Tingkat Kepercayaan: ${Math.round(analysis.confidence * 100)}%`
-        );
+          `🎯 Tingkat Kepercayaan: ${Math.round(analysis.confidence * 100)}%`;
+        
+        // Add budget alert if exists
+        if (result.budgetAlert) {
+          replyMessage += `\n\n` + result.budgetAlert.message;
+        }
+        
+        await message.reply(replyMessage);
       } else {
         await message.reply(
           `🎤 *Pesan Suara Diproses, Tapi...*\n\n` +
@@ -1046,18 +1075,24 @@ const showHelpMessage = async (message: any) => {
     `📝 *Cara Mencatat Transaksi:*\n\n` +
     `1️⃣ *Pesan Teks:*\n` +
     `• "Makan siang di McD 75000"\n` +
-    `• "Beli bensin 50000"\n` +
-    `• "Gaji bulan ini 5000000"\n` +
-    `• "Transfer dari ayah 200000"\n\n` +
+    `• "Kemarin beli bensin 50000"\n` +
+    `• "Tanggal 15 Juli gaji 5000000"\n` +
+    `• "2 hari lalu transfer dari ayah 200000"\n\n` +
     `2️⃣ *Pesan Suara:*\n` +
     `Tekan dan tahan tombol mikrofon, lalu ucapkan transaksi Anda\n\n` +
     `3️⃣ *Kirim Foto:*\n` +
     `Foto struk/nota belanja untuk pencatatan otomatis\n\n` +
+    `💰 *Manajemen Budget:*\n` +
+    `• "set budget makan 500000 per bulan"\n` +
+    `• "atur budget transport 200rb mingguan"\n` +
+    `• "cek budget saya"\n` +
+    `• "daftar budget"\n` +
+    `• "hapus budget [kategori]"\n\n` +
     `📱 *Perintah Lain:*\n` +
     `• ketik "bantuan" - Lihat pesan ini\n` +
     `• ketik "saldo" - Cek ringkasan keuangan\n` +
     `• ketik "status" - Status koneksi akun\n\n` +
-    `💡 *Tips:* Semakin jelas informasi yang Anda berikan, semakin akurat pencatatan transaksi!`
+    `💡 *Tips:* Bot akan otomatis memberikan peringatan jika budget Anda mendekati atau melebihi batas!`
   );
 };
 
@@ -1118,5 +1153,353 @@ const showBalanceSummary = async (message: any, userId: string) => {
       `❌ *Gagal Mengambil Data*\n\n` +
       `Terjadi kesalahan saat mengambil ringkasan keuangan. Silakan coba lagi nanti.`
     );
+  }
+};
+
+// Helper function to process budget commands
+const processBudgetCommand = async (message: any, userId: string) => {
+  try {
+    const userPreferences = await getUserPreferences(userId);
+    const categories = await getUserCategories(userId);
+    
+    // Create preferences object for AI analysis
+    const aiPreferences = {
+      defaultCurrency: userPreferences?.defaultCurrency || 'USD',
+      language: userPreferences?.language || 'id',
+      autoCategorize: userPreferences?.autoCategorize || false
+    };
+    
+    console.log(`Analyzing budget command for user ${userId}: ${message.body}`);
+    
+    // Import budget analysis function
+    const { analyzeBudgetCommand } = await import('./openai');
+    
+    // Analyze the budget command with AI
+    const analysis = await analyzeBudgetCommand(message.body, categories, aiPreferences);
+    console.log('Budget command analysis result:', analysis);
+    
+    if (analysis.confidence > 0.7) {
+      const result = await handleBudgetAction(userId, analysis, userPreferences, categories);
+      
+      if (result.success) {
+        await message.reply(result.message);
+      } else {
+        await message.reply(
+          `❌ *Gagal Mengelola Budget*\n\n` +
+          `${result.message}\n\n` +
+          `Silakan coba lagi atau hubungi support.`
+        );
+      }
+    } else {
+      await message.reply(
+        `🤔 *Perintah Budget Tidak Dipahami*\n\n` +
+        `Maaf, saya tidak dapat memahami perintah budget Anda.\n\n` +
+        `Contoh perintah yang bisa dipahami:\n` +
+        `• "set budget makan 500000 per bulan"\n` +
+        `• "atur budget transport 200rb mingguan"\n` +
+        `• "cek budget saya"\n` +
+        `• "hapus budget entertainment"\n` +
+        `• "daftar semua budget"\n\n` +
+        `Atau ketik *"bantuan budget"* untuk panduan lengkap.`
+      );
+    }
+    
+  } catch (error) {
+    console.error('Error processing budget command:', error);
+    await message.reply(
+      `❌ *Terjadi Kesalahan*\n\n` +
+      `Maaf, terjadi kesalahan dalam memproses perintah budget Anda. Silakan coba lagi nanti.`
+    );
+  }
+};
+
+// Helper function to handle budget actions
+const handleBudgetAction = async (
+  userId: string,
+  analysis: any,
+  userPreferences: any,
+  categories: any[]
+) => {
+  try {
+    const { storage } = await import('./storage');
+    
+    switch (analysis.action) {
+      case 'create':
+      case 'update':
+        if (!analysis.category || !analysis.amount) {
+          return {
+            success: false,
+            message: 'Kategori dan jumlah budget harus disebutkan'
+          };
+        }
+        
+        // Find matching category
+        let matchingCategory = categories.find(c => 
+          c.name.toLowerCase() === analysis.category.toLowerCase()
+        );
+        
+        if (!matchingCategory) {
+          return {
+            success: false,
+            message: `Kategori "${analysis.category}" tidak ditemukan. Gunakan kategori yang tersedia atau buat kategori baru terlebih dahulu.`
+          };
+        }
+        
+        // Create or update budget
+        const budgetData = {
+          userId: userId,
+          categoryId: matchingCategory.id,
+          amount: analysis.amount,
+          period: analysis.period || 'monthly',
+          spent: 0,
+          startDate: Math.floor(Date.now() / 1000),
+          endDate: Math.floor(Date.now() / 1000) + (analysis.period === 'weekly' ? 7 * 24 * 60 * 60 : 30 * 24 * 60 * 60)
+        };
+        
+        const budget = await storage.createOrUpdateBudget(budgetData);
+        const formattedAmount = formatCurrency(analysis.amount, userPreferences?.defaultCurrency);
+        
+        return {
+          success: true,
+          message: `✅ *Budget ${analysis.action === 'create' ? 'Dibuat' : 'Diperbarui'}!*\n\n` +
+                  `📂 Kategori: ${matchingCategory.name}\n` +
+                  `💰 Jumlah: ${formattedAmount}\n` +
+                  `📅 Periode: ${analysis.period === 'weekly' ? 'Mingguan' : 'Bulanan'}\n\n` +
+                  `_Budget telah disimpan dan akan dipantau secara otomatis_`
+        };
+        
+      case 'delete':
+        if (!analysis.category) {
+          return {
+            success: false,
+            message: 'Kategori budget yang akan dihapus harus disebutkan'
+          };
+        }
+        
+        // Find matching category
+        const categoryToDelete = categories.find(c => 
+          c.name.toLowerCase() === analysis.category.toLowerCase()
+        );
+        
+        if (!categoryToDelete) {
+          return {
+            success: false,
+            message: `Kategori "${analysis.category}" tidak ditemukan`
+          };
+        }
+        
+        await storage.deleteBudget(categoryToDelete.id);
+        
+        return {
+          success: true,
+          message: `✅ *Budget Dihapus!*\n\n` +
+                  `📂 Kategori: ${categoryToDelete.name}\n\n` +
+                  `_Budget untuk kategori ini telah dihapus_`
+        };
+        
+      case 'check':
+        const budgetStatus = await getBudgetStatus(userId, userPreferences);
+        return {
+          success: true,
+          message: budgetStatus
+        };
+        
+      case 'list':
+        const budgetList = await getBudgetList(userId, userPreferences);
+        return {
+          success: true,
+          message: budgetList
+        };
+        
+      default:
+        return {
+          success: false,
+          message: 'Perintah budget tidak dikenali'
+        };
+    }
+    
+  } catch (error) {
+    console.error('Error handling budget action:', error);
+    return {
+      success: false,
+      message: 'Gagal mengelola budget'
+    };
+  }
+};
+
+// Helper function to get budget status
+const getBudgetStatus = async (userId: string, userPreferences: any) => {
+  try {
+    const { storage } = await import('./storage');
+    const { generateBudgetAlert } = await import('./openai');
+    
+    const budgets = await storage.getUserBudgets(userId);
+    
+    if (!budgets || budgets.length === 0) {
+      return `📊 *Status Budget*\n\n` +
+             `Anda belum memiliki budget yang aktif.\n\n` +
+             `Mulai dengan membuat budget:\n` +
+             `• "set budget makan 500000 per bulan"\n` +
+             `• "atur budget transport 200rb mingguan"`;
+    }
+    
+    let statusMessages = [`📊 *Status Budget Anda*\n`];
+    let totalSpent = 0;
+    let totalBudget = 0;
+    let alerts = [];
+    
+    for (const budget of budgets) {
+      const category = await storage.getCategoryById(budget.categoryId, userId);
+      if (!category) continue;
+      
+      // Calculate spent amount for this period
+      const periodStart = budget.startDate;
+      const periodEnd = budget.endDate;
+      const spent = await storage.getSpentInPeriod(userId, budget.categoryId, periodStart, periodEnd);
+      
+      totalSpent += spent;
+      totalBudget += budget.amount;
+      
+      // Generate alert for this budget
+      const alert = await generateBudgetAlert(
+        category.name,
+        spent,
+        budget.amount,
+        userPreferences?.defaultCurrency || 'USD',
+        userPreferences?.language || 'id'
+      );
+      
+      const percentage = (spent / budget.amount) * 100;
+      const remaining = budget.amount - spent;
+      const formattedSpent = formatCurrency(spent, userPreferences?.defaultCurrency);
+      const formattedBudget = formatCurrency(budget.amount, userPreferences?.defaultCurrency);
+      const formattedRemaining = formatCurrency(remaining, userPreferences?.defaultCurrency);
+      
+      let statusIcon = '✅';
+      if (percentage >= 100) statusIcon = '🚨';
+      else if (percentage >= 80) statusIcon = '⚠️';
+      else if (percentage >= 60) statusIcon = '💡';
+      
+      statusMessages.push(
+        `${statusIcon} **${category.name}**\n` +
+        `   💰 Terpakai: ${formattedSpent} / ${formattedBudget}\n` +
+        `   📊 Persentase: ${percentage.toFixed(1)}%\n` +
+        `   💳 Sisa: ${formattedRemaining}\n`
+      );
+      
+      // Collect alerts for high usage
+      if (percentage >= 60) {
+        alerts.push(alert.message);
+      }
+    }
+    
+    // Add summary
+    const totalFormattedSpent = formatCurrency(totalSpent, userPreferences?.defaultCurrency);
+    const totalFormattedBudget = formatCurrency(totalBudget, userPreferences?.defaultCurrency);
+    const overallPercentage = (totalSpent / totalBudget) * 100;
+    
+    statusMessages.push(
+      `\n📈 **Ringkasan Total:**\n` +
+      `💰 Total Terpakai: ${totalFormattedSpent}\n` +
+      `🎯 Total Budget: ${totalFormattedBudget}\n` +
+      `📊 Persentase Keseluruhan: ${overallPercentage.toFixed(1)}%`
+    );
+    
+    // Add alerts if any
+    if (alerts.length > 0) {
+      statusMessages.push(`\n🔔 **Peringatan:**`);
+      alerts.forEach(alert => statusMessages.push(`• ${alert}`));
+    }
+    
+    return statusMessages.join('\n');
+    
+  } catch (error) {
+    console.error('Error getting budget status:', error);
+    return `❌ Gagal mengambil status budget`;
+  }
+};
+
+// Helper function to get budget list
+const getBudgetList = async (userId: string, userPreferences: any) => {
+  try {
+    const { storage } = await import('./storage');
+    
+    const budgets = await storage.getUserBudgets(userId);
+    
+    if (!budgets || budgets.length === 0) {
+      return `📋 *Daftar Budget*\n\n` +
+             `Anda belum memiliki budget yang aktif.\n\n` +
+             `Mulai dengan membuat budget:\n` +
+             `• "set budget makan 500000 per bulan"\n` +
+             `• "atur budget transport 200rb mingguan"`;
+    }
+    
+    let listMessages = [`📋 *Daftar Budget Anda*\n`];
+    
+    for (const budget of budgets) {
+      const category = await storage.getCategoryById(budget.categoryId, userId);
+      if (!category) continue;
+      
+      const formattedAmount = formatCurrency(budget.amount, userPreferences?.defaultCurrency);
+      const periodText = budget.period === 'weekly' ? 'Mingguan' : 'Bulanan';
+      
+      listMessages.push(
+        `📂 **${category.name}**\n` +
+        `   💰 Budget: ${formattedAmount}\n` +
+        `   📅 Periode: ${periodText}\n`
+      );
+    }
+    
+    listMessages.push(
+      `\n💡 *Tips:*\n` +
+      `• Ketik "cek budget" untuk melihat status\n` +
+      `• Ketik "hapus budget [kategori]" untuk menghapus\n` +
+      `• Ketik "set budget [kategori] [jumlah]" untuk mengubah`
+    );
+    
+    return listMessages.join('\n');
+    
+  } catch (error) {
+    console.error('Error getting budget list:', error);
+    return `❌ Gagal mengambil daftar budget`;
+  }
+};
+
+// Helper function to check budget alerts after transaction
+const checkBudgetAlerts = async (userId: string, categoryId: number, userPreferences: any) => {
+  try {
+    const { storage } = await import('./storage');
+    const { generateBudgetAlert } = await import('./openai');
+    
+    // Get active budget for this category
+    const budget = await storage.getBudgetByCategory(userId, categoryId);
+    if (!budget) return null;
+    
+    // Get category info
+    const category = await storage.getCategoryById(categoryId, userId);
+    if (!category) return null;
+    
+    // Calculate spent amount for current period
+    const spent = await storage.getSpentInPeriod(userId, categoryId, budget.startDate, budget.endDate);
+    
+    // Generate alert
+    const alert = await generateBudgetAlert(
+      category.name,
+      spent,
+      budget.amount,
+      userPreferences?.defaultCurrency || 'USD',
+      userPreferences?.language || 'id'
+    );
+    
+    // Only return alert if it's warning level or above
+    if (alert.percentage >= 60) {
+      return alert;
+    }
+    
+    return null;
+    
+  } catch (error) {
+    console.error('Error checking budget alerts:', error);
+    return null;
   }
 };

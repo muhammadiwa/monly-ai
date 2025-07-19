@@ -589,3 +589,165 @@ export async function generateFinancialInsights(
     return [];
   }
 }
+
+export interface BudgetAnalysis {
+  action: "create" | "update" | "delete" | "check" | "list";
+  category?: string;
+  amount?: number;
+  period?: "weekly" | "monthly" | "yearly";
+  confidence: number;
+}
+
+export async function analyzeBudgetCommand(
+  text: string, 
+  availableCategories: any[] = [], 
+  userPreferences?: UserPreferences
+): Promise<BudgetAnalysis> {
+  try {
+    // Build categories list from database
+    const categoryList = availableCategories.length > 0 
+      ? availableCategories.map(cat => `- ${cat.name}${cat.type ? ` (${cat.type})` : ''}`).join('\n          ')
+      : `- Food & Dining
+          - Transportation
+          - Shopping
+          - Entertainment
+          - Bills & Utilities
+          - Healthcare
+          - Education
+          - Other`;
+
+    // Set language and currency from preferences
+    const language = userPreferences?.language === 'id' ? 'Indonesian' : 'English';
+    const currency = userPreferences?.defaultCurrency || 'USD';
+    const currencySymbol = getCurrencySymbol(currency);
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4.1-nano",
+      messages: [
+        {
+          role: "system",
+          content: `You are a budget management assistant. Analyze user messages about budget management in ${language}.
+          
+          Available categories:
+          ${categoryList}
+          
+          Currency: ${currency} (${currencySymbol})
+          
+          BUDGET COMMANDS TO DETECT:
+          1. CREATE/SET BUDGET: "set budget food 500000", "budget makan 300rb", "atur budget transport 200000"
+          2. UPDATE BUDGET: "ubah budget food jadi 600000", "update budget transport 250000"
+          3. DELETE BUDGET: "hapus budget food", "delete budget transport"
+          4. CHECK BUDGET: "cek budget", "budget status", "bagaimana budget saya"
+          5. LIST BUDGETS: "daftar budget", "list all budgets", "tampilkan semua budget"
+          
+          ${language === 'Indonesian' ? `
+          CONTOH PERINTAH INDONESIA:
+          - "set budget makan 500000 per bulan" → action: create, category: Food & Dining, amount: 500000, period: monthly
+          - "atur budget transport 200rb mingguan" → action: create, category: Transportation, amount: 200000, period: weekly
+          - "ubah budget belanja jadi 1jt" → action: update, category: Shopping, amount: 1000000, period: monthly
+          - "hapus budget entertainment" → action: delete, category: Entertainment
+          - "cek budget saya" → action: check
+          - "daftar semua budget" → action: list
+          ` : `
+          ENGLISH COMMAND EXAMPLES:
+          - "set food budget 500 monthly" → action: create, category: Food & Dining, amount: 500, period: monthly
+          - "budget transport 200 weekly" → action: create, category: Transportation, amount: 200, period: weekly
+          - "update shopping budget to 1000" → action: update, category: Shopping, amount: 1000, period: monthly
+          - "delete entertainment budget" → action: delete, category: Entertainment
+          - "check my budget" → action: check
+          - "list all budgets" → action: list
+          `}
+          
+          AMOUNT PARSING:
+          - Support "rb" = 1000, "ribu" = 1000, "jt" = 1000000, "juta" = 1000000
+          - Support "k" = 1000, "m" = 1000000 for English
+          - Default period is "monthly" if not specified
+          
+          Return JSON with: action, category (if applicable), amount (if applicable), period (if applicable), confidence (0-1).`,
+        },
+        {
+          role: "user",
+          content: text,
+        },
+      ],
+      response_format: { type: "json_object" },
+    });
+
+    const result = JSON.parse(response.choices[0].message.content || "{}");
+    
+    return {
+      action: result.action || "check",
+      category: result.category,
+      amount: result.amount ? Math.abs(parseFloat(result.amount.toString())) : undefined,
+      period: result.period || "monthly",
+      confidence: Math.max(0, Math.min(1, parseFloat(result.confidence || "0.8")))
+    };
+  } catch (error) {
+    console.error("Failed to analyze budget command:", error);
+    throw new Error("Failed to analyze budget command: " + (error instanceof Error ? error.message : String(error)));
+  }
+}
+
+export interface BudgetAlert {
+  categoryId: string;
+  categoryName: string;
+  spent: number;
+  budgetAmount: number;
+  percentage: number;
+  alertType: "warning" | "danger" | "exceeded";
+  message: string;
+}
+
+export async function generateBudgetAlert(
+  categoryName: string,
+  spent: number,
+  budgetAmount: number,
+  currency: string = 'USD',
+  language: string = 'id'
+): Promise<BudgetAlert> {
+  const percentage = (spent / budgetAmount) * 100;
+  const currencySymbol = getCurrencySymbol(currency);
+  
+  let alertType: "warning" | "danger" | "exceeded";
+  let message: string;
+  
+  if (percentage >= 100) {
+    alertType = "exceeded";
+    if (language === 'id') {
+      message = `🚨 BUDGET TERLAMPAUI! Anda sudah menghabiskan ${currencySymbol}${spent.toLocaleString()} dari budget ${currencySymbol}${budgetAmount.toLocaleString()} untuk kategori ${categoryName} (${percentage.toFixed(1)}%)`;
+    } else {
+      message = `🚨 BUDGET EXCEEDED! You've spent ${currencySymbol}${spent.toLocaleString()} out of ${currencySymbol}${budgetAmount.toLocaleString()} budget for ${categoryName} (${percentage.toFixed(1)}%)`;
+    }
+  } else if (percentage >= 80) {
+    alertType = "danger";
+    if (language === 'id') {
+      message = `⚠️ PERINGATAN BUDGET! Anda sudah menggunakan ${percentage.toFixed(1)}% dari budget ${categoryName}. Sisa: ${currencySymbol}${(budgetAmount - spent).toLocaleString()}`;
+    } else {
+      message = `⚠️ BUDGET WARNING! You've used ${percentage.toFixed(1)}% of your ${categoryName} budget. Remaining: ${currencySymbol}${(budgetAmount - spent).toLocaleString()}`;
+    }
+  } else if (percentage >= 60) {
+    alertType = "warning";
+    if (language === 'id') {
+      message = `💡 Info Budget: Anda sudah menggunakan ${percentage.toFixed(1)}% dari budget ${categoryName}. Sisa: ${currencySymbol}${(budgetAmount - spent).toLocaleString()}`;
+    } else {
+      message = `💡 Budget Info: You've used ${percentage.toFixed(1)}% of your ${categoryName} budget. Remaining: ${currencySymbol}${(budgetAmount - spent).toLocaleString()}`;
+    }
+  } else {
+    alertType = "warning";
+    if (language === 'id') {
+      message = `✅ Budget ${categoryName} masih aman. Terpakai: ${percentage.toFixed(1)}%. Sisa: ${currencySymbol}${(budgetAmount - spent).toLocaleString()}`;
+    } else {
+      message = `✅ ${categoryName} budget is safe. Used: ${percentage.toFixed(1)}%. Remaining: ${currencySymbol}${(budgetAmount - spent).toLocaleString()}`;
+    }
+  }
+  
+  return {
+    categoryId: categoryName.toLowerCase().replace(/\s+/g, '_'),
+    categoryName,
+    spent,
+    budgetAmount,
+    percentage,
+    alertType,
+    message
+  };
+}

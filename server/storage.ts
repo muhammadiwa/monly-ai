@@ -69,6 +69,10 @@ export interface IStorage {
   updateBudget(id: number, budget: Partial<InsertBudget>): Promise<Budget>;
   deleteBudget(id: number): Promise<void>;
   getBudgetById(id: number): Promise<BudgetWithCategory | undefined>;
+  createOrUpdateBudget(budgetData: any): Promise<Budget>;
+  getUserBudgets(userId: string): Promise<Budget[]>;
+  getBudgetByCategory(userId: string, categoryId: number): Promise<Budget | undefined>;
+  getSpentInPeriod(userId: string, categoryId: number, startDate: number, endDate: number): Promise<number>;
 
   // Goal operations
   getGoals(userId: string): Promise<Goal[]>;
@@ -498,6 +502,64 @@ export class DatabaseStorage implements IStorage {
       ...result.budgets,
       category: result.categories
     };
+  }
+
+  async createOrUpdateBudget(budgetData: any): Promise<Budget> {
+    // Check if budget already exists for this user and category
+    const existingBudget = await this.getBudgetByCategory(budgetData.userId, budgetData.categoryId);
+    
+    if (existingBudget) {
+      // Update existing budget
+      return await this.updateBudget(existingBudget.id, {
+        amount: budgetData.amount,
+        period: budgetData.period,
+        startDate: budgetData.startDate,
+        endDate: budgetData.endDate,
+      });
+    } else {
+      // Create new budget
+      const now = Math.floor(Date.now() / 1000);
+      return await this.createBudget({
+        ...budgetData,
+        spent: 0,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+  }
+
+  async getUserBudgets(userId: string): Promise<Budget[]> {
+    return await db
+      .select()
+      .from(budgets)
+      .where(eq(budgets.userId, userId))
+      .orderBy(desc(budgets.createdAt));
+  }
+
+  async getBudgetByCategory(userId: string, categoryId: number): Promise<Budget | undefined> {
+    const [budget] = await db
+      .select()
+      .from(budgets)
+      .where(and(
+        eq(budgets.userId, userId),
+        eq(budgets.categoryId, categoryId)
+      ));
+    return budget;
+  }
+
+  async getSpentInPeriod(userId: string, categoryId: number, startDate: number, endDate: number): Promise<number> {
+    const result = await db
+      .select({ total: sum(transactions.amount) })
+      .from(transactions)
+      .where(and(
+        eq(transactions.userId, userId),
+        eq(transactions.categoryId, categoryId),
+        eq(transactions.type, 'expense'),
+        gte(transactions.date, startDate),
+        lte(transactions.date, endDate)
+      ));
+    
+    return Number(result[0]?.total || 0);
   }
 
   // Goal operations
