@@ -465,6 +465,23 @@ export const registerMessageHandlers = (userId: string): boolean => {
           return;
         }
         
+        // Check if it's a category command
+        if (messageText.includes('kategori') || 
+            messageText.includes('category') ||
+            messageText.includes('buat kategori') ||
+            messageText.includes('create category') ||
+            messageText.includes('tambah kategori') ||
+            messageText.includes('add category') ||
+            messageText.includes('ubah kategori') ||
+            messageText.includes('edit category') ||
+            messageText.includes('hapus kategori') ||
+            messageText.includes('delete category') ||
+            messageText.includes('daftar kategori') ||
+            messageText.includes('list category')) {
+          await processCategoryCommand(message, messageUserId);
+          return;
+        }
+        
         // Process as transaction text
         await processTextMessage(message, messageUserId);
       }
@@ -1192,7 +1209,12 @@ const showHelpMessage = async (message: any) => {
     `• "cek budget saya"\n` +
     `• "daftar budget"\n` +
     `• "hapus budget [kategori]"\n\n` +
-    `📱 *Perintah Lain:*\n` +
+    `�️ *Manajemen Kategori:*\n` +
+    `• "buat kategori [nama] [emoji] [warna]" - Buat kategori baru\n` +
+    `• "daftar kategori" - Lihat semua kategori\n` +
+    `• "ubah kategori [nama lama] menjadi [nama baru]" - Ubah nama\n` +
+    `• "hapus kategori [nama]" - Hapus kategori\n\n` +
+    `�📱 *Perintah Lain:*\n` +
     `• ketik "bantuan" - Lihat pesan ini\n` +
     `• ketik "saldo" - Cek ringkasan keuangan\n` +
     `• ketik "status" - Status koneksi akun\n\n` +
@@ -1276,7 +1298,7 @@ const processBudgetCommand = async (message: any, userId: string) => {
     console.log(`Analyzing budget command for user ${userId}: ${message.body}`);
     
     // Import budget analysis function
-    const { analyzeBudgetCommand } = await import('./openai');
+    const { analyzeBudgetCommand, analyzeCategoryCommand } = await import('./openai');
     
     // Analyze the budget command with AI
     const analysis = await analyzeBudgetCommand(message.body, categories, aiPreferences);
@@ -1313,6 +1335,62 @@ const processBudgetCommand = async (message: any, userId: string) => {
     await message.reply(
       `❌ *Terjadi Kesalahan*\n\n` +
       `Maaf, terjadi kesalahan dalam memproses perintah budget Anda. Silakan coba lagi nanti.`
+    );
+  }
+};
+
+// Helper function to process category commands
+const processCategoryCommand = async (message: any, userId: string) => {
+  try {
+    const userPreferences = await getUserPreferences(userId);
+    const categories = await getUserCategories(userId);
+    
+    console.log(`Analyzing category command for user ${userId}: ${message.body}`);
+    
+    // Import category analysis function
+    const { analyzeCategoryCommand } = await import('./openai');
+    
+    // Create preferences object for AI analysis
+    const aiPreferences = {
+      defaultCurrency: userPreferences?.defaultCurrency || 'USD',
+      language: userPreferences?.language || 'id',
+      autoCategorize: userPreferences?.autoCategorize || false
+    };
+    
+    // Analyze the category command with AI
+    const analysis = await analyzeCategoryCommand(message.body, categories, aiPreferences);
+    console.log('Category command analysis result:', analysis);
+    
+    if (analysis.confidence > 0.7) {
+      const result = await handleCategoryAction(userId, analysis, userPreferences, categories);
+      
+      if (result.success) {
+        await message.reply(result.message);
+      } else {
+        await message.reply(
+          `❌ *Gagal Mengelola Kategori*\n\n` +
+          `${result.message}\n\n` +
+          `Silakan coba lagi atau hubungi support.`
+        );
+      }
+    } else {
+      await message.reply(
+        `🤔 *Perintah Kategori Tidak Dipahami*\n\n` +
+        `Maaf, saya tidak dapat memahami perintah kategori Anda.\n\n` +
+        `Contoh perintah yang bisa dipahami:\n` +
+        `• "buat kategori Kopi ☕ #8B4513"\n` +
+        `• "daftar kategori"\n` +
+        `• "ubah kategori Food menjadi Makanan"\n` +
+        `• "hapus kategori Lain-lain"\n\n` +
+        `Atau ketik *"bantuan"* untuk panduan lengkap.`
+      );
+    }
+    
+  } catch (error) {
+    console.error('Error processing category command:', error);
+    await message.reply(
+      `❌ *Terjadi Kesalahan*\n\n` +
+      `Maaf, terjadi kesalahan dalam memproses perintah kategori Anda. Silakan coba lagi nanti.`
     );
   }
 };
@@ -1428,6 +1506,234 @@ const handleBudgetAction = async (
       success: false,
       message: 'Gagal mengelola budget'
     };
+  }
+};
+
+// Helper function to handle category actions
+const handleCategoryAction = async (
+  userId: string,
+  analysis: any,
+  userPreferences: any,
+  categories: any[]
+) => {
+  try {
+    const { storage } = await import('./storage');
+    
+    switch (analysis.action) {
+      case 'create':
+        if (!analysis.categoryName) {
+          return {
+            success: false,
+            message: 'Nama kategori harus disebutkan'
+          };
+        }
+        
+        // Check if category already exists
+        const existingCategory = categories.find(c => 
+          c.name.toLowerCase() === analysis.categoryName.toLowerCase()
+        );
+        
+        if (existingCategory) {
+          return {
+            success: false,
+            message: `Kategori "${analysis.categoryName}" sudah ada`
+          };
+        }
+        
+        // Create new category
+        const newCategory = await storage.createCategory({
+          name: analysis.categoryName,
+          icon: analysis.icon || '📝',
+          color: analysis.color || '#6B7280',
+          type: analysis.type || 'expense',
+          userId: userId,
+          isDefault: false
+        });
+        
+        return {
+          success: true,
+          message: `✅ *Kategori Berhasil Dibuat!*\n\n` +
+                  `📂 Nama: ${newCategory.name}\n` +
+                  `${newCategory.icon} Icon: ${newCategory.icon}\n` +
+                  `🎨 Warna: ${newCategory.color}\n` +
+                  `📊 Jenis: ${newCategory.type === 'expense' ? 'Pengeluaran' : 'Pemasukan'}\n\n` +
+                  `_Kategori baru sudah tersedia untuk transaksi_`
+        };
+        
+      case 'update':
+        if (!analysis.categoryName || !analysis.newCategoryName) {
+          return {
+            success: false,
+            message: 'Nama kategori lama dan baru harus disebutkan'
+          };
+        }
+        
+        // Find category to update
+        const categoryToUpdate = categories.find(c => 
+          c.name.toLowerCase() === analysis.categoryName.toLowerCase()
+        );
+        
+        if (!categoryToUpdate) {
+          return {
+            success: false,
+            message: `Kategori "${analysis.categoryName}" tidak ditemukan`
+          };
+        }
+        
+        // Check if new name already exists
+        const nameConflict = categories.find(c => 
+          c.name.toLowerCase() === analysis.newCategoryName.toLowerCase() && 
+          c.id !== categoryToUpdate.id
+        );
+        
+        if (nameConflict) {
+          return {
+            success: false,
+            message: `Nama kategori "${analysis.newCategoryName}" sudah digunakan`
+          };
+        }
+        
+        // Update category
+        await storage.updateCategory(categoryToUpdate.id, {
+          name: analysis.newCategoryName
+        });
+        
+        return {
+          success: true,
+          message: `✅ *Kategori Berhasil Diubah!*\n\n` +
+                  `📂 Nama Lama: ${analysis.categoryName}\n` +
+                  `📂 Nama Baru: ${analysis.newCategoryName}\n\n` +
+                  `_Kategori telah diperbarui_`
+        };
+        
+      case 'delete': {
+        if (!analysis.categoryName) {
+          return {
+            success: false,
+            message: 'Nama kategori yang akan dihapus harus disebutkan'
+          };
+        }
+        
+        // Find category to delete
+        const categoryToDelete = categories.find(c => 
+          c.name.toLowerCase() === analysis.categoryName.toLowerCase()
+        );
+        
+        if (!categoryToDelete) {
+          return {
+            success: false,
+            message: `Kategori "${analysis.categoryName}" tidak ditemukan`
+          };
+        }
+        
+        // Check if category is default
+        if (categoryToDelete.isDefault) {
+          return {
+            success: false,
+            message: `Kategori "${analysis.categoryName}" adalah kategori default dan tidak dapat dihapus`
+          };
+        }
+        
+        // Check if category has transactions
+        const transactions = await storage.getTransactions(userId);
+        const categoryTransactions = transactions.filter(t => t.categoryId === categoryToDelete.id);
+        if (categoryTransactions.length > 0) {
+          return {
+            success: false,
+            message: `Kategori "${analysis.categoryName}" memiliki ${categoryTransactions.length} transaksi dan tidak dapat dihapus. Pindahkan transaksi ke kategori lain terlebih dahulu.`
+          };
+        }
+        
+        // Delete category (assuming deleteCategory takes categoryId and userId)
+        await storage.deleteCategory(categoryToDelete.id, userId);
+        
+        return {
+          success: true,
+          message: `✅ *Kategori Berhasil Dihapus!*\n\n` +
+                  `📂 Kategori: ${categoryToDelete.name}\n\n` +
+                  `_Kategori telah dihapus dari sistem_`
+        };
+      }
+        
+      case 'list': {
+        const categoryList = await getCategoryList(userId, userPreferences);
+        return {
+          success: true,
+          message: categoryList
+        };
+      }
+        
+      default:
+        return {
+          success: false,
+          message: 'Perintah kategori tidak dikenali'
+        };
+    }
+    
+  } catch (error) {
+    console.error('Error handling category action:', error);
+    return {
+      success: false,
+      message: 'Gagal mengelola kategori'
+    };
+  }
+};
+
+// Helper function to get category list
+const getCategoryList = async (userId: string, userPreferences: any) => {
+  try {
+    const { storage } = await import('./storage');
+    
+    const categories = await storage.getCategories(userId);
+    
+    if (!categories || categories.length === 0) {
+      return `📋 *Daftar Kategori*\n\n` +
+             `Anda belum memiliki kategori kustom.\n\n` +
+             `Buat kategori baru dengan:\n` +
+             `• "buat kategori Kopi ☕ #8B4513"\n` +
+             `• "tambah kategori Investasi 💰 #00C851 income"`;
+    }
+    
+    let listMessages = [`📋 *Daftar Kategori Anda*\n`];
+    
+    // Group by type
+    const expenseCategories = categories.filter(c => c.type === 'expense');
+    const incomeCategories = categories.filter(c => c.type === 'income');
+    
+    if (expenseCategories.length > 0) {
+      listMessages.push(`\n📤 **Pengeluaran:**`);
+      expenseCategories.forEach((category, index) => {
+        const defaultLabel = category.isDefault ? ' (Default)' : '';
+        listMessages.push(
+          `${index + 1}. ${category.icon} **${category.name}**${defaultLabel}\n` +
+          `   🎨 Warna: ${category.color}`
+        );
+      });
+    }
+    
+    if (incomeCategories.length > 0) {
+      listMessages.push(`\n📥 **Pemasukan:**`);
+      incomeCategories.forEach((category, index) => {
+        const defaultLabel = category.isDefault ? ' (Default)' : '';
+        listMessages.push(
+          `${index + 1}. ${category.icon} **${category.name}**${defaultLabel}\n` +
+          `   🎨 Warna: ${category.color}`
+        );
+      });
+    }
+    
+    listMessages.push(
+      `\n💡 *Tips:*\n` +
+      `• Ketik "buat kategori [nama] [emoji] [warna]" untuk buat baru\n` +
+      `• Ketik "ubah kategori [lama] menjadi [baru]" untuk ubah nama\n` +
+      `• Ketik "hapus kategori [nama]" untuk hapus (jika tidak ada transaksi)`
+    );
+    
+    return listMessages.join('\n');
+    
+  } catch (error) {
+    console.error('Error getting category list:', error);
+    return `❌ Gagal mengambil daftar kategori`;
   }
 };
 

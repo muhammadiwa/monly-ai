@@ -658,6 +658,16 @@ export interface BudgetAnalysis {
   confidence: number;
 }
 
+export interface CategoryAnalysis {
+  action: "create" | "update" | "delete" | "list";
+  categoryName?: string;
+  newCategoryName?: string;
+  icon?: string;
+  color?: string;
+  type?: "income" | "expense";
+  confidence: number;
+}
+
 export async function analyzeBudgetCommand(
   text: string, 
   availableCategories: any[] = [], 
@@ -745,6 +755,92 @@ export async function analyzeBudgetCommand(
   } catch (error) {
     console.error("Failed to analyze budget command:", error);
     throw new Error("Failed to analyze budget command: " + (error instanceof Error ? error.message : String(error)));
+  }
+}
+
+export async function analyzeCategoryCommand(
+  text: string, 
+  availableCategories: any[] = [], 
+  userPreferences?: UserPreferences
+): Promise<CategoryAnalysis> {
+  try {
+    // Build categories list from database
+    const categoryList = availableCategories.length > 0 
+      ? availableCategories.map(cat => `- ${cat.name}${cat.type ? ` (${cat.type})` : ''}`).join('\n          ')
+      : `- Food & Dining
+          - Transportation
+          - Shopping
+          - Entertainment
+          - Bills & Utilities
+          - Healthcare
+          - Education
+          - Other`;
+
+    // Set language and currency from preferences
+    const language = userPreferences?.language === 'id' ? 'Indonesian' : 'English';
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4.1-nano",
+      messages: [
+        {
+          role: "system",
+          content: `You are a category management assistant. Analyze user messages about category management in ${language}.
+          
+          Available categories:
+          ${categoryList}
+          
+          CATEGORY COMMANDS TO DETECT:
+          1. CREATE CATEGORY: "buat kategori", "tambah kategori", "create category", "add category"
+          2. UPDATE CATEGORY: "ubah kategori", "edit kategori", "update category", "rename category"
+          3. DELETE CATEGORY: "hapus kategori", "delete category", "remove category"
+          4. LIST CATEGORIES: "daftar kategori", "list kategori", "list categories", "show categories"
+          
+          ${language === 'Indonesian' ? `
+          CONTOH PERINTAH INDONESIA:
+          - "buat kategori Kopi ☕ #8B4513" → action: create, categoryName: Kopi, icon: ☕, color: #8B4513, type: expense
+          - "tambah kategori Investasi 💰 #00C851 income" → action: create, categoryName: Investasi, icon: 💰, color: #00C851, type: income
+          - "ubah kategori Food menjadi Makanan" → action: update, categoryName: Food, newCategoryName: Makanan
+          - "hapus kategori Lain-lain" → action: delete, categoryName: Lain-lain
+          - "daftar kategori" → action: list
+          ` : `
+          ENGLISH COMMAND EXAMPLES:
+          - "create category Coffee ☕ #8B4513" → action: create, categoryName: Coffee, icon: ☕, color: #8B4513, type: expense
+          - "add category Investment 💰 #00C851 income" → action: create, categoryName: Investment, icon: 💰, color: #00C851, type: income
+          - "rename category Food to Meals" → action: update, categoryName: Food, newCategoryName: Meals
+          - "delete category Other" → action: delete, categoryName: Other
+          - "list categories" → action: list
+          `}
+          
+          PARSING RULES:
+          - Icon: Single emoji after category name
+          - Color: Hex code (#RRGGBB) or color name
+          - Type: "income" or "expense" (default: expense if not specified)
+          - For update: look for patterns like "ubah X menjadi Y", "rename X to Y"
+          
+          Return JSON with: action, categoryName (if applicable), newCategoryName (for updates), icon (for create), color (for create), type (for create), confidence (0-1).`,
+        },
+        {
+          role: "user",
+          content: text,
+        },
+      ],
+      response_format: { type: "json_object" },
+    });
+
+    const result = JSON.parse(response.choices[0].message.content || "{}");
+    
+    return {
+      action: result.action || "list",
+      categoryName: result.categoryName,
+      newCategoryName: result.newCategoryName,
+      icon: result.icon,
+      color: result.color,
+      type: result.type || "expense",
+      confidence: Math.max(0, Math.min(1, parseFloat(result.confidence || "0.8")))
+    };
+  } catch (error) {
+    console.error("Failed to analyze category command:", error);
+    throw new Error("Failed to analyze category command: " + (error instanceof Error ? error.message : String(error)));
   }
 }
 
