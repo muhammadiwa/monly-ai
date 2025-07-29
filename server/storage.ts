@@ -598,6 +598,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteGoal(id: number): Promise<void> {
+    // First delete related records to avoid foreign key constraint errors
+    await db.delete(goalBoosts).where(eq(goalBoosts.goalId, id));
+    await db.delete(goalSavingsPlans).where(eq(goalSavingsPlans.goalId, id));
+    
+    // Now safe to delete the goal
     await db.delete(goals).where(eq(goals.id, id));
   }
 
@@ -621,8 +626,40 @@ export class DatabaseStorage implements IStorage {
     const newCurrentAmount = goal.currentAmount + amount;
     await this.updateGoal(goalId, { currentAmount: newCurrentAmount });
     
-    // Then record the boost
+    // Get user preferences for currency
+    const userPreferences = await this.getUserPreferences(userId);
+    
+    // Create expense transaction to deduct from available balance
+    // This is CRITICAL for proper balance calculation
+    const allCategories = await this.getCategories(userId);
+    let savingsCategory = allCategories.find(cat => 
+      cat.name.toLowerCase() === "savings" || cat.name.toLowerCase() === "tabungan"
+    );
+    
+    if (!savingsCategory) {
+      // Create savings category if it doesn't exist (in Indonesian)
+      savingsCategory = await this.createCategory({
+        userId,
+        name: "Tabungan",
+        type: "expense",
+        icon: "🏦",
+        color: "#0891B2"
+      });
+    }
+    
     const now = Math.floor(Date.now() / 1000);
+    
+    await this.createTransaction({
+      userId,
+      amount,
+      description: description || `Transfer to Goal: ${goal.name}`,
+      categoryId: savingsCategory.id,
+      type: "expense",
+      date: now,
+      currency: userPreferences?.defaultCurrency || "USD"
+    });
+    
+    // Then record the boost
     const [boost] = await db
       .insert(goalBoosts)
       .values({
