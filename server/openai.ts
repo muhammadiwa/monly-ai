@@ -1223,3 +1223,104 @@ export async function generateBudgetRecommendations(
     throw error;
   }
 }
+
+// Interface for savings command analysis
+export interface SavingsAnalysis {
+  action: 'save' | 'create_goal' | 'list_goals' | 'check_balance' | 'set_plan' | 'unknown';
+  confidence: number;
+  goalName?: string;
+  amount?: number;
+  targetAmount?: number;
+  deadline?: number; // Unix timestamp
+  frequency?: 'weekly' | 'monthly' | 'yearly';
+  description?: string;
+  category?: string;
+}
+
+/**
+ * Analyze savings/goals command using AI
+ */
+export async function analyzeSavingsCommand(
+  text: string,
+  userGoals: any[],
+  userPreferences: any
+): Promise<SavingsAnalysis> {
+  try {
+    console.log('Analyzing savings command:', text);
+    
+    const goalsList = userGoals.map(g => `- ${g.name}: ${g.currentAmount}/${g.targetAmount} (${g.category || 'general'})`).join('\n');
+    
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: `You are an expert financial assistant specialized in analyzing savings and financial goals commands in both Indonesian and English.
+
+          AVAILABLE ACTIONS:
+          1. save - User wants to save money to an existing goal
+          2. create_goal - User wants to create a new financial goal
+          3. list_goals - User wants to see all their goals
+          4. check_balance - User wants to check their savings/goals balance
+          5. set_plan - User wants to set up automatic savings plan
+          6. unknown - Command is unclear
+
+          ANALYSIS RULES:
+          - For 'save' action, amount must be specified and goal should exist
+          - For 'create_goal', goal name and target amount are required
+          - Parse numbers in Indonesian/English (ribu=1000, juta=1000000, rb=1000, etc.)
+          - Detect time periods: harian/daily, mingguan/weekly, bulanan/monthly, tahunan/yearly
+          - Extract goal categories: emergency, vacation, gadget, education, investment, etc.
+          - Be confident only if command is clear (confidence > 0.7)
+
+          USER'S CURRENT GOALS:
+          ${goalsList || 'No goals yet'}
+
+          LANGUAGE PATTERNS:
+          Indonesian: nabung, menabung, tabung, target, tujuan, goal, buat goal, cek tabungan, saldo goal
+          English: save, saving, goal, create goal, check savings, goal balance
+
+          EXAMPLES:
+          Indonesian:
+          - "nabung 100000 untuk beli rumah" → {"action": "save", "confidence": 0.9, "amount": 100000, "goalName": "beli rumah"}
+          - "buat goal liburan target 5 juta" → {"action": "create_goal", "confidence": 0.9, "goalName": "liburan", "targetAmount": 5000000}
+          - "daftar goal" → {"action": "list_goals", "confidence": 1}
+          - "cek tabungan" → {"action": "check_balance", "confidence": 1}
+
+          English:
+          - "save 100000 for house" → {"action": "save", "confidence": 0.9, "amount": 100000, "goalName": "house"}
+          - "create goal vacation target 5000" → {"action": "create_goal", "confidence": 0.9, "goalName": "vacation", "targetAmount": 5000}
+
+          Return JSON with action, confidence (0-1), and relevant extracted data. Use 'goalName' property for goal names.`
+        },
+        {
+          role: "user",
+          content: text
+        }
+      ],
+      response_format: { type: "json_object" },
+    });
+
+    const result = JSON.parse(response.choices[0].message.content || "{}");
+    console.log('Savings command analysis result:', result);
+    
+    return {
+      action: result.action || 'unknown',
+      confidence: result.confidence || 0,
+      goalName: result.goalName || result.goal, // Handle both goalName and goal properties
+      amount: result.amount,
+      targetAmount: result.targetAmount,
+      deadline: result.deadline,
+      frequency: result.frequency,
+      description: result.description,
+      category: result.category
+    };
+    
+  } catch (error) {
+    console.error('Error analyzing savings command:', error);
+    return {
+      action: 'unknown',
+      confidence: 0
+    };
+  }
+}

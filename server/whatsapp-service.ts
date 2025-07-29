@@ -465,6 +465,26 @@ export const registerMessageHandlers = (userId: string): boolean => {
           return;
         }
         
+        // Check if it's a savings/goals command
+        if (messageText.includes('nabung') || 
+            messageText.includes('menabung') ||
+            messageText.includes('saving') ||
+            messageText.includes('tabung') ||
+            messageText.includes('goal') ||
+            messageText.includes('tujuan') ||
+            messageText.includes('target') ||
+            messageText.includes('buat goal') ||
+            messageText.includes('create goal') ||
+            messageText.includes('daftar goal') ||
+            messageText.includes('list goal') ||
+            messageText.includes('cek tabungan') ||
+            messageText.includes('check savings') ||
+            messageText.includes('saldo goal') ||
+            messageText.includes('goal balance')) {
+          await processSavingsCommand(message, messageUserId);
+          return;
+        }
+        
         // Check if it's a category command
         if (messageText.includes('kategori') || 
             messageText.includes('category') ||
@@ -632,6 +652,16 @@ const getUserCategories = async (userId: string) => {
     return await storage.getCategories(userId);
   } catch (error) {
     console.error('Error getting user categories:', error);
+    return [];
+  }
+};
+
+// Helper function to get user goals
+const getUserGoals = async (userId: string) => {
+  try {
+    return await storage.getGoals(userId);
+  } catch (error) {
+    console.error('Error getting user goals:', error);
     return [];
   }
 };
@@ -1209,6 +1239,11 @@ const showHelpMessage = async (message: any) => {
     `• "cek budget saya"\n` +
     `• "daftar budget"\n` +
     `• "hapus budget [kategori]"\n\n` +
+    `🎯 *Tabungan & Goal:*\n` +
+    `• "buat goal emergency fund target 10 juta" - Buat goal baru\n` +
+    `• "nabung 100000 untuk liburan" - Menabung ke goal\n` +
+    `• "daftar goal" - Lihat semua goal\n` +
+    `• "cek tabungan" - Ringkasan tabungan\n\n` +
     `�️ *Manajemen Kategori:*\n` +
     `• "buat kategori [nama] [emoji] [warna]" - Buat kategori baru\n` +
     `• "daftar kategori" - Lihat semua kategori\n` +
@@ -1391,6 +1426,63 @@ const processCategoryCommand = async (message: any, userId: string) => {
     await message.reply(
       `❌ *Terjadi Kesalahan*\n\n` +
       `Maaf, terjadi kesalahan dalam memproses perintah kategori Anda. Silakan coba lagi nanti.`
+    );
+  }
+};
+
+// Helper function to process savings/goals commands
+const processSavingsCommand = async (message: any, userId: string) => {
+  try {
+    const userPreferences = await getUserPreferences(userId);
+    const goals = await getUserGoals(userId);
+    
+    console.log(`Analyzing savings command for user ${userId}: ${message.body}`);
+    
+    // Import savings analysis function
+    const { analyzeSavingsCommand } = await import('./openai');
+    
+    // Create preferences object for AI analysis
+    const aiPreferences = {
+      defaultCurrency: userPreferences?.defaultCurrency || 'USD',
+      language: userPreferences?.language || 'id',
+      autoCategorize: userPreferences?.autoCategorize || false
+    };
+    
+    // Analyze the savings command with AI
+    const analysis = await analyzeSavingsCommand(message.body, goals, aiPreferences);
+    console.log('Savings command analysis result:', analysis);
+    
+    if (analysis.confidence > 0.7) {
+      const result = await handleSavingsAction(userId, analysis, userPreferences, goals);
+      
+      if (result.success) {
+        await message.reply(result.message);
+      } else {
+        await message.reply(
+          `❌ *Gagal Mengelola Tabungan*\n\n` +
+          `${result.message}\n\n` +
+          `Silakan coba lagi atau hubungi support.`
+        );
+      }
+    } else {
+      await message.reply(
+        `🤔 *Perintah Tabungan Tidak Dipahami*\n\n` +
+        `Maaf, saya tidak dapat memahami perintah tabungan/goal Anda.\n\n` +
+        `Contoh perintah yang bisa dipahami:\n` +
+        `• "nabung 100000 untuk liburan"\n` +
+        `• "buat goal emergency fund target 10 juta"\n` +
+        `• "daftar goal saya"\n` +
+        `• "cek tabungan"\n` +
+        `• "set rencana nabung 500rb per bulan untuk laptop"\n\n` +
+        `Atau ketik *"bantuan"* untuk panduan lengkap.`
+      );
+    }
+    
+  } catch (error) {
+    console.error('Error processing savings command:', error);
+    await message.reply(
+      `❌ *Terjadi Kesalahan*\n\n` +
+      `Maaf, terjadi kesalahan dalam memproses perintah tabungan Anda. Silakan coba lagi nanti.`
     );
   }
 };
@@ -1676,6 +1768,376 @@ const handleCategoryAction = async (
       success: false,
       message: 'Gagal mengelola kategori'
     };
+  }
+};
+
+// Helper function to handle savings actions
+const handleSavingsAction = async (
+  userId: string,
+  analysis: any,
+  userPreferences: any,
+  goals: any[]
+) => {
+  try {
+    const { storage } = await import('./storage');
+    
+    switch (analysis.action) {
+      case 'save':
+        if (!analysis.amount || analysis.amount <= 0) {
+          return {
+            success: false,
+            message: 'Jumlah tabungan harus disebutkan dan lebih dari 0'
+          };
+        }
+        
+        // Find the goal to save to
+        let targetGoal = null;
+        if (analysis.goalName) {
+          targetGoal = goals.find(g => 
+            g.name.toLowerCase().includes(analysis.goalName.toLowerCase())
+          );
+        } else if (goals.length === 1) {
+          // If only one goal, use it
+          targetGoal = goals[0];
+        }
+        
+        if (!targetGoal && goals.length > 1) {
+          const goalsList = goals.map(g => 
+            `• ${g.name} (${formatCurrency(g.currentAmount, userPreferences?.defaultCurrency)}/${formatCurrency(g.targetAmount, userPreferences?.defaultCurrency)})`
+          ).join('\n');
+          
+          return {
+            success: false,
+            message: `🎯 *Pilih Goal untuk Nabung*\n\n` +
+                    `Anda memiliki beberapa goal:\n${goalsList}\n\n` +
+                    `Contoh: "nabung 100000 untuk liburan"`
+          };
+        }
+        
+        if (!targetGoal) {
+          return {
+            success: false,
+            message: `🎯 *Goal Tidak Ditemukan*\n\n` +
+                    `${analysis.goalName ? `Goal "${analysis.goalName}" tidak ditemukan. ` : ''}` +
+                    `Anda belum memiliki goal aktif.\n\n` +
+                    `Buat goal baru dengan:\n` +
+                    `"buat goal emergency fund target 10 juta"`
+          };
+        }
+        
+        // Create goal boost (savings contribution)
+        const boost = await storage.createGoalBoost(
+          targetGoal.id,
+          userId,
+          analysis.amount,
+          `Nabung ke ${targetGoal.name}`
+        );
+        
+        const updatedGoal = await storage.getGoalById(targetGoal.id);
+        if (!updatedGoal) {
+          return {
+            success: false,
+            message: 'Gagal memperbarui informasi goal'
+          };
+        }
+        
+        const progress = Math.min((updatedGoal.currentAmount / updatedGoal.targetAmount) * 100, 100);
+        const remainingAmount = Math.max(updatedGoal.targetAmount - updatedGoal.currentAmount, 0);
+        
+        const formattedAmount = formatCurrency(analysis.amount, userPreferences?.defaultCurrency);
+        const formattedCurrentAmount = formatCurrency(updatedGoal.currentAmount, userPreferences?.defaultCurrency);
+        const formattedTargetAmount = formatCurrency(updatedGoal.targetAmount, userPreferences?.defaultCurrency);
+        const formattedRemaining = formatCurrency(remainingAmount, userPreferences?.defaultCurrency);
+        
+        let statusMessage = '';
+        if (progress >= 100) {
+          statusMessage = `\n\n🎉 *SELAMAT! Goal Tercapai!*\n` +
+                         `Target "${updatedGoal.name}" sudah 100% terpenuhi! 🎯✨`;
+        } else if (progress >= 75) {
+          statusMessage = `\n\n🔥 *Hampir Tercapai!*\n` +
+                         `Tinggal ${formattedRemaining} lagi untuk mencapai target!`;
+        } else if (progress >= 50) {
+          statusMessage = `\n\n💪 *Setengah Jalan!*\n` +
+                         `Sudah ${progress.toFixed(0)}% dari target tercapai!`;
+        }
+        
+        return {
+          success: true,
+          message: `✅ *Tabungan Berhasil Dicatat!*\n\n` +
+                  `💰 Jumlah: ${formattedAmount}\n` +
+                  `🎯 Goal: ${updatedGoal.name}\n` +
+                  `📊 Progress: ${formattedCurrentAmount} / ${formattedTargetAmount} (${progress.toFixed(1)}%)\n` +
+                  `📈 Sisa Target: ${formattedRemaining}${statusMessage}\n\n` +
+                  `_Tabungan telah ditambahkan ke goal Anda_`
+        };
+        
+      case 'create_goal':
+        if (!analysis.goalName || !analysis.targetAmount) {
+          return {
+            success: false,
+            message: 'Nama goal dan target jumlah harus disebutkan'
+          };
+        }
+        
+        // Check if goal with same name already exists
+        const existingGoal = goals.find(g => 
+          g.name.toLowerCase() === analysis.goalName.toLowerCase()
+        );
+        
+        if (existingGoal) {
+          return {
+            success: false,
+            message: `Goal "${analysis.goalName}" sudah ada`
+          };
+        }
+        
+        // Set default deadline if not provided (1 year from now)
+        const deadline = analysis.deadline || Math.floor(Date.now() / 1000) + (365 * 24 * 60 * 60);
+        
+        // Create new goal
+        const newGoal = await storage.createGoal({
+          userId: userId,
+          name: analysis.goalName,
+          targetAmount: analysis.targetAmount,
+          currentAmount: 0,
+          deadline: deadline,
+          category: analysis.category || 'general',
+          description: analysis.description || `Goal created via WhatsApp`,
+          isActive: true
+        });
+        
+        const formattedGoalTarget = formatCurrency(analysis.targetAmount, userPreferences?.defaultCurrency);
+        const deadlineDate = new Date(deadline * 1000);
+        const formattedDeadline = deadlineDate.toLocaleDateString('id-ID', { 
+          year: 'numeric', 
+          month: 'long', 
+          day: 'numeric' 
+        });
+        
+        return {
+          success: true,
+          message: `✅ *Goal Berhasil Dibuat!*\n\n` +
+                  `🎯 Nama: ${newGoal.name}\n` +
+                  `💰 Target: ${formattedGoalTarget}\n` +
+                  `📅 Deadline: ${formattedDeadline}\n` +
+                  `📂 Kategori: ${newGoal.category}\n\n` +
+                  `Mulai nabung dengan:\n` +
+                  `*"nabung 100000 untuk ${newGoal.name}"*`
+        };
+        
+      case 'list_goals':
+        return {
+          success: true,
+          message: await getGoalsList(userId, userPreferences)
+        };
+        
+      case 'check_balance':
+        return {
+          success: true,
+          message: await getGoalsBalance(userId, userPreferences)
+        };
+        
+      case 'set_plan':
+        if (!analysis.goalName || !analysis.amount || !analysis.frequency) {
+          return {
+            success: false,
+            message: 'Goal, jumlah, dan frekuensi harus disebutkan untuk rencana tabungan'
+          };
+        }
+        
+        // Find the goal
+        const planGoal = goals.find(g => 
+          g.name.toLowerCase().includes(analysis.goalName.toLowerCase())
+        );
+        
+        if (!planGoal) {
+          return {
+            success: false,
+            message: `Goal "${analysis.goalName}" tidak ditemukan`
+          };
+        }
+        
+        // Create savings plan
+        const savingsPlan = await storage.createGoalSavingsPlan(
+          planGoal.id,
+          userId,
+          analysis.amount,
+          analysis.frequency
+        );
+        
+        const formattedPlanAmount = formatCurrency(analysis.amount, userPreferences?.defaultCurrency);
+        const frequencyText = analysis.frequency === 'weekly' ? 'per minggu' : 
+                             analysis.frequency === 'monthly' ? 'per bulan' : 'per tahun';
+        
+        return {
+          success: true,
+          message: `✅ *Rencana Tabungan Dibuat!*\n\n` +
+                  `🎯 Goal: ${planGoal.name}\n` +
+                  `💰 Jumlah: ${formattedPlanAmount} ${frequencyText}\n` +
+                  `📅 Mulai: Sekarang\n\n` +
+                  `_Rencana tabungan otomatis telah diaktifkan_`
+        };
+        
+      default:
+        return {
+          success: false,
+          message: 'Perintah tabungan tidak dikenali'
+        };
+    }
+    
+  } catch (error) {
+    console.error('Error handling savings action:', error);
+    return {
+      success: false,
+      message: 'Gagal mengelola tabungan'
+    };
+  }
+};
+
+// Helper function to get goals list
+const getGoalsList = async (userId: string, userPreferences: any) => {
+  try {
+    const { storage } = await import('./storage');
+    
+    const goals = await storage.getGoals(userId);
+    
+    if (!goals || goals.length === 0) {
+      return `🎯 *Daftar Goal Anda*\n\n` +
+             `Anda belum memiliki goal keuangan.\n\n` +
+             `Buat goal baru dengan:\n` +
+             `• "buat goal emergency fund target 10 juta"\n` +
+             `• "buat goal liburan target 5 juta deadline 31 desember"`;
+    }
+    
+    let listMessages = [`🎯 *Daftar Goal Anda*\n`];
+    
+    // Group by status
+    const activeGoals = goals.filter(g => g.isActive);
+    const completedGoals = goals.filter(g => !g.isActive || g.currentAmount >= g.targetAmount);
+    
+    if (activeGoals.length > 0) {
+      listMessages.push(`\n📈 **Goal Aktif:**`);
+      activeGoals.forEach((goal, index) => {
+        const progress = Math.min((goal.currentAmount / goal.targetAmount) * 100, 100);
+        const formattedCurrent = formatCurrency(goal.currentAmount, userPreferences?.defaultCurrency);
+        const formattedTarget = formatCurrency(goal.targetAmount, userPreferences?.defaultCurrency);
+        const deadline = new Date(goal.deadline * 1000);
+        const formattedDeadline = deadline.toLocaleDateString('id-ID', { 
+          month: 'short', 
+          day: 'numeric',
+          year: 'numeric'
+        });
+        
+        let statusIcon = '🟡';
+        if (progress >= 100) statusIcon = '✅';
+        else if (progress >= 75) statusIcon = '🟢';
+        else if (progress >= 50) statusIcon = '🟡';
+        else statusIcon = '🔴';
+        
+        listMessages.push(
+          `${statusIcon} **${goal.name}**\n` +
+          `   💰 ${formattedCurrent} / ${formattedTarget} (${progress.toFixed(0)}%)\n` +
+          `   📅 Deadline: ${formattedDeadline}\n` +
+          `   📂 Kategori: ${goal.category || 'general'}`
+        );
+      });
+    }
+    
+    if (completedGoals.length > 0) {
+      listMessages.push(`\n🏆 **Goal Tercapai:** ${completedGoals.length} goal`);
+    }
+    
+    listMessages.push(
+      `\n💡 *Tips:*\n` +
+      `• Ketik "nabung 100000 untuk [nama goal]" untuk menabung\n` +
+      `• Ketik "buat goal [nama] target [jumlah]" untuk goal baru\n` +
+      `• Ketik "cek tabungan" untuk melihat ringkasan tabungan`
+    );
+    
+    return listMessages.join('\n');
+    
+  } catch (error) {
+    console.error('Error getting goals list:', error);
+    return `❌ Gagal mengambil daftar goal`;
+  }
+};
+
+// Helper function to get goals balance
+const getGoalsBalance = async (userId: string, userPreferences: any) => {
+  try {
+    const { storage } = await import('./storage');
+    
+    const goals = await storage.getGoals(userId);
+    
+    if (!goals || goals.length === 0) {
+      return `💰 *Ringkasan Tabungan*\n\n` +
+             `Anda belum memiliki goal keuangan.\n\n` +
+             `Mulai menabung dengan membuat goal:\n` +
+             `"buat goal emergency fund target 10 juta"`;
+    }
+    
+    let totalSaved = 0;
+    let totalTarget = 0;
+    let activeGoals = 0;
+    let completedGoals = 0;
+    
+    goals.forEach(goal => {
+      totalSaved += goal.currentAmount;
+      totalTarget += goal.targetAmount;
+      
+      if (goal.currentAmount >= goal.targetAmount) {
+        completedGoals++;
+      } else if (goal.isActive) {
+        activeGoals++;
+      }
+    });
+    
+    const overallProgress = totalTarget > 0 ? (totalSaved / totalTarget) * 100 : 0;
+    const formattedSaved = formatCurrency(totalSaved, userPreferences?.defaultCurrency);
+    const formattedTarget = formatCurrency(totalTarget, userPreferences?.defaultCurrency);
+    const formattedRemaining = formatCurrency(Math.max(totalTarget - totalSaved, 0), userPreferences?.defaultCurrency);
+    
+    let balanceMessages = [
+      `💰 *Ringkasan Tabungan Anda*\n`,
+      `💵 Total Terkumpul: ${formattedSaved}`,
+      `🎯 Total Target: ${formattedTarget}`,
+      `📊 Progress Keseluruhan: ${overallProgress.toFixed(1)}%`,
+      `📈 Sisa Target: ${formattedRemaining}\n`,
+      `📋 **Status Goal:**`,
+      `🏆 Goal Tercapai: ${completedGoals}`,
+      `📈 Goal Aktif: ${activeGoals}`,
+      `📊 Total Goal: ${goals.length}`
+    ];
+    
+    // Show top 3 goals by progress
+    const sortedGoals = goals
+      .filter(g => g.isActive && g.currentAmount < g.targetAmount)
+      .sort((a, b) => (b.currentAmount / b.targetAmount) - (a.currentAmount / a.targetAmount))
+      .slice(0, 3);
+    
+    if (sortedGoals.length > 0) {
+      balanceMessages.push(`\n🔝 **Goal Teratas:**`);
+      sortedGoals.forEach(goal => {
+        const progress = (goal.currentAmount / goal.targetAmount) * 100;
+        const formattedCurrent = formatCurrency(goal.currentAmount, userPreferences?.defaultCurrency);
+        const formattedGoalTarget = formatCurrency(goal.targetAmount, userPreferences?.defaultCurrency);
+        
+        balanceMessages.push(
+          `• ${goal.name}: ${formattedCurrent}/${formattedGoalTarget} (${progress.toFixed(0)}%)`
+        );
+      });
+    }
+    
+    balanceMessages.push(
+      `\n💡 *Mulai nabung:*\n` +
+      `"nabung 100000 untuk [nama goal]"`
+    );
+    
+    return balanceMessages.join('\n');
+    
+  } catch (error) {
+    console.error('Error getting goals balance:', error);
+    return `❌ Gagal mengambil ringkasan tabungan`;
   }
 };
 
