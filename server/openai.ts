@@ -1226,7 +1226,7 @@ export async function generateBudgetRecommendations(
 
 // Interface for savings command analysis
 export interface SavingsAnalysis {
-  action: 'save' | 'create_goal' | 'list_goals' | 'check_balance' | 'set_plan' | 'transfer_goal' | 'delete_goal' | 'unknown';
+  action: 'save' | 'create_goal' | 'list_goals' | 'check_balance' | 'set_plan' | 'transfer_goal' | 'delete_goal' | 'return_funds' | 'unknown';
   confidence: number;
   goalName?: string;
   targetGoalName?: string; // For transfer operations
@@ -1266,13 +1266,15 @@ export async function analyzeSavingsCommand(
           5. set_plan - User wants to set up automatic savings plan
           6. transfer_goal - User wants to transfer money between goals
           7. delete_goal - User wants to delete a goal
-          8. unknown - Command is unclear
+          8. return_funds - User wants to return money from a goal back to main balance
+          9. unknown - Command is unclear
 
           ANALYSIS RULES:
           - For 'save' action, amount must be specified and goal should exist
           - For 'create_goal', goal name and target amount are required
           - For 'transfer_goal', amount, source goal, and target goal are required
           - For 'delete_goal', goal name must be specified
+          - For 'return_funds', goal name must be specified (amount optional, returns all if not specified)
           - For 'list_goals' with "completed" keyword, set goalName to "completed"
           - Parse numbers in Indonesian/English (ribu=1000, juta=1000000, rb=1000, etc.)
           - Detect time periods: harian/daily, mingguan/weekly, bulanan/monthly, tahunan/yearly
@@ -1285,8 +1287,10 @@ export async function analyzeSavingsCommand(
           LANGUAGE PATTERNS:
           Indonesian: nabung, menabung, tabung, target, tujuan, goal, buat goal, cek tabungan, saldo goal, transfer, pindah, hapus
           - Completed/Archive: completed, tercapai, selesai, archive, arsip, yang sudah tercapai, yang selesai
+          - Return/Refund: kembalikan, kembalikan dana, refund, return, tarik dana, withdraw
           English: save, saving, goal, create goal, check savings, goal balance, transfer, move, delete
           - Completed/Archive: completed, finished, achieved, archived, done
+          - Return/Refund: return, refund, withdraw, take out, get back
 
           EXAMPLES:
           Indonesian:
@@ -1298,6 +1302,9 @@ export async function analyzeSavingsCommand(
           - "goal archive" → {"action": "list_goals", "confidence": 0.8, "goalName": "completed"}
           - "transfer 500000 dari emergency ke liburan" → {"action": "transfer_goal", "confidence": 0.9, "amount": 500000, "goalName": "emergency", "targetGoalName": "liburan"}
           - "hapus goal emergency fund" → {"action": "delete_goal", "confidence": 0.9, "goalName": "emergency fund"}
+          - "kembalikan dana beli laptop ke saldo" → {"action": "return_funds", "confidence": 0.9, "goalName": "beli laptop"}
+          - "kembalikan 500000 dari vacation ke saldo" → {"action": "return_funds", "confidence": 0.9, "amount": 500000, "goalName": "vacation"}
+          - "tarik dana dari emergency fund" → {"action": "return_funds", "confidence": 0.8, "goalName": "emergency fund"}
           - "cek tabungan" → {"action": "check_balance", "confidence": 1}
 
           English:
@@ -1307,14 +1314,20 @@ export async function analyzeSavingsCommand(
           - "show archived goals" → {"action": "list_goals", "confidence": 0.9, "goalName": "completed"}
           - "transfer 500 from emergency to vacation" → {"action": "transfer_goal", "confidence": 0.9, "amount": 500, "goalName": "emergency", "targetGoalName": "vacation"}
           - "delete goal emergency" → {"action": "delete_goal", "confidence": 0.9, "goalName": "emergency"}
+          - "return funds from laptop goal" → {"action": "return_funds", "confidence": 0.9, "goalName": "laptop"}
+          - "withdraw 500 from vacation goal" → {"action": "return_funds", "confidence": 0.9, "amount": 500, "goalName": "vacation"}
+          - "get money back from emergency fund" → {"action": "return_funds", "confidence": 0.8, "goalName": "emergency fund"}
 
           SPECIAL DETECTION RULES:
           1. If text contains "completed", "tercapai", "selesai", "archive", "arsip" + list/daftar keywords:
              → action: "list_goals", goalName: "completed"
           2. If text contains "aktif", "active" + list/daftar keywords:
              → action: "list_goals", goalName: undefined (default shows active)
-          3. Look for specific goal names that user wants to interact with
-          4. For transfers, detect "dari/from" (source) and "ke/to" (target) patterns
+          3. If text contains "kembalikan", "refund", "return", "tarik dana", "withdraw" + goal reference:
+             → action: "return_funds", goalName: [detected goal name]
+          4. Look for specific goal names that user wants to interact with
+          5. For transfers, detect "dari/from" (source) and "ke/to" (target) patterns
+          6. For returns, detect "ke saldo", "to balance", "back to account" patterns
 
           Return JSON with action, confidence (0-1), and relevant extracted data. Use 'goalName' and 'targetGoalName' properties for goal names.`
         },

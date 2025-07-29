@@ -480,7 +480,16 @@ export const registerMessageHandlers = (userId: string): boolean => {
             messageText.includes('cek tabungan') ||
             messageText.includes('check savings') ||
             messageText.includes('saldo goal') ||
-            messageText.includes('goal balance')) {
+            messageText.includes('goal balance') ||
+            messageText.includes('kembalikan') ||
+            messageText.includes('kembalikan dana') ||
+            messageText.includes('tarik dana') ||
+            messageText.includes('return') ||
+            messageText.includes('refund') ||
+            messageText.includes('withdraw') ||
+            messageText.includes('hapus goal') ||
+            messageText.includes('delete goal') ||
+            messageText.includes('transfer') && (messageText.includes('dari') || messageText.includes('from'))) {
           await processSavingsCommand(message, messageUserId);
           return;
         }
@@ -1245,6 +1254,7 @@ const showHelpMessage = async (message: any) => {
     `• "daftar goal" - Lihat goal aktif\n` +
     `• "daftar goal completed" - Lihat goal tercapai/arsip\n` +
     `• "transfer 500000 dari emergency ke liburan" - Transfer antar goal\n` +
+    `• "kembalikan dana beli laptop ke saldo" - Kembalikan dana ke saldo utama\n` +
     `• "hapus goal emergency fund" - Hapus goal (dengan proteksi)\n` +
     `• "cek tabungan" - Ringkasan tabungan\n\n` +
     `�️ *Manajemen Kategori:*\n` +
@@ -2065,6 +2075,80 @@ const handleSavingsAction = async (
                   `• ${sourceGoal.name}: ${formatCurrency(newSourceAmount, userPreferences?.defaultCurrency)}\n` +
                   `• ${destinationGoal.name}: ${formatCurrency(newTargetAmount, userPreferences?.defaultCurrency)}` +
                   (actualTransfer < analysis.amount ? `\n\n⚠️ Transfer disesuaikan agar tidak melebihi target goal tujuan` : '')
+        };
+        
+      case 'return_funds':
+        if (!analysis.goalName) {
+          return {
+            success: false,
+            message: 'Nama goal untuk pengembalian dana harus disebutkan\n\nContoh: "kembalikan dana beli laptop ke saldo"'
+          };
+        }
+        
+        const goalToReturn = goals.find(g => 
+          g.name.toLowerCase().includes(analysis.goalName.toLowerCase())
+        );
+        
+        if (!goalToReturn) {
+          return {
+            success: false,
+            message: `Goal "${analysis.goalName}" tidak ditemukan`
+          };
+        }
+        
+        if (goalToReturn.currentAmount <= 0) {
+          return {
+            success: false,
+            message: `Goal "${goalToReturn.name}" tidak memiliki dana untuk dikembalikan`
+          };
+        }
+        
+        // Determine amount to return
+        const returnAmount = analysis.amount && analysis.amount > 0 
+          ? Math.min(analysis.amount, goalToReturn.currentAmount)
+          : goalToReturn.currentAmount;
+        
+        // Find or create refund category
+        const categories = await getUserCategories(userId);
+        let refundCategory = categories.find(c => 
+          c.name.toLowerCase() === "goal refund" || c.name.toLowerCase() === "pengembalian goal"
+        );
+        
+        if (!refundCategory) {
+          refundCategory = await storage.createCategory({
+            userId,
+            name: "Pengembalian Goal",
+            type: "income",
+            icon: "🔄",
+            color: "#10B981"
+          });
+        }
+        
+        // Create refund transaction (income to return money to balance)
+        const refundTransaction = await storage.createTransaction({
+          userId,
+          amount: returnAmount,
+          description: `Pengembalian Dana dari Goal: ${goalToReturn.name}`,
+          categoryId: refundCategory.id,
+          type: 'income',
+          date: Math.floor(Date.now() / 1000),
+          currency: userPreferences?.defaultCurrency || 'IDR'
+        });
+        
+        // Update goal amount (subtract the returned amount)
+        const newGoalAmount = goalToReturn.currentAmount - returnAmount;
+        await storage.updateGoal(goalToReturn.id, {
+          currentAmount: newGoalAmount
+        });
+        
+        return {
+          success: true,
+          message: `✅ *Dana Berhasil Dikembalikan!*\n\n` +
+                  `💰 Jumlah: ${formatCurrency(returnAmount, userPreferences?.defaultCurrency)}\n` +
+                  `🎯 Dari Goal: ${goalToReturn.name}\n` +
+                  `💳 Dikembalikan ke saldo utama\n\n` +
+                  `📊 *Sisa di Goal:* ${formatCurrency(newGoalAmount, userPreferences?.defaultCurrency)}\n\n` +
+                  `_Dana telah ditambahkan ke saldo utama Anda_`
         };
         
       case 'delete_goal':
