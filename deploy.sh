@@ -1,53 +1,62 @@
 #!/bin/bash
 
-# MonlyAI Production Deployment Script
-# This script sets up and deploys the MonlyAI application with automatic SSL
+# MonlyAI Deployment Scripecho "🎉 Deployment Complete!"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "📱 Access your app at: http://your-server-ip:8888"
+echo "📋 To view logs: docker-compose -f docker-compose.prod.yml logs -f"
+echo ""
+echo "⚠️  Important Notes:"
+echo "  • Port 8888 = HTTP access (no SSL conflicts)"
+echo "  • No conflicts with system Apache/Nginx"
+echo "  • Update your domain DNS to point to: your-server-ip:8888"
+echo "  • To enable SSL later, use the full nginx.conf and setup-ssl.sh" deployment without SSL conflicts
 
-set -e
+echo "🚀 MonlyAI Production Deployment"
+echo "================================="
 
-echo "🚀 Starting MonlyAI Production Deployment..."
-
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
-
-# Check if Docker is installed
-if ! command -v docker &> /dev/null; then
-    echo -e "${RED}❌ Docker is not installed. Please install Docker first.${NC}"
+# Check if .env.production exists
+if [ ! -f ".env.production" ]; then
+    echo "❌ .env.production file not found!"
+    echo "📝 Please create .env.production with your environment variables"
+    echo "💡 You can copy from .env.production.example"
     exit 1
 fi
 
-# Check if Docker Compose is installed
-if ! command -v docker-compose &> /dev/null; then
-    echo -e "${RED}❌ Docker Compose is not installed. Please install Docker Compose first.${NC}"
-    exit 1
-fi
+# Load environment variables
+export $(cat .env.production | grep -v '^#' | xargs)
 
-# Create necessary directories
-echo "📁 Creating directories..."
-mkdir -p ./data
-mkdir -p ./backups
-mkdir -p ./letsencrypt
+# Create nginx directories
+mkdir -p nginx
 
-# Set proper permissions
-echo "🔐 Setting permissions..."
-chmod 600 .env.production
-chmod -R 755 ./data
-chmod -R 755 ./backups
-
-# Copy environment file
-if [ ! -f .env.production ]; then
-    echo -e "${YELLOW}⚠️ .env.production not found. Please create it from .env.production.example${NC}"
-    exit 1
-fi
-
-# Stop existing containers
 echo "🛑 Stopping existing containers..."
-docker-compose -f docker-compose.prod.yml down --remove-orphans || true
+docker-compose -f docker-compose.prod.yml down --remove-orphans
 
-# Pull latest images
+echo "🏗️  Building application..."
+docker-compose -f docker-compose.prod.yml build --no-cache
+
+echo "🚀 Starting services..."
+docker-compose -f docker-compose.prod.yml up -d
+
+echo "⏳ Waiting for services to start..."
+sleep 15
+
+# Check if services are running
+echo "📊 Service Status:"
+docker-compose -f docker-compose.prod.yml ps
+
+echo ""
+echo "🎉 Deployment Complete!"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "📱 HTTP Access: http://your-server-ip:8888"
+echo "🔒 HTTPS Access: https://your-server-ip:8889 (after SSL setup)"
+echo "� To view logs: docker-compose -f docker-compose.prod.yml logs -f"
+echo "🔐 To setup SSL: ./setup-ssl.sh"
+echo ""
+echo "⚠️  Important Notes:"
+echo "  • Port 8888 = HTTP (redirect to HTTPS)"
+echo "  • Port 8889 = HTTPS (main access)"
+echo "  • No conflicts with system Apache/Nginx"
+echo "  • Update your domain DNS to point to: your-server-ip:8889"
 echo "📦 Pulling latest images..."
 docker-compose -f docker-compose.prod.yml pull || true
 
