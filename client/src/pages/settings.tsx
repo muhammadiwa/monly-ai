@@ -51,6 +51,7 @@ interface UserPreferences {
   timezone: string;
   language: string;
   autoCategorize: boolean;
+  transactionReminders: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -78,6 +79,12 @@ export default function Settings() {
     timezone: "Asia/Jakarta", 
     language: "id",
     autoCategorize: false
+  });
+  const [notificationData, setNotificationData] = useState({
+    transactionReminders: true,
+    budgetAlerts: true,
+    monthlyReports: true,
+    securityAlerts: true
   });
   const [isProfileSaving, setIsProfileSaving] = useState(false);
   const [isFinancialSaving, setIsFinancialSaving] = useState(false);
@@ -156,6 +163,12 @@ export default function Settings() {
         language: userPreferences.language || "id", 
         autoCategorize: userPreferences.autoCategorize || false
       });
+      setNotificationData({
+        transactionReminders: userPreferences.transactionReminders !== undefined ? userPreferences.transactionReminders : true,
+        budgetAlerts: true,
+        monthlyReports: true,
+        securityAlerts: true
+      });
     }
   }, [userPreferences]);
 
@@ -211,10 +224,22 @@ export default function Settings() {
     try {
       // Update only the changed field via API
       await apiRequest('PUT', '/api/user/preferences', { [key]: value });
-      toast({
-        title: "Settings Updated",
-        description: "Your preferences have been saved successfully.",
-      });
+      
+      // Show specific message for transaction reminders
+      if (key === 'transactionReminders') {
+        toast({
+          title: value ? "✅ Transaction Reminders Enabled" : "❌ Transaction Reminders Disabled",
+          description: value 
+            ? "You'll receive daily WhatsApp reminders when you haven't logged transactions"
+            : "Daily transaction reminders have been disabled",
+          className: value ? "bg-green-50 border-green-200 text-green-800" : "bg-blue-50 border-blue-200 text-blue-800",
+        });
+      } else {
+        toast({
+          title: "Settings Updated",
+          description: "Your preferences have been saved successfully.",
+        });
+      }
     } catch (error) {
       console.error('Error updating preferences:', error);
       // Revert the optimistic update on error
@@ -913,17 +938,26 @@ export default function Settings() {
                     <Bell className="h-5 w-5 text-primary" />
                     <span>Notifications & Alerts</span>
                   </div>
-                  <Badge variant="outline" className="text-yellow-700 border-yellow-300">
-                    Coming Soon
+                  <Badge className="bg-green-100 text-green-700 border-green-200">
+                    <Zap className="h-3 w-3 mr-1" />
+                    Transaction Reminders Active
                   </Badge>
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-3 sm:p-6 space-y-3">
                 {[
-                  { id: "budget-alerts", title: "Budget Alerts", desc: "Get notified when you exceed your budget", icon: "💰" },
-                  { id: "transaction-reminders", title: "Transaction Reminders", desc: "Daily reminders to log transactions", icon: "⏰" },
-                  { id: "monthly-reports", title: "Monthly Reports", desc: "Receive monthly financial summary", icon: "📊" },
-                  { id: "security-alerts", title: "Security Alerts", desc: "Important security notifications", icon: "🔒" }
+                  { id: "budget-alerts", title: "Budget Alerts", desc: "Get notified when you exceed your budget", icon: "💰", enabled: false },
+                  { 
+                    id: "transaction-reminders", 
+                    title: "Transaction Reminders", 
+                    desc: "Daily reminders to log transactions", 
+                    icon: "⏰", 
+                    enabled: true,
+                    checked: preferences?.transactionReminders || false,
+                    onChange: (checked: boolean) => handlePreferenceUpdate('transactionReminders', checked)
+                  },
+                  { id: "monthly-reports", title: "Monthly Reports", desc: "Receive monthly financial summary", icon: "📊", enabled: false },
+                  { id: "security-alerts", title: "Security Alerts", desc: "Important security notifications", icon: "🔒", enabled: false }
                 ].map((item) => (
                   <div key={item.id} className="flex items-center justify-between p-4 bg-white rounded-lg border">
                     <div className="flex items-center gap-3">
@@ -931,9 +965,17 @@ export default function Settings() {
                       <div>
                         <Label htmlFor={item.id} className="text-base font-medium">{item.title}</Label>
                         <p className="text-sm text-gray-600">{item.desc}</p>
+                        {item.enabled && (
+                          <p className="text-xs text-green-600 font-medium">✅ Available</p>
+                        )}
                       </div>
                     </div>
-                    <Switch id={item.id} defaultChecked disabled />
+                    <Switch 
+                      id={item.id} 
+                      checked={item.enabled ? (item.checked || false) : false}
+                      onCheckedChange={item.enabled ? item.onChange : undefined}
+                      disabled={!item.enabled} 
+                    />
                   </div>
                 ))}
               </CardContent>

@@ -7,6 +7,7 @@ import { requireAuth, hashPassword, verifyPassword, generateToken, type AuthRequ
 import { AIFinancialIntelligenceEngine } from './ai-intelligence';
 import whatsappRoutes from './whatsapp-routes';
 import whatsappMultiAccountRoutes from './whatsapp-multi-account-routes';
+import { triggerTransactionRemindersManually } from './transaction-reminder-scheduler';
 import multer from "multer";
 import { z } from "zod";
 import session from "express-session";
@@ -1867,6 +1868,66 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ 
         success: false, 
         error: "Failed to generate goal forecasts" 
+      });
+    }
+  });
+
+  // Transaction Reminders endpoints
+  app.post("/api/reminders/trigger-transaction-reminders", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
+      
+      // Manual trigger for transaction reminders (for testing/admin purposes)
+      await triggerTransactionRemindersManually();
+      
+      res.json({
+        success: true,
+        message: "Transaction reminders triggered successfully"
+      });
+    } catch (error) {
+      console.error("Manual trigger transaction reminders error:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Failed to trigger transaction reminders" 
+      });
+    }
+  });
+
+  // Test endpoint for development (no auth required)
+  app.post("/api/test/trigger-reminders", async (req, res: Response) => {
+    try {
+      console.log('🧪 Test trigger reminders called');
+      await triggerTransactionRemindersManually();
+      
+      res.json({
+        success: true,
+        message: "Test reminders triggered successfully"
+      });
+    } catch (error) {
+      console.error("Test trigger reminders error:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Failed to trigger test reminders" 
+      });
+    }
+  });
+
+  app.get("/api/reminders/notification-logs", requireAuth, async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
+      
+      // Get notification logs for the user
+      const logs = await storage.getNotificationLogs(req.user.id);
+      
+      res.json({
+        success: true,
+        data: logs
+      });
+    } catch (error) {
+      console.error("Get notification logs error:", error);
+      res.status(500).json({ 
+        success: false, 
+        error: "Failed to get notification logs" 
       });
     }
   });

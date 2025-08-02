@@ -7,6 +7,8 @@ import {
   goals,
   goalBoosts,
   goalSavingsPlans,
+  whatsappIntegrations,
+  notificationLogs,
   type User,
   type UpsertUser,
   type UserPreferences,
@@ -22,6 +24,9 @@ import {
   type InsertBudget,
   type Goal,
   type InsertGoal,
+  type WhatsappIntegration,
+  type NotificationLog,
+  type InsertNotificationLog,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc, sum, gte, lte, sql } from "drizzle-orm";
@@ -97,6 +102,13 @@ export interface IStorage {
   getTotalBalance(userId: string): Promise<number>;
   getMonthlyIncome(userId: string, year: number, month: number): Promise<number>;
   getMonthlyExpenseTotal(userId: string, year: number, month: number): Promise<number>;
+
+  // Transaction reminder operations
+  getUsersWithTransactionReminders(): Promise<User[]>;
+  getUserTransactionsInDateRange(userId: string, startTimestamp: number, endTimestamp: number): Promise<Transaction[]>;
+  getUserWhatsAppIntegrations(userId: string): Promise<any[]>;
+  createNotificationLog(log: any): Promise<any>;
+  getNotificationLogs(userId: string, limit?: number): Promise<NotificationLog[]>;
 
   // Get previous month data for comparison
   getPreviousMonthData(userId: string): Promise<{
@@ -1440,6 +1452,107 @@ export class DatabaseStorage implements IStorage {
     });
 
     return patterns.filter(pattern => pattern.monthlyAverage > 0);
+  }
+
+  /**
+   * Get all users who have transaction reminders enabled
+   */
+  async getUsersWithTransactionReminders(): Promise<User[]> {
+    try {
+      const usersWithReminders = await db
+        .select()
+        .from(users)
+        .innerJoin(userPreferences, eq(users.id, userPreferences.userId))
+        .where(eq(userPreferences.transactionReminders, true));
+      
+      return usersWithReminders.map(result => result.users);
+    } catch (error) {
+      console.error('Error getting users with transaction reminders:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get user transactions within a date range (timestamp format)
+   */
+  async getUserTransactionsInDateRange(
+    userId: string, 
+    startTimestamp: number, 
+    endTimestamp: number
+  ): Promise<Transaction[]> {
+    try {
+      const userTransactions = await db
+        .select()
+        .from(transactions)
+        .where(
+          and(
+            eq(transactions.userId, userId),
+            gte(transactions.date, startTimestamp),
+            lte(transactions.date, endTimestamp)
+          )
+        );
+      
+      return userTransactions;
+    } catch (error) {
+      console.error('Error getting user transactions in date range:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get all active WhatsApp integrations for a user
+   */
+  async getUserWhatsAppIntegrations(userId: string): Promise<WhatsappIntegration[]> {
+    try {
+      const integrations = await db
+        .select()
+        .from(whatsappIntegrations)
+        .where(eq(whatsappIntegrations.userId, userId));
+      
+      return integrations;
+    } catch (error) {
+      console.error('Error getting user WhatsApp integrations:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Create a notification log entry
+   */
+  async createNotificationLog(log: InsertNotificationLog): Promise<NotificationLog> {
+    try {
+      const [newLog] = await db
+        .insert(notificationLogs)
+        .values({
+          ...log,
+          createdAt: Date.now(),
+        })
+        .returning();
+      
+      return newLog;
+    } catch (error) {
+      console.error('Error creating notification log:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get notification logs for a user
+   */
+  async getNotificationLogs(userId: string, limit: number = 50): Promise<NotificationLog[]> {
+    try {
+      const logs = await db
+        .select()
+        .from(notificationLogs)
+        .where(eq(notificationLogs.userId, userId))
+        .orderBy(desc(notificationLogs.sentAt))
+        .limit(limit);
+      
+      return logs;
+    } catch (error) {
+      console.error('Error getting notification logs:', error);
+      return [];
+    }
   }
 
 }

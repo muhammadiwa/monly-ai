@@ -3,6 +3,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { initializeAllWhatsAppClients } from "./whatsapp-initialization";
+import { startTransactionReminderScheduler } from "./transaction-reminder-scheduler";
 
 const app = express();
 app.use(express.json());
@@ -82,5 +83,14 @@ app.use((req, res, next) => {
     }).catch(error => {
       log(`❌ WhatsApp service initialization failed: ${error}`);
     });
+
+    // Start transaction reminder scheduler
+    log('⏰ Starting transaction reminder scheduler...');
+    try {
+      startTransactionReminderScheduler();
+      log('✅ Transaction reminder scheduler started successfully');
+    } catch (error) {
+      log(`❌ Failed to start transaction reminder scheduler: ${error}`);
+    }
   });
 })();

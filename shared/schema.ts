@@ -40,9 +40,27 @@ export const userPreferences = sqliteTable("user_preferences", {
   timezone: text("timezone").notNull().default("UTC"),
   language: text("language").notNull().default("en"), // 'en' or 'id'
   autoCategorize: integer("auto_categorize", { mode: 'boolean' }).default(true),
+  transactionReminders: integer("transaction_reminders", { mode: 'boolean' }).default(true),
   createdAt: integer("created_at"), // Unix timestamp
   updatedAt: integer("updated_at"), // Unix timestamp
 });
+
+// Notification logs table
+export const notificationLogs = sqliteTable("notification_logs", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: text("user_id").references(() => users.id).notNull(),
+  type: text("type").notNull(), // 'transaction_reminder', 'budget_alert', etc.
+  whatsappNumber: text("whatsapp_number"),
+  message: text("message").notNull(),
+  status: text("status", { enum: ["sent", "failed"] }).notNull(),
+  sentAt: integer("sent_at").notNull(), // Unix timestamp
+  errorMessage: text("error_message"),
+  createdAt: integer("created_at"), // Unix timestamp
+}, (table) => [
+  index("idx_notification_logs_user_id").on(table.userId),
+  index("idx_notification_logs_type").on(table.type),
+  index("idx_notification_logs_sent_at").on(table.sentAt),
+]);
 
 // WhatsApp integrations table
 export const whatsappIntegrations = sqliteTable("whatsapp_integrations", {
@@ -249,6 +267,14 @@ export const whatsappActivationCodesRelations = relations(whatsappActivationCode
   }),
 }));
 
+// Notification logs relations
+export const notificationLogsRelations = relations(notificationLogs, ({ one }) => ({
+  user: one(users, {
+    fields: [notificationLogs.userId],
+    references: [users.id],
+  }),
+}));
+
 // Insert schemas
 export const insertCategorySchema = createInsertSchema(categories).omit({
   id: true,
@@ -293,6 +319,11 @@ export const insertWhatsappActivationCodeSchema = createInsertSchema(whatsappAct
   createdAt: true,
 });
 
+export const insertNotificationLogSchema = createInsertSchema(notificationLogs).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -313,3 +344,5 @@ export type WhatsappIntegration = typeof whatsappIntegrations.$inferSelect;
 export type InsertWhatsappIntegration = z.infer<typeof insertWhatsappIntegrationSchema>;
 export type WhatsappActivationCode = typeof whatsappActivationCodes.$inferSelect;
 export type InsertWhatsappActivationCode = z.infer<typeof insertWhatsappActivationCodeSchema>;
+export type NotificationLog = typeof notificationLogs.$inferSelect;
+export type InsertNotificationLog = z.infer<typeof insertNotificationLogSchema>;
