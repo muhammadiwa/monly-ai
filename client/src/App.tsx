@@ -45,10 +45,11 @@ function Router() {
   return (
     <Switch>
       <Route path="/auth" component={Auth} />
+      <Route path="/" component={Landing} />
       <Route path="*">
         <Layout>
           <Switch>
-            <Route path="/" component={Dashboard} />
+            <Route path="/dashboard" component={Dashboard} />
             <Route path="/transactions" component={Transactions} />
             <Route path="/categories" component={Categories} />
             <Route path="/chat" component={ChatAI} />

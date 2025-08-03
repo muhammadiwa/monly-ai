@@ -3,7 +3,7 @@ import { ChartLine, BarChart3, CreditCard, PieChart, Settings, Grid3X3, Target, 
 import { cn } from "@/lib/utils";
 
 const navigation = [
-  { name: "Dashboard", href: "/", icon: BarChart3 },
+  { name: "Dashboard", href: "/dashboard", icon: BarChart3 },
   { name: "Transactions", href: "/transactions", icon: CreditCard },
   { name: "Categories", href: "/categories", icon: Grid3X3 },
   { name: "Budgets", href: "/budgets", icon: PieChart },

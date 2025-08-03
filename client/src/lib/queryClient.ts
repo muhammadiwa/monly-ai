@@ -1,8 +1,15 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { handleAuthError } from "./authUtils";
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
+    
+    // Handle auth errors globally
+    if (res.status === 401 || res.status === 403) {
+      handleAuthError({ status: res.status, message: text });
+    }
+    
     throw new Error(`${res.status}: ${text}`);
   }
 }
@@ -73,6 +80,12 @@ export const queryClient = new QueryClient({
     },
     mutations: {
       retry: false,
+      onError: (error: any) => {
+        // Handle auth errors globally for mutations
+        if (error?.message?.includes('401:') || error?.message?.includes('403:')) {
+          handleAuthError({ status: 401, message: error.message });
+        }
+      }
     },
   },
 });

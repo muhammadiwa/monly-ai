@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState, useEffect } from "react";
+import { clearAuthData, redirectToLogin, handleAuthError, getAuthToken } from "@/lib/authUtils";
 
 export function useAuth() {
   const [authUser, setAuthUser] = useState(null);
@@ -11,7 +12,7 @@ export function useAuth() {
     const checkAuth = () => {
       try {
         // Check for auth token and user
-        const authToken = localStorage.getItem('auth-token');
+        const authToken = getAuthToken();
         const storedAuthUser = localStorage.getItem('auth-user');
         
         if (authToken && storedAuthUser) {
@@ -40,7 +41,7 @@ export function useAuth() {
     retry: false,
     enabled: hasToken, // Only run query if we have a token
     queryFn: async () => {
-      const authToken = localStorage.getItem('auth-token');
+      const authToken = getAuthToken();
       if (!authToken) {
         throw new Error('No auth token');
       }
@@ -52,12 +53,9 @@ export function useAuth() {
         credentials: 'include',
       });
 
-      if (res.status === 401 || res.status === 404) {
-        // Token is invalid or user not found, clear auth data
-        localStorage.removeItem('auth-token');
-        localStorage.removeItem('auth-user');
-        setAuthUser(null);
-        setHasToken(false);
+      if (res.status === 401 || res.status === 403) {
+        // Token is invalid or user not found, handle auth error
+        handleAuthError({ status: res.status });
         throw new Error('Authentication failed');
       }
 
@@ -66,8 +64,17 @@ export function useAuth() {
       }
 
       return res.json();
-    },
+    }
   });
+
+  // Handle auth errors
+  useEffect(() => {
+    if (error && hasToken) {
+      handleAuthError(error);
+      setAuthUser(null);
+      setHasToken(false);
+    }
+  }, [error, hasToken]);
 
   // Use priority: apiUser > authUser
   const user = apiUser || authUser;
@@ -75,8 +82,7 @@ export function useAuth() {
   const isAuthenticated = !!(hasToken && user);
 
   const logout = () => {
-    localStorage.removeItem('auth-token');
-    localStorage.removeItem('auth-user');
+    clearAuthData();
     setAuthUser(null);
     setHasToken(false);
     window.location.href = '/auth';

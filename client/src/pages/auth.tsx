@@ -53,7 +53,7 @@ export default function Auth() {
       }
       
       // Force reload to ensure useAuth hook picks up the new token
-      window.location.href = "/";
+      window.location.href = "/dashboard";
     } catch (error: unknown) {
       console.error("Authentication error:", error);
       // Show error message to user

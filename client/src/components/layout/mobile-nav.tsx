@@ -3,7 +3,7 @@ import { BarChart3, CreditCard, PieChart, ChartLine, Target } from "lucide-react
 import { cn } from "@/lib/utils";
 
 const navigation = [
-  { name: "Dashboard", href: "/", icon: BarChart3 },
+  { name: "Dashboard", href: "/dashboard", icon: BarChart3 },
   { name: "Transactions", href: "/transactions", icon: CreditCard },
   { name: "Goals", href: "/goals", icon: Target },
   { name: "Budgets", href: "/budgets", icon: PieChart },
