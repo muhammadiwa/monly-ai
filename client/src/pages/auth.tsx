@@ -1,28 +1,95 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ArrowRight, Mail, Lock, User, Eye, EyeOff } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/use-toast";
 
 export default function Auth() {
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const { toast } = useToast();
   const [isLogin, setIsLogin] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   
   const [formData, setFormData] = useState({
-    email: "test@gmail.com", // Default test email
-    password: "password123", // Default test password
+    email: "",
+    password: "",
     name: "",
     confirmPassword: ""
   });
+
+  // Redirect to dashboard if user is already authenticated
+  useEffect(() => {
+    if (!authLoading && isAuthenticated) {
+      window.location.href = "/dashboard";
+    }
+  }, [isAuthenticated, authLoading]);
+
+  // Show loading spinner while checking auth status
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-blue-50 to-purple-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Checking authentication...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Don't render auth form if user is authenticated
+  if (isAuthenticated) {
+    return null;
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     
     try {
+      // Form validation
+      if (!formData.email || !formData.password) {
+        toast({
+          title: "Validation Error",
+          description: "Email and password are required.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (!isLogin) {
+        if (!formData.name) {
+          toast({
+            title: "Validation Error", 
+            description: "Full name is required for registration.",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        if (formData.password !== formData.confirmPassword) {
+          toast({
+            title: "Validation Error",
+            description: "Passwords do not match.",
+            variant: "destructive", 
+          });
+          return;
+        }
+
+        if (formData.password.length < 6) {
+          toast({
+            title: "Validation Error",
+            description: "Password must be at least 6 characters long.",
+            variant: "destructive",
+          });
+          return;
+        }
+      }
+      
       const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
       const payload = isLogin 
         ? { email: formData.email, password: formData.password }
@@ -51,14 +118,26 @@ export default function Auth() {
       if (data.user) {
         localStorage.setItem('auth-user', JSON.stringify(data.user));
       }
+
+      // Show success toast
+      toast({
+        title: isLogin ? "Welcome back!" : "Account created successfully!",
+        description: isLogin ? "You have successfully signed in." : "Your account has been created and you're now signed in.",
+        variant: "default",
+      });
       
       // Force reload to ensure useAuth hook picks up the new token
       window.location.href = "/dashboard";
     } catch (error: unknown) {
       console.error("Authentication error:", error);
-      // Show error message to user
+      
+      // Show elegant error toast instead of alert
       const errorMessage = error instanceof Error ? error.message : 'Authentication failed';
-      alert(errorMessage);
+      toast({
+        title: "Authentication Error",
+        description: errorMessage,
+        variant: "destructive",
+      });
     } finally {
       setIsLoading(false);
     }

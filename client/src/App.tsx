@@ -17,6 +17,39 @@ import Goals from "@/pages/goals";
 import Reports from "@/pages/reports";
 import Settings from "@/pages/settings";
 import WhatsAppIntegration from "@/pages/whatsapp-integration";
+import { useEffect } from "react";
+
+// Simple redirect component
+function RedirectToDashboard() {
+  useEffect(() => {
+    window.location.href = "/dashboard";
+  }, []);
+  
+  return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+        <p className="text-gray-600">Redirecting to dashboard...</p>
+      </div>
+    </div>
+  );
+}
+
+// Redirect to auth if not authenticated
+function RedirectToAuth() {
+  useEffect(() => {
+    window.location.href = "/auth";
+  }, []);
+  
+  return (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+        <p className="text-gray-600">Redirecting to login...</p>
+      </div>
+    </div>
+  );
+}
 
 function Router() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -44,23 +77,29 @@ function Router() {
 
   return (
     <Switch>
-      <Route path="/auth" component={Auth} />
+      <Route path="/auth">
+        {isAuthenticated ? <RedirectToDashboard /> : <Auth />}
+      </Route>
       <Route path="/" component={Landing} />
       <Route path="*">
-        <Layout>
-          <Switch>
-            <Route path="/dashboard" component={Dashboard} />
-            <Route path="/transactions" component={Transactions} />
-            <Route path="/categories" component={Categories} />
-            <Route path="/chat" component={ChatAI} />
-            <Route path="/budgets" component={Budgets} />
-            <Route path="/goals" component={Goals} />
-            <Route path="/reports" component={Reports} />
-            <Route path="/whatsapp-integration" component={WhatsAppIntegration} />
-            <Route path="/settings" component={Settings} />
-            <Route component={NotFound} />
-          </Switch>
-        </Layout>
+        {!isAuthenticated ? (
+          <RedirectToAuth />
+        ) : (
+          <Layout>
+            <Switch>
+              <Route path="/dashboard" component={Dashboard} />
+              <Route path="/transactions" component={Transactions} />
+              <Route path="/categories" component={Categories} />
+              <Route path="/chat" component={ChatAI} />
+              <Route path="/budgets" component={Budgets} />
+              <Route path="/goals" component={Goals} />
+              <Route path="/reports" component={Reports} />
+              <Route path="/whatsapp-integration" component={WhatsAppIntegration} />
+              <Route path="/settings" component={Settings} />
+              <Route component={NotFound} />
+            </Switch>
+          </Layout>
+        )}
       </Route>
     </Switch>
   );

@@ -77,31 +77,57 @@ export const exportToPDF = (
   // Company/App branding
   const pageWidth = doc.internal.pageSize.getWidth();
   
-  // Header with gradient effect (simulated with colors)
-  doc.setFillColor(51, 65, 85); // slate-700
-  doc.rect(0, 0, pageWidth, 25, 'F');
+  // Header with modern gradient effect
+  // Primary gradient background (emerald to blue)
+  doc.setFillColor(16, 185, 129); // emerald-500
+  doc.rect(0, 0, pageWidth, 35, 'F');
   
-  // Title
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(20);
+  // Add secondary gradient overlay for depth
+  doc.setFillColor(59, 130, 246); // blue-500
+  doc.rect(pageWidth * 0.7, 0, pageWidth * 0.3, 35, 'F');
+  
+  // Create professional logo container with shadow effect
+  // Shadow for logo container
+  doc.setFillColor(0, 0, 0, 0.1); // black with transparency simulation
+  doc.roundedRect(16, 9, 12, 12, 2, 2, 'F');
+  
+  // Main logo container (white rounded square)
+  doc.setFillColor(255, 255, 255);
+  doc.roundedRect(15, 8, 12, 12, 2, 2, 'F');
+  
+  // Logo "M" letter with perfect centering
+  doc.setTextColor(16, 185, 129); // emerald-500
+  doc.setFontSize(14);
   doc.setFont('helvetica', 'bold');
-  doc.text('💰 MONLY AI - Transaction Report', 20, 16);
+  doc.text('M', 19.5, 16.5);
+  
+  // App name with professional typography
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(22);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Monly AI', 32, 16);
+  
+  // Subtitle with better spacing
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(240, 253, 250); // emerald-50 for subtle contrast
+  doc.text('Transaction Report', 32, 26);
   
   // Reset text color
   doc.setTextColor(0, 0, 0);
   
-  // Date range info
+  // Date range info with better positioning
   doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(100, 116, 139); // slate-500
-  doc.text(`Report Period: ${formatDate(options.dateRange.start)} - ${formatDate(options.dateRange.end)}`, 20, 35);
+  doc.text(`Report Period: ${formatDate(options.dateRange.start)} - ${formatDate(options.dateRange.end)}`, 20, 45);
   doc.text(`Generated on: ${new Date().toLocaleDateString('en-US', { 
     year: 'numeric', 
     month: 'long', 
     day: 'numeric',
     hour: '2-digit',
     minute: '2-digit'
-  })}`, 20, 42);
+  })}`, 20, 52);
   
   // Calculate summary
   const totalIncome = transactions
@@ -114,44 +140,60 @@ export const exportToPDF = (
   
   const balance = totalIncome - totalExpense;
   
-  // Summary cards
-  const summaryY = 55;
+  // Summary cards with enhanced styling
+  const summaryY = 65;
   const cardWidth = 50;
   const cardHeight = 25;
   
-  // Income card
+  // Income card with subtle shadow and gradient
+  // Card shadow
+  doc.setFillColor(0, 0, 0, 0.05);
+  doc.rect(21, summaryY + 1, cardWidth, cardHeight, 'F');
+  // Main card
   doc.setFillColor(236, 253, 245); // emerald-50
   doc.rect(20, summaryY, cardWidth, cardHeight, 'F');
-  doc.setDrawColor(167, 243, 208); // emerald-300
+  doc.setDrawColor(16, 185, 129); // emerald-500
+  doc.setLineWidth(0.5);
   doc.rect(20, summaryY, cardWidth, cardHeight);
   doc.setTextColor(5, 150, 105); // emerald-600
   doc.setFontSize(8);
+  doc.setFont('helvetica', 'bold');
   doc.text('TOTAL INCOME', 22, summaryY + 6);
   doc.setFontSize(12);
   doc.setFont('helvetica', 'bold');
   doc.text(formatCurrency(totalIncome, options.userCurrency, options.currencySymbol), 22, summaryY + 16);
   
-  // Expense card
+  // Expense card with subtle shadow
+  // Card shadow
+  doc.setFillColor(0, 0, 0, 0.05);
+  doc.rect(76, summaryY + 1, cardWidth, cardHeight, 'F');
+  // Main card
   doc.setFillColor(254, 242, 242); // red-50
   doc.rect(75, summaryY, cardWidth, cardHeight, 'F');
-  doc.setDrawColor(252, 165, 165); // red-300
+  doc.setDrawColor(239, 68, 68); // red-500
+  doc.setLineWidth(0.5);
   doc.rect(75, summaryY, cardWidth, cardHeight);
   doc.setTextColor(220, 38, 38); // red-600
   doc.setFontSize(8);
-  doc.setFont('helvetica', 'normal');
+  doc.setFont('helvetica', 'bold');
   doc.text('TOTAL EXPENSE', 77, summaryY + 6);
   doc.setFontSize(12);
   doc.setFont('helvetica', 'bold');
   doc.text(formatCurrency(totalExpense, options.userCurrency, options.currencySymbol), 77, summaryY + 16);
   
-  // Balance card
+  // Balance card with conditional styling
+  // Card shadow
+  doc.setFillColor(0, 0, 0, 0.05);
+  doc.rect(131, summaryY + 1, cardWidth, cardHeight, 'F');
+  // Main card
   doc.setFillColor(239, 246, 255); // blue-50
   doc.rect(130, summaryY, cardWidth, cardHeight, 'F');
-  doc.setDrawColor(147, 197, 253); // blue-300
+  doc.setDrawColor(59, 130, 246); // blue-500
+  doc.setLineWidth(0.5);
   doc.rect(130, summaryY, cardWidth, cardHeight);
   doc.setTextColor(balance >= 0 ? 5 : 220, balance >= 0 ? 150 : 38, balance >= 0 ? 105 : 38);
   doc.setFontSize(8);
-  doc.setFont('helvetica', 'normal');
+  doc.setFont('helvetica', 'bold');
   doc.text('NET BALANCE', 132, summaryY + 6);
   doc.setFontSize(12);
   doc.setFont('helvetica', 'bold');
@@ -179,10 +221,12 @@ export const exportToPDF = (
       textColor: [51, 65, 85], // slate-700
     },
     headStyles: {
-      fillColor: [51, 65, 85], // slate-700
+      fillColor: [16, 185, 129], // emerald-500 to match header gradient
       textColor: [255, 255, 255],
       fontStyle: 'bold',
       fontSize: 10,
+      lineWidth: 0.1,
+      lineColor: [255, 255, 255]
     },
     columnStyles: {
       0: { halign: 'center', cellWidth: 10 },
@@ -198,17 +242,31 @@ export const exportToPDF = (
     margin: { left: 20, right: 20 },
   });
   
-  // Footer
+  // Footer with enhanced styling
   const pageCount = doc.getNumberOfPages();
   for (let i = 1; i <= pageCount; i++) {
     doc.setPage(i);
+    
+    // Add a subtle line above footer
+    doc.setDrawColor(229, 231, 235); // gray-200
+    doc.setLineWidth(0.5);
+    doc.line(20, doc.internal.pageSize.getHeight() - 20, pageWidth - 20, doc.internal.pageSize.getHeight() - 20);
+    
+    // Footer text
     doc.setFontSize(8);
     doc.setTextColor(100, 116, 139); // slate-500
     doc.text(
-      `Page ${i} of ${pageCount} | Monly AI Financial Report`,
-      pageWidth / 2,
+      `Page ${i} of ${pageCount}`,
+      20,
+      doc.internal.pageSize.getHeight() - 10
+    );
+    
+    // Right side footer
+    doc.text(
+      `Monly AI Financial Report - ${new Date().getFullYear()}`,
+      pageWidth - 20,
       doc.internal.pageSize.getHeight() - 10,
-      { align: 'center' }
+      { align: 'right' }
     );
   }
   
@@ -235,7 +293,7 @@ export const exportToExcel = (
   
   // Prepare summary data
   const summaryData = [
-    ['MONLY AI - TRANSACTION REPORT'],
+    ['🟢 MONLY AI - TRANSACTION REPORT'],
     [''],
     [`Report Period: ${formatDate(options.dateRange.start)} - ${formatDate(options.dateRange.end)}`],
     [`Generated on: ${new Date().toLocaleDateString('en-US', { 
@@ -246,12 +304,12 @@ export const exportToExcel = (
       minute: '2-digit'
     })}`],
     [''],
-    ['SUMMARY'],
+    ['📊 FINANCIAL SUMMARY'],
     ['Total Income', formatCurrency(totalIncome, options.userCurrency, options.currencySymbol)],
     ['Total Expense', formatCurrency(totalExpense, options.userCurrency, options.currencySymbol)],
     ['Net Balance', formatCurrency(balance, options.userCurrency, options.currencySymbol)],
     [''],
-    ['TRANSACTION DETAILS'],
+    ['📋 TRANSACTION DETAILS'],
     ['No.', 'Date', 'Description', 'Category', 'Type', 'Amount'],
   ];
   
