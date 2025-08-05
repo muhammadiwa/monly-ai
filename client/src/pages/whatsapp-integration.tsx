@@ -12,6 +12,7 @@ import {
   type WhatsAppConnection,
   type WhatsAppActivationCode,
 } from "@/lib/whatsappMultiAccountService";
+import { copyActivationCode } from "@/lib/clipboardUtils";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -129,18 +130,29 @@ export default function WhatsAppIntegration() {
   };
 
   const handleCopyCode = async (code: string) => {
-    try {
-      await navigator.clipboard.writeText(`AKTIVASI: ${code}`);
+    const result = await copyActivationCode(code);
+    
+    if (result.success) {
       toast({
         title: "✅ Kode Disalin",
-        description: "Kode aktivasi telah disalin ke clipboard",
+        description: `Kode aktivasi berhasil disalin menggunakan ${result.method}`,
         className: "bg-green-50 border-green-200 text-green-800",
       });
-    } catch (error) {
+    } else {
+      // Show manual copy fallback
       toast({
-        title: "❌ Gagal Menyalin",
-        description: "Tidak dapat menyalin kode ke clipboard",
-        variant: "destructive",
+        title: "📋 Salin Manual",
+        description: (
+          <div className="space-y-2">
+            <p className="text-sm">Copy otomatis gagal. Salin kode ini secara manual:</p>
+            <div className="bg-white p-3 rounded border font-mono text-sm select-all break-all">
+              AKTIVASI: {code}
+            </div>
+            <p className="text-xs text-gray-600">Tap dan tahan untuk select all, lalu copy</p>
+          </div>
+        ),
+        duration: 15000, // Show longer for manual copy
+        className: "bg-blue-50 border-blue-200 text-blue-800",
       });
     }
   };

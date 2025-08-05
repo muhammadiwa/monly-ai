@@ -13,6 +13,9 @@ lerna-debug.log*
 .env.test.local
 .env.production
 .env.production.local
+.env.aapanel
+.env.aapanel.*
+!.env.aapanel.template
 
 # Build outputs
 dist/
