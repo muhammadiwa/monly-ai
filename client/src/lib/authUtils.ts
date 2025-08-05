@@ -13,10 +13,11 @@ export function redirectToLogin(): void {
 }
 
 export function handleAuthError(error: any): void {
-  // Check if error is 401 or 403 (unauthorized/forbidden)
-  if (error?.status === 401 || error?.status === 403 || 
+  // Check if error is 401, 403, or 404 (unauthorized/forbidden/user not found)
+  if (error?.status === 401 || error?.status === 403 || error?.status === 404 ||
       error?.message?.includes('Invalid or expired token') ||
-      error?.message?.includes('Authentication failed')) {
+      error?.message?.includes('Authentication failed') ||
+      error?.message?.includes('User not found')) {
     redirectToLogin();
   }
 }
@@ -48,7 +49,7 @@ export async function authFetch(url: string, options: RequestInit = {}): Promise
     const response = await fetch(url, authOptions);
     
     // Check for auth errors
-    if (response.status === 401 || response.status === 403) {
+    if (response.status === 401 || response.status === 403 || response.status === 404) {
       handleAuthError({ status: response.status });
       throw new Error('Authentication failed');
     }

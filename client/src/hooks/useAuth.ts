@@ -53,8 +53,8 @@ export function useAuth() {
         credentials: 'include',
       });
 
-      if (res.status === 401 || res.status === 403) {
-        // Token is invalid or user not found, handle auth error
+      if (res.status === 401 || res.status === 403 || res.status === 404) {
+        // Token is invalid, expired, or user not found - handle auth error
         handleAuthError({ status: res.status });
         throw new Error('Authentication failed');
       }
