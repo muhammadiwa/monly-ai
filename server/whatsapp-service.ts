@@ -54,9 +54,22 @@ export const initializeWhatsAppClient = (userId: string): WhatsAppConnection => 
         '--disable-backgrounding-occluded-windows',
         '--disable-renderer-backgrounding',
         '--disable-features=TranslateUI',
-        '--disable-ipc-flooding-protection'
+        '--disable-ipc-flooding-protection',
+        '--disable-extensions',
+        '--disable-default-apps',
+        '--disable-sync',
+        '--disable-translate',
+        '--hide-scrollbars',
+        '--metrics-recording-only',
+        '--mute-audio',
+        '--no-default-browser-check',
+        '--safebrowsing-disable-auto-update',
+        '--disable-web-security',
+        '--disable-features=VizDisplayCompositor'
       ],
-      executablePath: process.env.NODE_ENV === 'production' ? '/usr/bin/google-chrome-stable' : undefined
+      executablePath: process.env.NODE_ENV === 'production' ? 
+        (process.env.CHROME_PATH || '/usr/bin/google-chrome-stable') : undefined,
+      timeout: 30000
     },
     webVersionCache: {
       type: 'remote',
