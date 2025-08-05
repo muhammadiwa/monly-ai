@@ -12,7 +12,7 @@ import {
   type WhatsAppConnection,
   type WhatsAppActivationCode,
 } from "@/lib/whatsappMultiAccountService";
-import { copyActivationCode } from "@/lib/clipboardUtils";
+import { copyActivationCode, forceClipboardMethod } from "@/lib/clipboardUtils";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -129,6 +129,37 @@ export default function WhatsAppIntegration() {
     disconnectMutation.mutate(connectionId);
   };
 
+  const handleForceCopy = async (code: string, method: 'clipboard-api' | 'execCommand' | 'textarea-select') => {
+    const result = await forceClipboardMethod(`AKTIVASI: ${code}`, method);
+    
+    if (result.success) {
+      toast({
+        title: "✅ Force Copy Berhasil",
+        description: `Kode berhasil disalin menggunakan ${method}`,
+        className: "bg-green-50 border-green-200 text-green-800",
+      });
+    } else {
+      toast({
+        title: "❌ Force Copy Gagal",
+        description: (
+          <div className="space-y-2">
+            <p className="text-sm">Method {method} gagal: {result.error}</p>
+            {result.debug && (
+              <details className="text-xs text-gray-500">
+                <summary className="cursor-pointer">Debug info</summary>
+                <pre className="mt-1 text-xs bg-gray-100 p-2 rounded whitespace-pre-wrap">
+                  {result.debug}
+                </pre>
+              </details>
+            )}
+          </div>
+        ),
+        duration: 10000,
+        className: "bg-red-50 border-red-200 text-red-800",
+      });
+    }
+  };
+
   const handleCopyCode = async (code: string) => {
     const result = await copyActivationCode(code);
     
@@ -139,7 +170,7 @@ export default function WhatsAppIntegration() {
         className: "bg-green-50 border-green-200 text-green-800",
       });
     } else {
-      // Show manual copy fallback
+      // Show manual copy fallback with debug info
       toast({
         title: "📋 Salin Manual",
         description: (
@@ -149,9 +180,17 @@ export default function WhatsAppIntegration() {
               AKTIVASI: {code}
             </div>
             <p className="text-xs text-gray-600">Tap dan tahan untuk select all, lalu copy</p>
+            {result.debug && (
+              <details className="text-xs text-gray-500">
+                <summary className="cursor-pointer">Debug info</summary>
+                <pre className="mt-1 text-xs bg-gray-100 p-2 rounded whitespace-pre-wrap">
+                  {result.debug}
+                </pre>
+              </details>
+            )}
           </div>
         ),
-        duration: 15000, // Show longer for manual copy
+        duration: 20000, // Show longer for manual copy
         className: "bg-blue-50 border-blue-200 text-blue-800",
       });
     }
@@ -255,15 +294,46 @@ export default function WhatsAppIntegration() {
                             Berlaku: {getTimeRemaining(code.expiresAt)}
                           </div>
                         </div>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleCopyCode(code.code)}
-                          className="border-blue-200 text-blue-600 hover:bg-blue-100 w-full sm:w-auto"
-                        >
-                          <Copy className="h-4 w-4 mr-2 sm:mr-0" />
-                          <span className="sm:hidden">Salin Kode</span>
-                        </Button>
+                        <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleCopyCode(code.code)}
+                            className="border-blue-200 text-blue-600 hover:bg-blue-100"
+                          >
+                            <Copy className="h-4 w-4 mr-2 sm:mr-0" />
+                            <span className="sm:hidden">Salin Kode</span>
+                          </Button>
+                          <div className="flex gap-1">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleForceCopy(code.code, 'clipboard-api')}
+                              className="border-orange-200 text-orange-600 hover:bg-orange-100 text-xs px-2"
+                              title="Force Clipboard API"
+                            >
+                              API
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleForceCopy(code.code, 'execCommand')}
+                              className="border-purple-200 text-purple-600 hover:bg-purple-100 text-xs px-2"
+                              title="Force execCommand"
+                            >
+                              CMD
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleForceCopy(code.code, 'textarea-select')}
+                              className="border-green-200 text-green-600 hover:bg-green-100 text-xs px-2"
+                              title="Force Manual Selection"
+                            >
+                              MAN
+                            </Button>
+                          </div>
+                        </div>
                       </div>
                     ))}
                   </div>
