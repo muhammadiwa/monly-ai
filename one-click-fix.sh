@@ -5,14 +5,14 @@ echo "======================================"
 echo "Fixing ALL issues: Environment, WhatsApp Dependencies, and Startup"
 echo
 
-cd /www/wwwroot/finance.virtualvite.com || { echo "❌ Can't access app directory"; exit 1; }
+cd /www/wwwroot/monly.web.id || { echo "❌ Can't access app directory"; exit 1; }
 
 # 1. SET ENVIRONMENT VARIABLES PERMANENTLY
 echo "1️⃣ Setting up environment variables..."
 cat > .env << 'EOF'
-# aaPanel Node.js Environment for finance.virtualvite.com
+# aaPanel Node.js Environment for monly.web.id
 NODE_ENV=production
-PORT=3009
+PORT=3030
 
 # Database Configuration
 DATABASE_URL=file:./database.sqlite
@@ -25,7 +25,7 @@ SESSION_SECRET=f0f3419c2cba508c32ee6e9caab763fd869d76eca8ddcd2692836fdd72ddc50c
 JWT_SECRET=d81a035cb8a11a324128e5f570131df26ad2c17595bf2cde755d9c93254b3345
 
 # Domain Configuration
-DOMAIN=finance.virtualvite.com
+DOMAIN=monlyai.web.id
 
 # Logging
 LOG_LEVEL=info
