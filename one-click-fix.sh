@@ -5,7 +5,7 @@ echo "======================================"
 echo "Fixing ALL issues: Environment, WhatsApp Dependencies, and Startup"
 echo
 
-cd /www/wwwroot/monly.web.id || { echo "❌ Can't access app directory"; exit 1; }
+cd /www/wwwroot/monlyai.web.id || cd /www/wwwroot/monly.web.id || { echo "❌ Can't access app directory"; exit 1; }
 
 # 1. SET ENVIRONMENT VARIABLES PERMANENTLY
 echo "1️⃣ Setting up environment variables..."

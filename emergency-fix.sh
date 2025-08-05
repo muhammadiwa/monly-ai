@@ -5,7 +5,7 @@ echo "=================================="
 echo "Fixing backend crash and startup issues"
 echo
 
-cd /www/wwwroot/monly.web.id || { echo "❌ Can't access app directory"; exit 1; }
+cd /www/wwwroot/monlyai.web.id || cd /www/wwwroot/monly.web.id || { echo "❌ Can't access app directory"; exit 1; }
 
 # 1. KILL ANY EXISTING NODE PROCESSES
 echo "1️⃣ Stopping all Node.js processes..."
