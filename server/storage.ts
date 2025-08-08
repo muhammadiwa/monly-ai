@@ -281,7 +281,7 @@ export class DatabaseStorage implements IStorage {
     const defaultPreferences: InsertUserPreferences = {
       userId,
       defaultCurrency: "IDR",
-      timezone: "Asia/Jakarta",
+      timezone: process.env.TZ || "Asia/Jakarta",
       language: "id",
       autoCategorize: true,
     };

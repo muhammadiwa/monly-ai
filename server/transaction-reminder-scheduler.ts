@@ -32,7 +32,7 @@ export function startTransactionReminderScheduler() {
     }
   }, {
     scheduled: true,
-    timezone: 'Asia/Jakarta' // Adjust timezone as needed
+    timezone: process.env.TZ || 'Asia/Jakarta' // Use timezone from environment
   });
 
   // Also run a check at startup (for testing)

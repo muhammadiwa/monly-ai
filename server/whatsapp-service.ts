@@ -2,8 +2,13 @@ import pkg from 'whatsapp-web.js';
 const { Client, LocalAuth, MessageMedia } = pkg;
 import qrcode from 'qrcode';
 import OpenAI from 'openai';
-import { analyzeTransactionText, processReceiptImage, analyzeFinancialProfile, generateBudgetRecommendations } from './openai';
+import { analyzeTransactionText, processReceiptImage } from './openai';
 import { storage } from './storage';
+
+// Helper function to get timezone from environment
+function getTimezone(): string {
+  return process.env.TZ || 'Asia/Jakarta';
+}
 
 // Initialize OpenAI client
 const openai = new OpenAI({ 
@@ -751,55 +756,12 @@ const createTransactionFromAnalysis = async (
       
       // Check for budget alerts after creating expense transaction
       let budgetAlert = null;
-      let budgetRecommendation = null;
       
       if (analysis.type === 'expense') {
-        // First check if category has existing budget
+        // Check if category has existing budget for alerts only
         const existingBudget = await storage.getBudgetByCategory(userId, matchingCategory.id);
-        console.log(`Budget check for category ${matchingCategory.name} (ID: ${matchingCategory.id}):`, existingBudget ? 'EXISTS' : 'NOT FOUND');
         
-        if (!existingBudget) {
-          // No budget exists for this category - generate AI recommendation
-          console.log(`No budget found for category ${matchingCategory.name}, generating AI recommendation...`);
-          
-          try {
-            // Get recent transactions for financial profile analysis
-            const transactions = await storage.getTransactions(userId);
-            console.log(`Retrieved ${transactions.length} transactions for financial analysis`);
-            
-            // Get financial profile
-            const financialProfile = await analyzeFinancialProfile(userId, transactions, userPreferences);
-            console.log('Financial profile generated:', financialProfile);
-            
-            // Generate budget recommendation for this specific category
-            const recommendations = await generateBudgetRecommendations(
-              userId, 
-              financialProfile, 
-              categories,
-              matchingCategory.name,
-              userPreferences,
-              transactions  // Pass raw transactions for detailed analysis
-            );
-            console.log('Budget recommendations received:', recommendations);
-            
-            if (recommendations && recommendations.length > 0) {
-              const categoryBudget = recommendations[0];
-              budgetRecommendation = {
-                category: matchingCategory.name,
-                suggestedAmount: categoryBudget.recommendedAmount,
-                reasoning: categoryBudget.reasoning,
-                riskLevel: 'medium', // Default risk level
-                recommendation: recommendations
-              };
-              
-              console.log('Budget recommendation generated:', budgetRecommendation);
-            } else {
-              console.log('No budget recommendations generated');
-            }
-          } catch (error) {
-            console.error('Error generating budget recommendation:', error);
-          }
-        } else {
+        if (existingBudget) {
           // Check for budget alerts on existing budget
           budgetAlert = await checkBudgetAlerts(userId, matchingCategory.id, userPreferences);
         }
@@ -809,8 +771,7 @@ const createTransactionFromAnalysis = async (
         success: true,
         transaction,
         analysis,
-        budgetAlert,
-        budgetRecommendation
+        budgetAlert
       };
     }
     
@@ -889,7 +850,7 @@ const processTextMessage = async (message: any, userId: string) => {
               year: 'numeric', 
               month: 'long', 
               day: 'numeric',
-              timeZone: 'Asia/Jakarta'
+              timeZone: getTimezone()
             };
             dateInfo = `📅 Tanggal: ${transactionDate.toLocaleDateString('id-ID', options)}\n`;
           }
@@ -901,28 +862,13 @@ const processTextMessage = async (message: any, userId: string) => {
           `📂 Kategori: ${analysis.category}\n` +
           `📊 Jenis: ${analysis.type === 'expense' ? 'Pengeluaran' : 'Pemasukan'}\n` +
           dateInfo +
-          `🎯 Tingkat Kepercayaan: ${Math.round(analysis.confidence * 100)}%\n\n` +
-          `_Transaksi telah disimpan dalam akun Anda_`;
+          `\n_Transaksi telah disimpan dalam akun Anda_`;
         
         // Add budget alert if exists
         if (result.budgetAlert) {
           replyMessage += `\n\n` + result.budgetAlert.message;
         }
-        
-        // Add budget recommendation if no budget exists for this category
-        if (result.budgetRecommendation) {
-          const rec = result.budgetRecommendation;
-          const formattedBudget = formatCurrency(rec.suggestedAmount, userPreferences?.defaultCurrency);
-          
-          replyMessage += `\n\n💡 *Rekomendasi Budget AI*\n\n` +
-            `📂 Kategori: ${rec.category}\n` +
-            `💰 Budget Disarankan: ${formattedBudget}/bulan\n` +
-            `🤖 Alasan: ${rec.reasoning}\n` +
-            `⚠️ Tingkat Risiko: ${rec.riskLevel === 'low' ? 'Rendah 🟢' : rec.riskLevel === 'medium' ? 'Sedang 🟡' : 'Tinggi 🔴'}\n\n` +
-            `Ingin mengatur budget ini? Ketik:\n` +
-            `*"set budget ${rec.category} ${rec.suggestedAmount}"*`;
-        }
-        
+
         await message.reply(replyMessage);
       } else {
         await message.reply(
@@ -1037,7 +983,7 @@ const processVoiceMessage = async (message: any, userId: string) => {
               year: 'numeric', 
               month: 'long', 
               day: 'numeric',
-              timeZone: 'Asia/Jakarta'
+              timeZone: getTimezone()
             };
             dateInfo = `📅 Tanggal: ${transactionDate.toLocaleDateString('id-ID', options)}\n`;
           }
@@ -1050,28 +996,13 @@ const processVoiceMessage = async (message: any, userId: string) => {
           `📝 Deskripsi: ${analysis.description}\n` +
           `📂 Kategori: ${analysis.category}\n` +
           `📊 Jenis: ${analysis.type === 'expense' ? 'Pengeluaran' : 'Pemasukan'}\n` +
-          dateInfo +
-          `🎯 Tingkat Kepercayaan: ${Math.round(analysis.confidence * 100)}%`;
+          dateInfo;
         
         // Add budget alert if exists
         if (result.budgetAlert) {
           replyMessage += `\n\n` + result.budgetAlert.message;
         }
-        
-        // Add budget recommendation if no budget exists for this category
-        if (result.budgetRecommendation) {
-          const rec = result.budgetRecommendation;
-          const formattedBudget = formatCurrency(rec.suggestedAmount, userPreferences?.defaultCurrency);
-          
-          replyMessage += `\n\n💡 *Rekomendasi Budget AI*\n\n` +
-            `📂 Kategori: ${rec.category}\n` +
-            `💰 Budget Disarankan: ${formattedBudget}/bulan\n` +
-            `🤖 Alasan: ${rec.reasoning}\n` +
-            `⚠️ Tingkat Risiko: ${rec.riskLevel === 'low' ? 'Rendah 🟢' : rec.riskLevel === 'medium' ? 'Sedang 🟡' : 'Tinggi 🔴'}\n\n` +
-            `Ingin mengatur budget ini? Ketik:\n` +
-            `*"set budget ${rec.category} ${rec.suggestedAmount}"*`;
-        }
-        
+
         await message.reply(replyMessage);
       } else {
         await message.reply(
@@ -1145,7 +1076,6 @@ const processImageMessage = async (message: any, userId: string) => {
     if (result.confidence > 0.6 && result.transactions.length > 0) {
       let successCount = 0;
       let responses: string[] = [];
-      let budgetRecommendations: any[] = [];
       
       for (const transaction of result.transactions) {
         const transactionResult = await createTransactionFromAnalysis(
@@ -1173,7 +1103,7 @@ const processImageMessage = async (message: any, userId: string) => {
                 year: 'numeric', 
                 month: 'long', 
                 day: 'numeric',
-                timeZone: 'Asia/Jakarta'
+                timeZone: getTimezone()
               };
               dateInfo = ` (${transactionDate.toLocaleDateString('id-ID', options)})`;
             }
@@ -1183,11 +1113,6 @@ const processImageMessage = async (message: any, userId: string) => {
             `✅ ${transaction.description}${dateInfo}\n` +
             `💰 ${formattedAmount} (${transaction.category})`
           );
-          
-          // Collect budget recommendations
-          if (transactionResult.budgetRecommendation) {
-            budgetRecommendations.push(transactionResult.budgetRecommendation);
-          }
         }
       }
       
@@ -1195,25 +1120,8 @@ const processImageMessage = async (message: any, userId: string) => {
         let replyMessage = `📸 *Struk Berhasil Diproses!*\n\n` +
           `📝 Teks yang ditemukan:\n"${result.text}"\n\n` +
           `✅ *${successCount} Transaksi Dicatat:*\n\n` +
-          responses.join('\n\n') +
-          `\n\n🎯 Tingkat Kepercayaan: ${Math.round(result.confidence * 100)}%`;
-        
-        // Add budget recommendations if any
-        if (budgetRecommendations.length > 0) {
-          replyMessage += `\n\n💡 *Rekomendasi Budget AI*\n\n`;
-          
-          budgetRecommendations.forEach((rec, index) => {
-            const formattedBudget = formatCurrency(rec.suggestedAmount, userPreferences?.defaultCurrency);
-            
-            replyMessage += `${index + 1}. 📂 ${rec.category}\n` +
-              `💰 Budget Disarankan: ${formattedBudget}/bulan\n` +
-              `🤖 Alasan: ${rec.reasoning}\n` +
-              `⚠️ Tingkat Risiko: ${rec.riskLevel === 'low' ? 'Rendah 🟢' : rec.riskLevel === 'medium' ? 'Sedang 🟡' : 'Tinggi 🔴'}\n\n`;
-          });
-          
-          replyMessage += `Ingin mengatur budget? Ketik:\n*"set budget [kategori] [jumlah]"*`;
-        }
-        
+          responses.join('\n\n');
+
         await message.reply(replyMessage);
       } else {
         await message.reply(
