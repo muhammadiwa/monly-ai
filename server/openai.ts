@@ -89,45 +89,74 @@ export interface OCRResult {
   confidence: number;
 }
 
+// Helper function to get timezone from environment
+function getTimezone(): string {
+  return process.env.TZ || 'Asia/Jakarta';
+}
+
 // Helper function to get current date info for AI context
 function getCurrentDateContext(language: string = 'id'): string {
+  const timezone = getTimezone();
   const now = new Date();
   const today = now.toISOString().split('T')[0]; // YYYY-MM-DD
-  const dayOfWeek = now.toLocaleDateString(language === 'id' ? 'id-ID' : 'en-US', { weekday: 'long' });
-  const monthName = now.toLocaleDateString(language === 'id' ? 'id-ID' : 'en-US', { month: 'long' });
+  const dayOfWeek = now.toLocaleDateString(language === 'id' ? 'id-ID' : 'en-US', { 
+    weekday: 'long',
+    timeZone: timezone
+  });
+  const monthName = now.toLocaleDateString(language === 'id' ? 'id-ID' : 'en-US', { 
+    month: 'long',
+    timeZone: timezone
+  });
   const year = now.getFullYear();
   const date = now.getDate();
   
   if (language === 'id') {
-    return `Hari ini: ${dayOfWeek}, ${date} ${monthName} ${year} (${today})`;
+    return `Hari ini: ${dayOfWeek}, ${date} ${monthName} ${year} (${today}) - Timezone: ${timezone}`;
   } else {
-    return `Today: ${dayOfWeek}, ${monthName} ${date}, ${year} (${today})`;
+    return `Today: ${dayOfWeek}, ${monthName} ${date}, ${year} (${today}) - Timezone: ${timezone}`;
   }
 }
 
 // Helper function to parse relative dates to Unix timestamp
 function parseRelativeDate(text: string, language: string = 'id'): number | null {
+  const timezone = getTimezone();
+  
+  // Get current date in the specific timezone
   const now = new Date();
+  const utcNow = new Date(now.toLocaleString('en-US', { timeZone: 'UTC' }));
+  const localNow = new Date(now.toLocaleString('en-US', { timeZone: timezone }));
+  const timezoneOffset = utcNow.getTime() - localNow.getTime();
+  
+  // Create today's date at midnight in the target timezone
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  
+  console.log(`📅 Parsing relative date: "${text}" with timezone: ${timezone}`);
+  console.log(`📅 Current time: ${now.toLocaleString('id-ID', { timeZone: timezone })}`);
   
   // Indonesian relative date patterns
   if (language === 'id') {
     if (/kemarin|yesterday/i.test(text)) {
       const yesterday = new Date(today);
       yesterday.setDate(yesterday.getDate() - 1);
-      return Math.floor(yesterday.getTime() / 1000);
+      const timestamp = Math.floor(yesterday.getTime() / 1000);
+      console.log(`📅 "kemarin" parsed as: ${timestamp} (${new Date(timestamp * 1000).toLocaleDateString('id-ID', { timeZone: timezone })})`);
+      return timestamp;
     }
     
     if (/lusa|day after tomorrow/i.test(text)) {
       const dayAfterTomorrow = new Date(today);
       dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 2);
-      return Math.floor(dayAfterTomorrow.getTime() / 1000);
+      const timestamp = Math.floor(dayAfterTomorrow.getTime() / 1000);
+      console.log(`📅 "lusa" parsed as: ${timestamp} (${new Date(timestamp * 1000).toLocaleDateString('id-ID', { timeZone: timezone })})`);
+      return timestamp;
     }
     
     if (/besok|tomorrow/i.test(text)) {
       const tomorrow = new Date(today);
       tomorrow.setDate(tomorrow.getDate() + 1);
-      return Math.floor(tomorrow.getTime() / 1000);
+      const timestamp = Math.floor(tomorrow.getTime() / 1000);
+      console.log(`📅 "besok" parsed as: ${timestamp} (${new Date(timestamp * 1000).toLocaleDateString('id-ID', { timeZone: timezone })})`);
+      return timestamp;
     }
     
     // Pattern for "X hari yang lalu" or "X days ago"
@@ -136,14 +165,18 @@ function parseRelativeDate(text: string, language: string = 'id'): number | null
       const daysAgo = parseInt(daysAgoMatch[1]);
       const targetDate = new Date(today);
       targetDate.setDate(targetDate.getDate() - daysAgo);
-      return Math.floor(targetDate.getTime() / 1000);
+      const timestamp = Math.floor(targetDate.getTime() / 1000);
+      console.log(`📅 "${daysAgo} hari lalu" parsed as: ${timestamp} (${new Date(timestamp * 1000).toLocaleDateString('id-ID', { timeZone: timezone })})`);
+      return timestamp;
     }
     
     // Pattern for "minggu lalu" or "last week"
     if (/minggu\s+(lalu|kemarin)|last\s+week/i.test(text)) {
       const lastWeek = new Date(today);
       lastWeek.setDate(lastWeek.getDate() - 7);
-      return Math.floor(lastWeek.getTime() / 1000);
+      const timestamp = Math.floor(lastWeek.getTime() / 1000);
+      console.log(`📅 "minggu lalu" parsed as: ${timestamp} (${new Date(timestamp * 1000).toLocaleDateString('id-ID', { timeZone: timezone })})`);
+      return timestamp;
     }
   }
   
@@ -151,13 +184,17 @@ function parseRelativeDate(text: string, language: string = 'id'): number | null
   if (/yesterday/i.test(text)) {
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
-    return Math.floor(yesterday.getTime() / 1000);
+    const timestamp = Math.floor(yesterday.getTime() / 1000);
+    console.log(`📅 "yesterday" parsed as: ${timestamp} (${new Date(timestamp * 1000).toLocaleDateString('en-US', { timeZone: timezone })})`);
+    return timestamp;
   }
   
   if (/tomorrow/i.test(text)) {
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
-    return Math.floor(tomorrow.getTime() / 1000);
+    const timestamp = Math.floor(tomorrow.getTime() / 1000);
+    console.log(`📅 "tomorrow" parsed as: ${timestamp} (${new Date(timestamp * 1000).toLocaleDateString('en-US', { timeZone: timezone })})`);
+    return timestamp;
   }
   
   const daysAgoMatch = text.match(/(\d+)\s*days?\s+ago/i);
@@ -165,15 +202,20 @@ function parseRelativeDate(text: string, language: string = 'id'): number | null
     const daysAgo = parseInt(daysAgoMatch[1]);
     const targetDate = new Date(today);
     targetDate.setDate(targetDate.getDate() - daysAgo);
-    return Math.floor(targetDate.getTime() / 1000);
+    const timestamp = Math.floor(targetDate.getTime() / 1000);
+    console.log(`📅 "${daysAgo} days ago" parsed as: ${timestamp} (${new Date(timestamp * 1000).toLocaleDateString('en-US', { timeZone: timezone })})`);
+    return timestamp;
   }
   
   if (/last\s+week/i.test(text)) {
     const lastWeek = new Date(today);
     lastWeek.setDate(lastWeek.getDate() - 7);
-    return Math.floor(lastWeek.getTime() / 1000);
+    const timestamp = Math.floor(lastWeek.getTime() / 1000);
+    console.log(`📅 "last week" parsed as: ${timestamp} (${new Date(timestamp * 1000).toLocaleDateString('en-US', { timeZone: timezone })})`);
+    return timestamp;
   }
   
+  console.log(`📅 No relative date pattern found in: "${text}"`);
   return null;
 }
 
@@ -365,22 +407,30 @@ export async function analyzeTransactionText(
           DATE PARSING INSTRUCTIONS:
           - Look for date references like "kemarin" (yesterday), "tanggal 15 juli", "3 hari lalu", etc.
           - If NO date is mentioned, DO NOT include date field (will default to today)
-          - If date IS mentioned, include "date" field with Unix timestamp
+          - If date IS mentioned, include "date" field with VALID Unix timestamp (seconds since epoch)
           - Support both relative dates (kemarin, besok) and specific dates (15 juli, 15/7/2024)
+          - Unix timestamp must be 10 digits (seconds) between 1577836800 (2020) and 1924963200 (2030)
+          - CRITICAL: Generate timestamps for year 2025, NOT 2023 or other years
+          - Today's context: ${dateContext}
+          
+          TIMESTAMP GENERATION EXAMPLES:
+          - For "kemarin" (yesterday): Calculate as ${Math.floor(new Date(new Date().getTime() - 24 * 60 * 60 * 1000).getTime() / 1000)}
+          - For "besok" (tomorrow): Calculate as ${Math.floor(new Date(new Date().getTime() + 24 * 60 * 60 * 1000).getTime() / 1000)}
+          - ALWAYS ensure timestamps are for 2025, current year
           
           ${language === 'Indonesian' ? `
           CONTOH TANGGAL INDONESIA:
-          - "kemarin beli baso 20000" → date: yesterday's timestamp
-          - "tanggal 15 juli beli bensin 50000" → date: July 15 timestamp
-          - "3 hari lalu bayar listrik 150000" → date: 3 days ago timestamp
-          - "minggu lalu beli kopi 25000" → date: last week timestamp
-          - "15/7 makan siang 45000" → date: July 15 timestamp
+          - "kemarin beli baso 20000" → date: valid Unix timestamp for yesterday
+          - "tanggal 15 juli beli bensin 50000" → date: valid Unix timestamp for July 15
+          - "3 hari lalu bayar listrik 150000" → date: valid Unix timestamp for 3 days ago
+          - "minggu lalu beli kopi 25000" → date: valid Unix timestamp for last week
+          - "15/7 makan siang 45000" → date: valid Unix timestamp for July 15
           ` : `
           DATE EXAMPLES ENGLISH:
-          - "yesterday bought lunch 25" → date: yesterday's timestamp
-          - "july 15 bought gas 50" → date: July 15 timestamp
-          - "3 days ago paid electricity 150" → date: 3 days ago timestamp
-          - "last week bought coffee 5" → date: last week timestamp
+          - "yesterday bought lunch 25" → date: valid Unix timestamp for yesterday
+          - "july 15 bought gas 50" → date: valid Unix timestamp for July 15
+          - "3 days ago paid electricity 150" → date: valid Unix timestamp for 3 days ago
+          - "last week bought coffee 5" → date: valid Unix timestamp for last week
           `}
           
           ${autoCategorize ? `
@@ -438,15 +488,44 @@ export async function analyzeTransactionText(
     // Parse date if provided by AI, otherwise use fallback parsing
     let transactionDate: number | undefined;
     
-    if (result.date && typeof result.date === 'number') {
-      // AI provided a date
-      transactionDate = result.date;
-    } else {
-      // Try to parse date from original text as fallback
-      const relativeDate = parseRelativeDate(text, userPreferences?.language || 'id');
-      const specificDate = parseSpecificDate(text, userPreferences?.language || 'id');
+    // PRIORITY 1: Try fallback parsing first (more reliable)
+    const relativeDate = parseRelativeDate(text, userPreferences?.language || 'id');
+    const specificDate = parseSpecificDate(text, userPreferences?.language || 'id');
+    const fallbackDate = relativeDate || specificDate || undefined;
+    
+    // Use fallback date if available (most reliable)
+    if (fallbackDate) {
+      transactionDate = fallbackDate;
+      console.log(`✅ Using FALLBACK parsing: ${fallbackDate} (${new Date(fallbackDate * 1000).toLocaleDateString('id-ID', { timeZone: getTimezone() })})`);
+    } else if (result.date && typeof result.date === 'number') {
+      // PRIORITY 2: Validate AI provided date only if fallback failed
+      const minTimestamp = new Date('2020-01-01').getTime() / 1000; // 1577836800
+      const maxTimestamp = new Date('2030-12-31').getTime() / 1000; // 1924963200
       
-      transactionDate = relativeDate || specificDate || undefined;
+      if (result.date >= minTimestamp && result.date <= maxTimestamp) {
+        transactionDate = result.date;
+        console.log(`⚠️ Using AI timestamp (fallback failed): ${result.date} (${new Date(result.date * 1000).toLocaleDateString()})`);
+      } else if (result.date >= 1000000000000 && result.date <= 9999999999999) {
+        // Convert milliseconds to seconds and validate
+        const timestampInSeconds = Math.floor(result.date / 1000);
+        if (timestampInSeconds >= minTimestamp && timestampInSeconds <= maxTimestamp) {
+          transactionDate = timestampInSeconds;
+          console.log(`⚠️ Using AI timestamp converted from ms (fallback failed): ${timestampInSeconds} (${new Date(timestampInSeconds * 1000).toLocaleDateString()})`);
+        } else {
+          console.log(`❌ Invalid AI timestamp after conversion: ${timestampInSeconds}, no fallback available`);
+        }
+      } else {
+        console.log(`❌ Invalid AI timestamp: ${result.date}, no fallback available`);
+      }
+    } else {
+      console.log(`ℹ️ No date from AI and no fallback parsing available`);
+    }
+    
+    // Log the final result
+    if (transactionDate) {
+      console.log(`📅 FINAL transaction date: ${transactionDate} (${new Date(transactionDate * 1000).toLocaleDateString('id-ID', { timeZone: getTimezone() })})`);
+    } else {
+      console.log(`📅 No date parsed, will use current date`);
     }
     
     const analysis: TransactionAnalysis = {
@@ -1068,6 +1147,12 @@ export async function generateBudgetRecommendations(
           
           Currency: ${currency} (${currencySymbol})
           
+          CRITICAL JSON FORMAT RULES:
+          1. MUST return valid JSON array with "recommendations" property
+          2. NO extra properties outside the required structure
+          3. Use simple, clean text for reasoning - no special characters or line breaks that break JSON
+          4. Keep reasoning concise and professional
+          
           BUDGET RECOMMENDATION RULES:
           1. Total recommended budgets should not exceed 80% of monthly income
           2. Keep 20% buffer for savings and unexpected expenses
@@ -1085,135 +1170,89 @@ export async function generateBudgetRecommendations(
           Keywords: "pendaftaran", "uang pangkal", "biaya masuk", "registration", "enrollment", "deposit", "down payment", "setup", "activation", "administrasi awal"
           
           RECURRING EXPENSES (USE ONLY THESE for budget calculation):
-          Keywords: "SPP", "uang sekolah", "tuition", "monthly", "bulanan", "les", "kursus", "course", "transport sekolah", "buku"
+          Keywords: "SPP", "uang sekolah", "tuition", "monthly", "bulanan", "les", "kursus", "course", "transport sekolah", "buku", "bensin", "fuel", "toll", "parkir"
           
           STEP 2: Budget Calculation Method:
-          - MANDATORY: List each transaction with its classification first
           - Take ONLY recurring transactions from the category  
           - Calculate average of recurring transactions only
           - Add 15-20% buffer to recurring average
-          - If NO recurring transactions exist, recommend minimum 150,000-200,000 for the category
+          - If NO recurring transactions exist, recommend minimum based on category type
           - NEVER include one-time expenses in the average calculation
           
-          CRITICAL: REASONING MUST SOUND NATURAL AND PROFESSIONAL
-          - Write like a human financial advisor explaining to a client
-          - Avoid robotic phrases like "kata mengandung", "diklasifikasi", "menunjukkan"
-          - Focus on the practical financial planning aspect
-          - Explain the logic behind separating one-time vs recurring costs
-          - Make it sound like professional advice, not technical analysis
+          REASONING GUIDELINES:
+          - Write in simple, clear ${language} without complex formatting
+          - Keep it concise (max 200 characters)
+          - Focus on practical advice
+          - Avoid technical jargon
           
-          SMART AMOUNT CALCULATION:
-          - CRITICAL: Analyze transaction description to identify expense type FIRST
-          - One-time expenses: "biaya pendaftaran", "uang pangkal", "uang masuk", "down payment", "biaya administrasi awal"
-          - Recurring expenses: "SPP", "uang sekolah bulanan", "les", "kursus", "transport sekolah", "buku"
-          - NEVER mix one-time and recurring for budget calculation
-          - For recurring expenses: Use ONLY recurring amounts + 15-20% buffer
-          - For categories with mix: Base budget on recurring expenses only, ignore one-time
-          - Example: "biaya pendaftaran 500rb" (ignore) + "SPP 300rb" (use) → Budget: 350rb-400rb/month
-          - Minimum budget: 50,000 for any category
+          VALID JSON STRUCTURE EXAMPLE:
+          {
+            "recommendations": [
+              {
+                "category": "Transportation",
+                "categoryId": 35,
+                "recommendedAmount": 300000,
+                "period": "monthly",
+                "reasoning": "Berdasarkan pembelian bensin Rp50.000, diperkirakan kebutuhan transportasi bulanan sekitar Rp300.000 dengan buffer 20% untuk biaya tak terduga.",
+                "confidence": 0.85
+              }
+            ]
+          }
           
-          ${language === 'Indonesian' ? `
-          WAJIB IKUTI CONTOH ANALISA STEP-BY-STEP INDONESIA:
-          
-          Scenario: Kategori Education punya transaksi:
-          1. "Biaya Pendaftaran" - Rp500.000
-          2. "SPP Sekolah" - Rp300.000
-          
-          STEP 1 - ANALISA TRANSAKSI SATU PER SATU:
-          ❌ Transaksi 1: "Biaya Pendaftaran" Rp500.000 = ONE-TIME (kata "pendaftaran" = diabaikan)
-          ✅ Transaksi 2: "SPP Sekolah" Rp300.000 = RECURRING (kata "SPP" = digunakan)
-          
-          STEP 2 - PERHITUNGAN BUDGET FINAL:
-          - Transaksi ONE-TIME yang diabaikan: Rp500.000 (pendaftaran)  
-          - Transaksi RECURRING yang dipakai: Rp300.000 (SPP)
-          - Rata-rata dari RECURRING saja: Rp300.000
-          - Budget final: Rp300.000 + 20% buffer = Rp360.000/bulan
-          
-          REASONING WAJIB: "Saya lihat ada biaya pendaftaran Rp500.000 yang tentu saja cuma dibayar sekali waktu daftar. Yang rutin tiap bulan adalah SPP Rp300.000. Makanya budget yang saya sarankan itu Rp360.000/bulan - dari SPP ditambah sedikit buffer buat jaga-jaga, sekitar 20%. Biaya pendaftaran tadi ga usah diitung karena kan cuma sekali aja."
-          
-          CONTOH LAIN - JIKA SEMUA ONE-TIME:
-          Jika hanya ada "Biaya Pendaftaran" Rp500.000 (semua one-time):
-          - Hasil: Budget minimum Rp150.000/bulan untuk kebutuhan rutin kategori ini
-          - Reasoning: "Saya lihat cuma ada biaya pendaftaran Rp500.000 aja nih, yang jelas ini cuma bayar sekali waktu daftar. Nah tapi buat kebutuhan sekolah sehari-hari kayak buku, alat tulis, atau keperluan kecil lainnya, sebaiknya siap-siap budget sekitar Rp150.000/bulan deh."
-          ` : `
-          EXAMPLE STEP-BY-STEP ANALYSIS ENGLISH:
-          
-          Scenario: Education category has transactions:
-          1. "Registration Fee Payment" - $500
-          2. "Monthly Tuition Payment" - $300
-          
-          STEP 1 - Classification:
-          ❌ "Registration Fee Payment" = ONE-TIME (contains "registration" = ignored)
-          ✅ "Monthly Tuition Payment" = RECURRING (contains "tuition" = used)
-          
-          STEP 2 - Budget Calculation:
-          - ONE-TIME transactions to ignore: $500 (registration)
-          - RECURRING transactions to use: $300 (tuition)
-          - Average recurring: $300 (only 1 recurring transaction)
-          - Budget recommendation: $300 + 20% buffer = $360/month
-          
-          REASONING: "$360/month budget based on recurring tuition $300/month with 20% buffer. Registration fee $500 excluded as it contains 'registration' keyword indicating one-time expense."
-          `}
-          
-          ${language === 'Indonesian' ? `
-          REASONING DALAM BAHASA INDONESIA - GUNAKAN BAHASA YANG NATURAL DAN SANTAI:
-          - WAJIB: Tulis seperti teman yang kasih saran keuangan, BUKAN seperti robot atau bank formal
-          - Gunakan bahasa sehari-hari yang natural dan mudah dipahami
-          - Boleh pakai kata "saya lihat", "makanya", "buat", "kayak", "nih", "deh" 
-          - SANGAT DILARANG kata teknis: "mengandung kata", "diklasifikasi", "menunjukkan bahwa", "oleh karena itu"
-          - Contoh reasoning yang BAGUS (pakai ini sebagai template):
-            * "Saya lihat ada biaya pendaftaran Rp500.000 yang tentu saja cuma dibayar sekali waktu daftar. Yang rutin tiap bulan adalah SPP Rp300.000. Makanya budget yang saya sarankan itu Rp360.000/bulan - dari SPP ditambah sedikit buffer buat jaga-jaga, sekitar 20%. Biaya pendaftaran tadi ga usah diitung karena kan cuma sekali aja."
-            * "Dari data pengeluaran, cuma ada biaya pendaftaran Rp500.000 yang jelas ini pembayaran sekali aja waktu daftar. Buat keperluan sekolah harian kayak buku, alat tulis, saya saranin budget Rp150.000/bulan sebagai persiapan."
-          - Contoh reasoning yang BURUK (JANGAN PAKAI):
-            * "Kata 'pendaftaran' menunjukkan pengeluaran satu kali, sehingga diklasifikasi sebagai pengeluaran sekali bayar"
-            * "Berdasarkan transaksi yang tercatat, terdapat pengeluaran dengan deskripsi yang mengandung kata..."
-            * "Oleh karena itu, untuk perencanaan budget bulanan, kami fokus pada..."
-          ` : `
-          REASONING IN ENGLISH - USE NATURAL LANGUAGE:
-          - Explain like a professional financial advisor, not like a bot
-          - Avoid technical phrases like "contains keyword", "classified as", "one-time payment"
-          - Use natural, easy-to-understand language
-          - Example GOOD reasoning:
-            * "Based on your spending history, the $500 registration fee is a one-time cost that only occurs when enrolling. However, the $300 tuition is a monthly recurring expense. For monthly budget planning, we focus on recurring expenses like tuition and add a 20% buffer, resulting in $360/month."
-          - Example BAD reasoning (AVOID):
-            * "Transaction contains 'registration' keyword indicating one-time expense"
-            * "Transaction classified as recurring based on 'tuition' keyword"
-          `}
-          
-          Return JSON array with objects containing:
-          - category: category name (exact match from available categories)
-          - categoryId: category ID number
-          - recommendedAmount: recommended monthly budget amount
-          - period: "monthly" (default)
-          - reasoning: explanation in ${language}
-          - confidence: 0-1 confidence score
-          
-          Example format:
-          [
-            {
-              "category": "Food & Dining",
-              "categoryId": 1,
-              "recommendedAmount": 1500000,
-              "period": "monthly",
-              "reasoning": "${language === 'Indonesian' ? 'Saya lihat rata-rata pengeluaran makanan sekitar Rp1.200.000/bulan. Buat kasih sedikit ruang gerak, saya saranin budget Rp1.500.000/bulan. Jadi masih bisa fleksibel tapi tetap terkontrol.' : 'Based on your average food spending of $400, we recommend $500 budget to provide flexibility while staying controlled.'}",
-              "confidence": 0.85
-            }
-          ]`,
+          Return JSON object with "recommendations" array containing the budget recommendation.`,
         },
         {
           role: "user",
           content: missingCategory 
-            ? `Please recommend a budget for "${missingCategory}" category only. CRITICAL: Make sure to analyze each transaction individually to classify one-time vs recurring expenses first. Show your step-by-step classification in the reasoning.`
-            : `Please recommend budgets for all available categories.`
+            ? `Please recommend a budget for "${missingCategory}" category only. Return valid JSON with "recommendations" array.`
+            : `Please recommend budgets for all available categories. Return valid JSON with "recommendations" array.`
         },
       ],
       response_format: { type: "json_object" },
+      temperature: 0.3, // Lower temperature for more consistent JSON
     });
     
     console.log(`[BUDGET AI DEBUG] AI Response for category ${missingCategory}:`, response.choices[0].message.content);
 
-    const result = JSON.parse(response.choices[0].message.content || "{}");
-    const recommendations = result.recommendations || result || [];
+    let result;
+    try {
+      result = JSON.parse(response.choices[0].message.content || "{}");
+    } catch (parseError) {
+      console.error(`[BUDGET AI ERROR] Invalid JSON response:`, response.choices[0].message.content);
+      console.error(`[BUDGET AI ERROR] Parse error:`, parseError);
+      
+      // Fallback: create a simple recommendation based on transaction amounts
+      if (categoryTransactions.length > 0) {
+        const avgAmount = categoryTransactions.reduce((sum, t) => sum + t.amount, 0) / categoryTransactions.length;
+        const recommendedAmount = Math.round(avgAmount * 1.2); // 20% buffer
+        
+        result = {
+          recommendations: [{
+            category: missingCategory,
+            categoryId: availableCategories.find(cat => cat.name === missingCategory)?.id || 0,
+            recommendedAmount,
+            period: "monthly",
+            reasoning: `Budget disarankan berdasarkan rata-rata pengeluaran Rp${avgAmount.toLocaleString()} dengan buffer 20%.`,
+            confidence: 0.7
+          }]
+        };
+        console.log(`[BUDGET AI FALLBACK] Generated fallback recommendation:`, result);
+      } else {
+        // No transactions, return minimal recommendation
+        result = {
+          recommendations: [{
+            category: missingCategory,
+            categoryId: availableCategories.find(cat => cat.name === missingCategory)?.id || 0,
+            recommendedAmount: 100000,
+            period: "monthly", 
+            reasoning: "Budget minimal untuk kategori ini.",
+            confidence: 0.5
+          }]
+        };
+      }
+    }
+    
+    const recommendations = result.recommendations || [];
     
     // Ensure recommendations is an array
     return Array.isArray(recommendations) ? recommendations : [recommendations];
