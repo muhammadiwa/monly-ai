@@ -1050,7 +1050,7 @@ const formatCurrency = (amount: number, currency: string = 'USD') => {
 };
 
 // Helper function to process text message
-const processTextMessage = async (message: any, userId: string) => {
+export const processTextMessage = async (message: any, userId: string) => {
   try {
     const userPreferences = await getUserPreferences(userId);
     const categories = await getUserCategories(userId);
@@ -1142,7 +1142,7 @@ const processTextMessage = async (message: any, userId: string) => {
 };
 
 // Helper function to process voice message
-const processVoiceMessage = async (message: any, userId: string) => {
+export const processVoiceMessage = async (message: any, userId: string) => {
   try {
     console.log('Processing voice message from WhatsApp...');
     
@@ -1271,7 +1271,7 @@ const processVoiceMessage = async (message: any, userId: string) => {
 };
 
 // Helper function to process image message
-const processImageMessage = async (message: any, userId: string) => {
+export const processImageMessage = async (message: any, userId: string) => {
   try {
     console.log('Processing image message from WhatsApp...');
     
@@ -1391,7 +1391,7 @@ const processImageMessage = async (message: any, userId: string) => {
 };
 
 // Helper function to show help message
-const showHelpMessage = async (message: any) => {
+export const showHelpMessage = async (message: any) => {
   await message.reply(
     `🤖 *Monly AI - Asisten Keuangan WhatsApp*\n\n` +
     `📝 *Cara Mencatat Transaksi:*\n\n` +
@@ -1436,7 +1436,7 @@ const showHelpMessage = async (message: any) => {
 };
 
 // Helper function to show balance/summary
-const showBalanceSummary = async (message: any, userId: string) => {
+export const showBalanceSummary = async (message: any, userId: string) => {
   try {
     // Get recent transactions and summary
     const transactions = await storage.getTransactions(userId);

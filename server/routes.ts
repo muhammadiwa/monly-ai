@@ -5,7 +5,7 @@ import { analyzeTransactionText, processReceiptImage } from "./openai";
 import { insertTransactionSchema, insertBudgetSchema, insertCategorySchema, insertGoalSchema, updateUserPreferencesSchema } from "@shared/schema";
 import { requireAuth, hashPassword, verifyPassword, generateToken, type AuthRequest } from "./auth";
 import { AIFinancialIntelligenceEngine } from './ai-intelligence';
-import whatsappRoutes from './whatsapp-routes';
+import whatsappSingleBotRoutes from './whatsapp-single-bot-routes';
 import whatsappMultiAccountRoutes from './whatsapp-multi-account-routes';
 import { triggerTransactionRemindersManually } from './transaction-reminder-scheduler';
 import multer from "multer";
@@ -53,7 +53,8 @@ const loginSchema = z.object({
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Register WhatsApp routes
-  app.use('/api', whatsappRoutes);
+  // WhatsApp routes (Single Bot System)
+  app.use('/api', whatsappSingleBotRoutes);
   app.use('/api', whatsappMultiAccountRoutes);
   
   // Session middleware
