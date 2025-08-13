@@ -1,5 +1,5 @@
 import { storage } from './storage';
-import { sendWhatsAppMessage } from './whatsapp-service';
+import { sendSingleBotMessage } from './whatsapp-single-bot';
 import { NotificationLog, InsertNotificationLog } from '@shared/schema';
 
 interface TransactionReminderService {
@@ -69,7 +69,7 @@ class TransactionReminderServiceImpl implements TransactionReminderService {
       // Send message to all connected WhatsApp numbers
       for (const whatsappNumber of whatsappNumbers) {
         try {
-          const result = await sendWhatsAppMessage(userId, whatsappNumber, message);
+          const result = await sendSingleBotMessage(whatsappNumber, message);
           
           // Log the notification
           await this.logNotification({

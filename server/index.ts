@@ -2,7 +2,7 @@ import 'dotenv/config';
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
-import { initializeAllWhatsAppClients } from "./whatsapp-initialization";
+import { initializeSingleWhatsAppBot } from "./whatsapp-single-bot";
 import { startTransactionReminderScheduler } from "./transaction-reminder-scheduler";
 
 const app = express();
@@ -75,13 +75,14 @@ app.use((req, res, next) => {
   }, () => {
     log(`serving on port ${port}`);
     
-    // Initialize WhatsApp clients for all active integrations
-    log('🤖 Initializing WhatsApp service...');
-    initializeAllWhatsAppClients().then(() => {
-      log('✅ WhatsApp service initialization completed');
-    }).catch(error => {
-      log(`❌ WhatsApp service initialization failed: ${error}`);
-    });
+    // Initialize single WhatsApp bot for all users
+    log('🤖 Initializing WhatsApp Bot...');
+    try {
+      initializeSingleWhatsAppBot();
+      log('✅ WhatsApp Bot initialization started');
+    } catch (error) {
+      log(`❌ WhatsApp Bot initialization failed: ${error}`);
+    }
 
     // Start transaction reminder scheduler
     log('⏰ Starting transaction reminder scheduler...');
