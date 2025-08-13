@@ -81,6 +81,27 @@ router.post('/whatsapp/disconnect', requireAuth, async (req: AuthRequest, res: R
   }
 });
 
+// Reconnect WhatsApp Web
+router.post('/whatsapp/reconnect', requireAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, message: 'User not authenticated' });
+    }
+
+    const { reconnectWhatsAppClient } = await import('./whatsapp-service');
+    const result = await reconnectWhatsAppClient(userId);
+    res.json(result);
+  } catch (error) {
+    console.error('Error reconnecting WhatsApp:', error);
+    res.status(500).json({
+      success: false,
+      status: 'error',
+      message: 'Failed to reconnect WhatsApp'
+    });
+  }
+});
+
 // Initialize message handlers
 router.post('/whatsapp/init-handlers', requireAuth, async (req: AuthRequest, res: Response) => {
   try {
