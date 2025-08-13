@@ -24,10 +24,51 @@ interface WhatsAppConnection {
   status: 'initializing' | 'loading_screen' | 'qr_received' | 'authenticated' | 'ready' | 'disconnected';
   qrCode: string | null;
   userId: string;
+  reconnectAttempts: number;
+  lastReconnectTime: number;
+  autoReconnect: boolean;
+  maxReconnectAttempts: number;
 }
 
 // Store WhatsApp connections by user ID
 const connections: Map<string, WhatsAppConnection> = new Map();
+
+// Health check interval for connections
+const healthCheckInterval = setInterval(async () => {
+  const entries = Array.from(connections.entries());
+  for (const [userId, connection] of entries) {
+    if (connection.status === 'ready') {
+      try {
+        // Simple health check by trying to get state
+        const state = await connection.client.getState();
+        if (state !== 'CONNECTED') {
+          console.log(`⚠️ WhatsApp connection unhealthy for user ${userId}, state: ${state}`);
+          connection.status = 'disconnected';
+          
+          // Trigger reconnection if enabled
+          if (connection.autoReconnect && connection.reconnectAttempts < connection.maxReconnectAttempts) {
+            console.log(`🔄 Health check triggered reconnection for user ${userId}`);
+            setTimeout(async () => {
+              try {
+                await reconnectWhatsAppClient(userId);
+              } catch (error) {
+                console.error(`Health check reconnection failed for user ${userId}:`, error);
+              }
+            }, 5000); // 5 second delay
+          }
+        }
+      } catch (error) {
+        console.error(`Health check failed for user ${userId}:`, error);
+        connection.status = 'disconnected';
+      }
+    }
+  }
+}, 300000); // Check every 5 minutes
+
+// Cleanup health check on process exit
+process.on('exit', () => {
+  clearInterval(healthCheckInterval);
+});
 
 /**
  * Initialize WhatsApp client for a user with enhanced message handling
@@ -87,7 +128,11 @@ export const initializeWhatsAppClient = (userId: string): WhatsAppConnection => 
     client,
     status: 'initializing',
     qrCode: null,
-    userId
+    userId,
+    reconnectAttempts: 0,
+    lastReconnectTime: 0,
+    autoReconnect: true,
+    maxReconnectAttempts: 5
   };
 
   // Set up event handlers
@@ -105,9 +150,10 @@ export const initializeWhatsAppClient = (userId: string): WhatsAppConnection => 
   });
 
   client.on('ready', () => {
-    console.log(`WhatsApp client ready for user ${userId}`);
+    console.log(`✅ WhatsApp client ready for user ${userId}`);
     connection.status = 'ready';
     connection.qrCode = null;
+    connection.reconnectAttempts = 0; // Reset reconnection attempts on successful connection
     
     // Register message handlers when client is ready
     registerMessageHandlers(userId);
@@ -119,21 +165,73 @@ export const initializeWhatsAppClient = (userId: string): WhatsAppConnection => 
   });
 
   client.on('authenticated', () => {
-    console.log(`WhatsApp client authenticated for user ${userId}`);
+    console.log(`✅ WhatsApp client authenticated for user ${userId}`);
     connection.status = 'authenticated';
+    connection.reconnectAttempts = 0; // Reset reconnection attempts on successful authentication
   });
 
   client.on('auth_failure', (msg) => {
     console.error(`WhatsApp authentication failed for user ${userId}: ${msg}`);
     connection.status = 'disconnected';
+    
+    // Attempt auto-reconnection for auth failures too
+    if (connection.autoReconnect && connection.reconnectAttempts < connection.maxReconnectAttempts) {
+      const now = Date.now();
+      const timeSinceLastReconnect = now - connection.lastReconnectTime;
+      const minReconnectInterval = 60000; // 1 minute minimum for auth failures
+      
+      if (timeSinceLastReconnect >= minReconnectInterval) {
+        connection.reconnectAttempts++;
+        connection.lastReconnectTime = now;
+        
+        console.log(`🔄 Auto-reconnecting after auth failure for user ${userId} (attempt ${connection.reconnectAttempts}/${connection.maxReconnectAttempts})`);
+        
+        // Schedule reconnection with longer delay for auth failures
+        const backoffDelay = Math.min(60000 * Math.pow(2, connection.reconnectAttempts - 1), 600000); // Max 10 minutes
+        
+        setTimeout(async () => {
+          try {
+            await reconnectWhatsAppClient(userId);
+          } catch (error) {
+            console.error(`Failed to reconnect WhatsApp after auth failure for user ${userId}:`, error);
+          }
+        }, backoffDelay);
+      }
+    }
   });
 
   client.on('disconnected', (reason) => {
     console.log(`WhatsApp client disconnected for user ${userId}: ${reason}`);
     connection.status = 'disconnected';
     
-    // Clean up connection
-    connections.delete(userId);
+    // Attempt auto-reconnection if enabled
+    if (connection.autoReconnect && connection.reconnectAttempts < connection.maxReconnectAttempts) {
+      const now = Date.now();
+      const timeSinceLastReconnect = now - connection.lastReconnectTime;
+      const minReconnectInterval = 30000; // 30 seconds minimum between reconnection attempts
+      
+      if (timeSinceLastReconnect >= minReconnectInterval) {
+        connection.reconnectAttempts++;
+        connection.lastReconnectTime = now;
+        
+        console.log(`🔄 Auto-reconnecting WhatsApp for user ${userId} (attempt ${connection.reconnectAttempts}/${connection.maxReconnectAttempts})`);
+        
+        // Schedule reconnection with exponential backoff
+        const backoffDelay = Math.min(30000 * Math.pow(2, connection.reconnectAttempts - 1), 300000); // Max 5 minutes
+        
+        setTimeout(async () => {
+          try {
+            await reconnectWhatsAppClient(userId);
+          } catch (error) {
+            console.error(`Failed to reconnect WhatsApp for user ${userId}:`, error);
+          }
+        }, backoffDelay);
+      }
+    } else {
+      console.log(`❌ Max reconnection attempts reached for user ${userId}, cleaning up connection`);
+      // Clean up connection after max attempts
+      connections.delete(userId);
+    }
   });
 
   client.on('message_create', (message) => {
@@ -146,11 +244,37 @@ export const initializeWhatsAppClient = (userId: string): WhatsAppConnection => 
   // Store the connection
   connections.set(userId, connection);
 
-  // Initialize the client
-  client.initialize().catch((error) => {
-    console.error(`Failed to initialize WhatsApp client for user ${userId}:`, error);
-    connection.status = 'disconnected';
-  });
+  // Initialize the client with retry logic
+  const initializeWithRetry = async (attempt = 1) => {
+    try {
+      await client.initialize();
+      console.log(`✅ WhatsApp client initialized successfully for user ${userId}`);
+      connection.reconnectAttempts = 0; // Reset counter on successful connection
+    } catch (error) {
+      console.error(`❌ Failed to initialize WhatsApp client for user ${userId} (attempt ${attempt}):`, error);
+      connection.status = 'disconnected';
+      
+      // Handle specific errors
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes('ERR_INSUFFICIENT_RESOURCES') || 
+          errorMessage.includes('net::ERR_') ||
+          errorMessage.includes('Target closed')) {
+        
+        if (attempt < 3) { // Retry up to 3 times for network errors
+          console.log(`🔄 Retrying WhatsApp initialization for user ${userId} in ${attempt * 10} seconds...`);
+          setTimeout(() => {
+            initializeWithRetry(attempt + 1);
+          }, attempt * 10000); // Exponential backoff: 10s, 20s, 30s
+          return;
+        }
+      }
+      
+      // If max retries reached or other error, mark as failed
+      console.error(`❌ Failed to initialize WhatsApp client for user ${userId}: Connection failed`);
+    }
+  };
+
+  initializeWithRetry();
 
   return connection;
 };
@@ -190,6 +314,116 @@ export const getAllConnections = () => {
 };
 
 /**
+ * Reconnect WhatsApp client for a specific user
+ * @param userId The user ID to reconnect
+ * @returns Promise with reconnection result
+ */
+export const reconnectWhatsAppClient = async (userId: string): Promise<{ success: boolean; status: string; message: string; qrCode?: string }> => {
+  try {
+    const existingConnection = connections.get(userId);
+    
+    // Cleanup existing connection
+    if (existingConnection) {
+      try {
+        await existingConnection.client.destroy();
+      } catch (error) {
+        console.error(`Error destroying existing connection for user ${userId}:`, error);
+      }
+      connections.delete(userId);
+    }
+    
+    console.log(`🔄 Starting reconnection process for user ${userId}...`);
+    
+    // Create new connection
+    const connection = initializeWhatsAppClient(userId);
+    
+    // Wait for connection result with timeout
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        resolve({
+          success: false,
+          status: 'timeout',
+          message: 'Reconnection timeout'
+        });
+      }, 60000); // 60 second timeout
+      
+      const checkInterval = setInterval(() => {
+        const currentConnection = connections.get(userId);
+        if (!currentConnection) {
+          clearTimeout(timeout);
+          clearInterval(checkInterval);
+          resolve({
+            success: false,
+            status: 'disconnected',
+            message: 'Connection lost during reconnection'
+          });
+          return;
+        }
+        
+        if (currentConnection.qrCode && currentConnection.status === 'qr_received') {
+          clearTimeout(timeout);
+          clearInterval(checkInterval);
+          resolve({
+            success: true,
+            status: currentConnection.status,
+            message: 'QR code generated for reconnection',
+            qrCode: currentConnection.qrCode
+          });
+        } else if (currentConnection.status === 'ready' || currentConnection.status === 'authenticated') {
+          clearTimeout(timeout);
+          clearInterval(checkInterval);
+          resolve({
+            success: true,
+            status: currentConnection.status,
+            message: 'WhatsApp reconnected successfully'
+          });
+        } else if (currentConnection.status === 'disconnected') {
+          clearTimeout(timeout);
+          clearInterval(checkInterval);
+          resolve({
+            success: false,
+            status: currentConnection.status,
+            message: 'Reconnection failed'
+          });
+        }
+      }, 1000);
+    });
+    
+  } catch (error) {
+    console.error('Error during WhatsApp reconnection:', error);
+    return {
+      success: false,
+      status: 'error',
+      message: 'Failed to start reconnection process'
+    };
+  }
+};
+
+/**
+ * Enable/disable auto-reconnection for a user
+ * @param userId The user ID
+ * @param autoReconnect Whether to enable auto-reconnection
+ * @returns Success status
+ */
+export const setAutoReconnect = (userId: string, autoReconnect: boolean): { success: boolean; message: string } => {
+  const connection = connections.get(userId);
+  if (!connection) {
+    return {
+      success: false,
+      message: 'No WhatsApp connection found for this user'
+    };
+  }
+  
+  connection.autoReconnect = autoReconnect;
+  console.log(`🔄 Auto-reconnection ${autoReconnect ? 'enabled' : 'disabled'} for user ${userId}`);
+  
+  return {
+    success: true,
+    message: `Auto-reconnection ${autoReconnect ? 'enabled' : 'disabled'}`
+  };
+};
+
+/**
  * Initialize WhatsApp client for specific user (used by multi-account system)
  * @param userId The user ID to initialize client for
  * @returns Promise with connection result
@@ -211,6 +445,10 @@ export const initializeUserWhatsAppClient = async (userId: string): Promise<{ su
           status: existingConnection.status,
           qrCode: existingConnection.qrCode
         };
+      } else if (existingConnection.status === 'disconnected') {
+        // If connection is disconnected, try to reconnect
+        console.log(`🔄 Existing connection is disconnected, attempting reconnection for user ${userId}...`);
+        return await reconnectWhatsAppClient(userId);
       }
     }
     
