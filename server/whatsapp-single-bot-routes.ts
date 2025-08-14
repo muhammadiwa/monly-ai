@@ -36,16 +36,21 @@ router.post('/whatsapp/connect', requireAuth, async (req: AuthRequest, res: Resp
 
     // Check current status
     const currentStatus = getSingleBotConnectionState();
+    console.log('📱 Current bot status:', currentStatus);
     
-    if (currentStatus.connected) {
+    // If bot is already connected (ready or authenticated), return success immediately
+    if (currentStatus.connected && (currentStatus.status === 'ready' || currentStatus.status === 'authenticated')) {
+      console.log('✅ Bot already connected, returning status');
       return res.json({
         success: true,
         status: currentStatus.status,
-        message: 'WhatsApp Bot already connected'
+        message: 'WhatsApp Bot is already connected and ready'
       });
     }
 
+    // If we have a QR code ready for scanning, return it
     if (currentStatus.status === 'qr_received' && currentStatus.qrCode) {
+      console.log('📱 QR code available, returning it');
       return res.json({
         success: true,
         status: currentStatus.status,
@@ -54,19 +59,43 @@ router.post('/whatsapp/connect', requireAuth, async (req: AuthRequest, res: Resp
       });
     }
 
-    // Try to initialize or reconnect
+    // Bot is disconnected or not initialized, try to start/reconnect
     if (currentStatus.status === 'disconnected') {
+      console.log('🔄 Bot disconnected, attempting reconnection...');
       const result = await reconnectSingleWhatsAppBot();
-      res.json(result);
+      
+      // Return success for both authenticated and QR code scenarios
+      if (result.success || result.qrCode) {
+        console.log('✅ Reconnection result:', result);
+        res.json(result);
+      } else {
+        // Even if reconnect "failed", try to generate new QR code
+        console.log('🔄 Reconnect failed, attempting fresh initialization...');
+        initializeSingleWhatsAppBot();
+        
+        // Wait for QR code generation
+        setTimeout(async () => {
+          const newStatus = getSingleBotConnectionState();
+          console.log('📱 Fresh init result:', newStatus);
+          res.json({
+            success: !!newStatus.qrCode,
+            status: newStatus.status,
+            qrCode: newStatus.qrCode,
+            message: newStatus.qrCode ? 'New QR code generated after reconnection failure' : 'Failed to generate QR code'
+          });
+        }, 3000); // Wait 3 seconds for QR generation
+      }
     } else {
-      // Initialize for the first time
+      // Bot is in some other state (initializing, authenticating, etc.)
+      console.log('🔄 Bot in transitional state, initializing...');
       initializeSingleWhatsAppBot();
       
       // Wait a bit and return status
       setTimeout(() => {
         const newStatus = getSingleBotConnectionState();
+        console.log('📱 Init result:', newStatus);
         res.json({
-          success: newStatus.status !== 'disconnected',
+          success: !!newStatus.qrCode || (newStatus.status !== 'disconnected'),
           status: newStatus.status,
           qrCode: newStatus.qrCode,
           message: newStatus.status === 'qr_received' ? 'QR code generated' : 'Bot initialization started'
