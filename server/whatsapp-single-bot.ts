@@ -254,12 +254,22 @@ export const reconnectSingleWhatsAppBot = async (): Promise<{ success: boolean; 
     // Wait for connection result with timeout
     return new Promise((resolve) => {
       const timeout = setTimeout(() => {
-        resolve({
-          success: false,
-          status: 'timeout',
-          message: 'Bot reconnection timeout'
-        });
-      }, 60000); // 60 second timeout
+        // Even if timeout, check if we have QR code
+        if (botConnection && botConnection.qrCode && botConnection.status === 'qr_received') {
+          resolve({
+            success: true,
+            status: botConnection.status,
+            message: 'QR code generated (timeout reached but QR available)',
+            qrCode: botConnection.qrCode
+          });
+        } else {
+          resolve({
+            success: false,
+            status: 'timeout',
+            message: 'Bot reconnection timeout - no QR code generated'
+          });
+        }
+      }, 30000); // Reduced timeout to 30 seconds for faster QR response
       
       const checkInterval = setInterval(() => {
         if (!botConnection) {
@@ -273,6 +283,7 @@ export const reconnectSingleWhatsAppBot = async (): Promise<{ success: boolean; 
           return;
         }
         
+        // Prioritize QR code generation - return immediately when QR is available
         if (botConnection.qrCode && botConnection.status === 'qr_received') {
           clearTimeout(timeout);
           clearInterval(checkInterval);
@@ -290,16 +301,9 @@ export const reconnectSingleWhatsAppBot = async (): Promise<{ success: boolean; 
             status: botConnection.status,
             message: 'WhatsApp Bot reconnected successfully'
           });
-        } else if (botConnection.status === 'disconnected') {
-          clearTimeout(timeout);
-          clearInterval(checkInterval);
-          resolve({
-            success: false,
-            status: botConnection.status,
-            message: 'Bot reconnection failed'
-          });
         }
-      }, 1000);
+        // Remove the immediate disconnected check - let it try longer
+      }, 500); // Check more frequently (every 500ms) for faster QR detection
     });
     
   } catch (error) {
