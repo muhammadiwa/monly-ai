@@ -110,6 +110,17 @@ fi
 # Step 7: Initialize database
 echo ""
 echo -e "${BLUE}💾 Step 7: Initializing database...${NC}"
+
+# Create data directory if not exists
+mkdir -p data
+
+# Update DATABASE_URL in .env.production if needed
+if grep -q "DATABASE_URL=file:./database.sqlite" .env.production; then
+    echo "Database path already configured"
+else
+    echo "DATABASE_URL=file:./database.sqlite" >> .env.production
+fi
+
 npm run db:push
 echo "✅ Database initialized"
 
@@ -117,8 +128,8 @@ echo "✅ Database initialized"
 echo ""
 echo -e "${BLUE}🚀 Step 8: Setting up PM2...${NC}"
 
-# Create ecosystem file
-cat > ecosystem.config.js << 'EOF'
+# Create ecosystem file with .cjs extension (CommonJS)
+cat > ecosystem.config.cjs << 'EOF'
 module.exports = {
   apps: [{
     name: 'monly-ai',
@@ -147,7 +158,7 @@ mkdir -p logs
 pm2 delete monly-ai 2>/dev/null || true
 
 # Start with PM2
-pm2 start ecosystem.config.js
+pm2 start ecosystem.config.cjs
 pm2 save
 
 # Setup startup
