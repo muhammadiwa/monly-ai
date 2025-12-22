@@ -2,10 +2,23 @@ import { OpenAI } from 'openai';
 import { db } from './db';
 import { transactions, budgets, goals, users, categories } from '../shared/schema';
 import { eq, and, gte, lte, desc } from 'drizzle-orm';
+import { getAIClient, getModelForTask } from './ai-provider';
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || 'demo-key'
-});
+const openai = getAIClient();
+
+/**
+ * Helper function to clean AI response content
+ * Removes markdown code blocks that some AI providers add
+ */
+function cleanAIResponse(content: string | null | undefined): string {
+  if (!content) return "{}";
+
+  // Remove markdown code blocks (```json ... ``` or ``` ... ```)
+  return content
+    .replace(/```json\s*/g, '')
+    .replace(/```\s*/g, '')
+    .trim();
+}
 
 interface TransactionHistory {
   id: number;
@@ -84,7 +97,7 @@ interface AIFinancialIntelligence {
 
 export class AIFinancialIntelligenceEngine {
   private userId: string;
-  
+
   constructor(userId: string) {
     this.userId = userId;
   }
@@ -102,11 +115,11 @@ export class AIFinancialIntelligenceEngine {
       const smartSpendingOpportunities = await this.generateSmartSpendingOpportunities(
         transactionHistory, budgetAllocations, userProfile
       );
-      
+
       const budgetAlerts = await this.generateBudgetAlertPredictions(
         transactionHistory, budgetAllocations
       );
-      
+
       const goalForecasts = await this.generateGoalAchievementForecasts(
         transactionHistory, financialGoals, monthlyIncome
       );
@@ -131,7 +144,7 @@ export class AIFinancialIntelligenceEngine {
 
   private async getTransactionHistory(): Promise<TransactionHistory[]> {
     const sixMonthsAgo = Date.now() - (6 * 30 * 24 * 60 * 60 * 1000);
-    
+
     const userTransactions = await db
       .select({
         id: transactions.id,
@@ -222,7 +235,7 @@ export class AIFinancialIntelligenceEngine {
   private async getMonthlyIncome(): Promise<number> {
     const now = new Date();
     const startOfMonth = Math.floor(new Date(now.getFullYear(), now.getMonth(), 1).getTime() / 1000);
-    
+
     const monthlyIncomeTransactions = await db
       .select()
       .from(transactions)
@@ -242,7 +255,7 @@ export class AIFinancialIntelligenceEngine {
     budgetAllocations: BudgetAllocation[],
     userProfile: UserProfile
   ): Promise<SmartSpendingOpportunity[]> {
-    
+
     // Group transactions by category for analysis
     const categorySpending = this.groupTransactionsByCategory(transactionHistory, 'expense');
     const opportunities: SmartSpendingOpportunity[] = [];
@@ -250,11 +263,11 @@ export class AIFinancialIntelligenceEngine {
     for (const [category, transactions] of Object.entries(categorySpending)) {
       const currentMonthlySpending = this.calculateMonthlyAverage(transactions);
       const benchmark = this.getCategoryBenchmark(category, userProfile);
-      
+
       if (currentMonthlySpending > benchmark * 1.2) { // 20% above benchmark
         const potentialSaving = currentMonthlySpending - benchmark;
         const savingPercentage = (potentialSaving / currentMonthlySpending) * 100;
-        
+
         const aiInsight = await this.generateCategoryOptimizationTips(
           category, currentMonthlySpending, benchmark, transactions
         );
@@ -279,7 +292,7 @@ export class AIFinancialIntelligenceEngine {
     transactionHistory: TransactionHistory[],
     budgetAllocations: BudgetAllocation[]
   ): Promise<BudgetAlertPrediction[]> {
-    
+
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
@@ -298,11 +311,11 @@ export class AIFinancialIntelligenceEngine {
       const categoryTransactions = currentMonthTransactions.filter(
         t => t.category === budget.category && t.type === 'expense'
       );
-      
+
       const currentSpending = categoryTransactions.reduce((sum, t) => sum + t.amount, 0);
       const dailySpendingRate = currentSpending / daysPassed;
       const forecastedSpending = currentSpending + (dailySpendingRate * daysRemaining);
-      
+
       if (forecastedSpending > budget.amount) {
         const overBudgetAmount = forecastedSpending - budget.amount;
         const overBudgetProbability = this.calculateOverBudgetProbability(
@@ -335,22 +348,22 @@ export class AIFinancialIntelligenceEngine {
     financialGoals: FinancialGoal[],
     monthlyIncome: number
   ): Promise<GoalAchievementForecast[]> {
-    
+
     const forecasts: GoalAchievementForecast[] = [];
-    
+
     // Calculate average monthly savings
     const monthlySavings = this.calculateMonthlySavingsPattern(transactionHistory, monthlyIncome);
-    
+
     for (const goal of financialGoals) {
       const remainingAmount = goal.targetAmount - goal.currentAmount;
       const deadlineDate = new Date(goal.deadline * 1000);
       const now = new Date();
       const monthsToDeadline = (deadlineDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24 * 30);
-      
+
       const expectedSavingPerMonth = monthlySavings.average;
       const monthsToGoal = remainingAmount / expectedSavingPerMonth;
       const deviation = monthsToDeadline - monthsToGoal;
-      
+
       let status: 'on-track' | 'ahead' | 'behind' | 'at-risk';
       if (deviation > 2) status = 'ahead';
       else if (deviation > -1) status = 'on-track';
@@ -393,7 +406,7 @@ export class AIFinancialIntelligenceEngine {
 
   private calculateMonthlyAverage(transactions: TransactionHistory[]): number {
     if (!transactions.length) return 0;
-    
+
     const total = transactions.reduce((sum, t) => sum + t.amount, 0);
     const months = this.getMonthsSpanned(transactions);
     return total / Math.max(months, 1);
@@ -401,7 +414,7 @@ export class AIFinancialIntelligenceEngine {
 
   private getMonthsSpanned(transactions: TransactionHistory[]): number {
     if (!transactions.length) return 1;
-    
+
     const dates = transactions.map(t => t.date * 1000);
     const earliest = Math.min(...dates);
     const latest = Math.max(...dates);
@@ -444,13 +457,13 @@ export class AIFinancialIntelligenceEngine {
 
   private calculateConfidence(dataPoints: number, impactMagnitude: number): number {
     let confidence = 0.5; // Base confidence
-    
+
     // More data points = higher confidence
     confidence += Math.min(dataPoints / 50, 0.3);
-    
+
     // Higher impact = easier to detect pattern
     confidence += Math.min(impactMagnitude / 100, 0.2);
-    
+
     return Math.min(confidence, 0.95);
   }
 
@@ -460,14 +473,14 @@ export class AIFinancialIntelligenceEngine {
     daysRemaining: number
   ): number {
     if (!transactions.length) return 0;
-    
+
     const currentSpending = transactions.reduce((sum, t) => sum + t.amount, 0);
     const spendingRate = currentSpending / transactions.length; // per transaction
     const estimatedTransactions = (transactions.length / 30) * daysRemaining;
     const projectedSpending = currentSpending + (spendingRate * estimatedTransactions);
-    
+
     if (projectedSpending <= budgetLimit) return 0;
-    
+
     const overBudgetRatio = (projectedSpending - budgetLimit) / budgetLimit;
     return Math.min(overBudgetRatio * 0.8 + 0.2, 0.95);
   }
@@ -485,15 +498,15 @@ export class AIFinancialIntelligenceEngine {
   ): { average: number; variance: number } {
     // Group by month and calculate savings
     const monthlyData: Record<string, { income: number; expenses: number }> = {};
-    
+
     transactions.forEach(t => {
       const date = new Date(t.date * 1000);
       const monthKey = `${date.getFullYear()}-${date.getMonth()}`;
-      
+
       if (!monthlyData[monthKey]) {
         monthlyData[monthKey] = { income: 0, expenses: 0 };
       }
-      
+
       if (t.type === 'income') {
         monthlyData[monthKey].income += t.amount;
       } else {
@@ -511,7 +524,7 @@ export class AIFinancialIntelligenceEngine {
 
     const average = savingsData.reduce((sum, s) => sum + s, 0) / savingsData.length;
     const variance = savingsData.reduce((sum, s) => sum + Math.pow(s - average, 2), 0) / savingsData.length;
-    
+
     return { average, variance };
   }
 
@@ -527,17 +540,17 @@ export class AIFinancialIntelligenceEngine {
     forecasts: GoalAchievementForecast[]
   ): number {
     let score = 70; // Base score
-    
+
     // Deduct for spending opportunities (more opportunities = lower score)
     score -= opportunities.length * 5;
-    
+
     // Deduct for budget alerts
     score -= alerts.reduce((sum, alert) => sum + (alert.overBudgetProbability * 20), 0);
-    
+
     // Add for goals on track
     const onTrackGoals = forecasts.filter(f => f.status === 'on-track' || f.status === 'ahead').length;
     score += onTrackGoals * 10;
-    
+
     // Round to 1 decimal place
     const finalScore = Math.max(0, Math.min(100, score));
     return Math.round(finalScore * 10) / 10;
@@ -565,7 +578,7 @@ Respond in JSON format: {"reasoning": "...", "tips": ["tip1", "tip2", "tip3"]}
 `;
 
       const response = await openai.chat.completions.create({
-        model: "gpt-4.1-nano",
+        model: getModelForTask("analysis"),
         messages: [{ role: "user", content: prompt }],
         temperature: 0.7,
         max_tokens: 300
@@ -574,7 +587,7 @@ Respond in JSON format: {"reasoning": "...", "tips": ["tip1", "tip2", "tip3"]}
       const content = response.choices[0]?.message?.content;
       if (content) {
         try {
-          return JSON.parse(content);
+          return JSON.parse(cleanAIResponse(content));
         } catch {
           // Fallback parsing
         }
@@ -604,7 +617,7 @@ Generate a brief, actionable recommendation to stay within budget.
 `;
 
       const response = await openai.chat.completions.create({
-        model: "gpt-4.1-nano",
+        model: getModelForTask("analysis"),
         messages: [{ role: "user", content: prompt }],
         temperature: 0.5,
         max_tokens: 100
@@ -635,7 +648,7 @@ Generate a brief recommendation to achieve this goal.
 `;
 
       const response = await openai.chat.completions.create({
-        model: "gpt-4.1-nano",
+        model: getModelForTask("analysis"),
         messages: [{ role: "user", content: prompt }],
         temperature: 0.5,
         max_tokens: 100

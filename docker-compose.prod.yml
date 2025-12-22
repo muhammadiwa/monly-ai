@@ -1,0 +1,96 @@
+version: '3.8'
+
+services:
+  monlyai-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: monlyai-app
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATABASE_URL=${DATABASE_URL:-file:/app/data/database.sqlite}
+      - SESSION_SECRET=${SESSION_SECRET}
+      - JWT_SECRET=${JWT_SECRET}
+      - AI_PROVIDER=${AI_PROVIDER:-openai}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - MEGALLM_API_KEY=${MEGALLM_API_KEY}
+      - MEGALLM_BASE_URL=${MEGALLM_BASE_URL}
+      - AI_MODEL_CHAT=${AI_MODEL_CHAT:-gpt-4o-mini}
+      - AI_MODEL_ANALYSIS=${AI_MODEL_ANALYSIS:-gpt-4o-mini}
+      - AI_MODEL_VISION=${AI_MODEL_VISION:-gpt-4o-mini}
+      - AI_MODEL_FALLBACK=${AI_MODEL_FALLBACK:-gpt-3.5-turbo}
+    volumes:
+      - app_data:/app/data
+      - whatsapp_sessions:/app/.wwebjs_auth
+    networks:
+      - monlyai-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.monlyai.rule=Host(`${DOMAIN:-monlyai.web.id}`)"
+      - "traefik.http.routers.monlyai.entrypoints=websecure"
+      - "traefik.http.routers.monlyai.tls.certresolver=letsencrypt"
+      - "traefik.http.services.monlyai.loadbalancer.server.port=3000"
+
+  traefik:
+    image: traefik:v2.10
+    container_name: traefik
+    restart: unless-stopped
+    command:
+      - "--api.dashboard=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:-admin@monlyai.web.id}"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - letsencrypt:/letsencrypt
+    networks:
+      - monlyai-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.dashboard.rule=Host(`traefik.${DOMAIN:-monlyai.web.id}`)"
+      - "traefik.http.routers.dashboard.entrypoints=websecure"
+      - "traefik.http.routers.dashboard.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.dashboard.service=api@internal"
+
+  monlyai-backup:
+    image: alpine:latest
+    container_name: monlyai-backup
+    restart: unless-stopped
+    volumes:
+      - app_data:/data:ro
+      - backup_data:/backups
+    entrypoint: /bin/sh
+    command: >
+      -c "while true; do
+        cp /data/database.sqlite /backups/backup-$$(date +%Y%m%d-%H%M%S).db 2>/dev/null || true;
+        find /backups -name '*.db' -mtime +7 -delete 2>/dev/null || true;
+        sleep 86400;
+      done"
+    networks:
+      - monlyai-network
+
+networks:
+  monlyai-network:
+    driver: bridge
+
+volumes:
+  app_data:
+    driver: local
+  whatsapp_sessions:
+    driver: local
+  letsencrypt:
+    driver: local
+  backup_data:
+    driver: local

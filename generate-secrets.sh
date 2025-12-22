@@ -1,63 +1,56 @@
 #!/bin/bash
 
-# Monly AI Production Secrets Generator
-# This script generates secure random secrets for production deployment
+# MonlyAI Secrets Generator
 
-echo "🔐 Generating secure secrets for Monly AI Production..."
+echo "🔐 Generating secrets for MonlyAI..."
 echo ""
 
-# Function to generate a random string
-generate_secret() {
-    openssl rand -hex 32
-}
+SESSION_SECRET=$(openssl rand -hex 32)
+JWT_SECRET=$(openssl rand -hex 32)
 
-# Generate secrets
-SESSION_SECRET=$(generate_secret)
-JWT_SECRET=$(generate_secret)
-
-echo "🔑 Generated Secrets:"
-echo "===================="
-echo ""
-echo "SESSION_SECRET=$SESSION_SECRET"
-echo "JWT_SECRET=$JWT_SECRET"
-echo ""
-
-# Create .env.production file
 cat > .env.production << EOF
-# Monly AI Production Environment Variables
-# Generated on $(date)
+# MonlyAI Production Environment
+# Generated: $(date)
 
-# Database Configuration
+# Database
 DATABASE_URL=file:/app/data/database.sqlite
 
-# OpenAI Configuration - REPLACE WITH YOUR ACTUAL API KEY
-OPENAI_API_KEY=sk-proj-your-actual-openai-api-key-here
+# Server
+NODE_ENV=production
+PORT=3000
 
-# Security Secrets - Generated $(date)
+# Security
 SESSION_SECRET=$SESSION_SECRET
 JWT_SECRET=$JWT_SECRET
 
-# Production Environment
-NODE_ENV=production
+# AI Provider (pilih: openai, openrouter, atau megallm)
+AI_PROVIDER=openai
 
-# Server Configuration
-PORT=3000
+# OpenAI - GANTI DENGAN API KEY ANDA
+OPENAI_API_KEY=sk-xxx
 
-# Domain Configuration
+# OpenRouter (optional)
+# OPENROUTER_API_KEY=sk-or-v1-xxx
+
+# MegaLLM (optional)
+# MEGALLM_API_KEY=your-key
+# MEGALLM_BASE_URL=https://api.megallm.app/v1
+
+# AI Models
+AI_MODEL_CHAT=gpt-4o-mini
+AI_MODEL_ANALYSIS=gpt-4o-mini
+AI_MODEL_VISION=gpt-4o-mini
+AI_MODEL_FALLBACK=gpt-3.5-turbo
+
+# Domain
 DOMAIN=monlyai.web.id
-
-# Email for Let's Encrypt SSL certificates
 ACME_EMAIL=admin@monlyai.web.id
-
-# Optional: Basic Auth for monitoring
-MONITOR_AUTH=admin:$(openssl passwd -apr1 "monitor123")
 EOF
 
-echo "✅ Production environment file created: .env.production"
+echo "✅ Created .env.production"
 echo ""
-echo "⚠️  IMPORTANT NEXT STEPS:"
-echo "1. Edit .env.production and replace OPENAI_API_KEY with your actual key"
-echo "2. Update DOMAIN and ACME_EMAIL with your actual values"
-echo "3. Keep these secrets secure and never commit them to git"
-echo ""
-echo "🚀 You can now run: ./deploy-prod.sh"
+echo "⚠️  Next steps:"
+echo "1. Edit .env.production"
+echo "2. Isi OPENAI_API_KEY atau AI provider lainnya"
+echo "3. Update DOMAIN dan ACME_EMAIL"
+echo "4. Run: ./deploy.sh"

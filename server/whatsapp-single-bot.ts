@@ -11,7 +11,7 @@ function getTimezone(): string {
 }
 
 // Initialize OpenAI client
-const openai = new OpenAI({ 
+const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY || process.env.OPENAI_KEY || "default_key"
 });
 
@@ -41,42 +41,9 @@ export const initializeSingleWhatsAppBot = (): SingleBotConnection => {
 
   // Create a new client with local authentication
   const client = new Client({
-    authStrategy: new LocalAuth({ clientId: 'monly-single-bot' }),
+    authStrategy: new LocalAuth({ clientId: 'monly-bot' }),
     puppeteer: {
-      headless: true,
-      args: [
-        '--no-sandbox', 
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--no-first-run',
-        '--no-zygote',
-        '--single-process',
-        '--disable-gpu',
-        '--disable-background-timer-throttling',
-        '--disable-backgrounding-occluded-windows',
-        '--disable-renderer-backgrounding',
-        '--disable-features=TranslateUI',
-        '--disable-ipc-flooding-protection',
-        '--disable-extensions',
-        '--disable-default-apps',
-        '--disable-sync',
-        '--disable-translate',
-        '--hide-scrollbars',
-        '--metrics-recording-only',
-        '--mute-audio',
-        '--no-default-browser-check',
-        '--safebrowsing-disable-auto-update',
-        '--disable-web-security',
-        '--disable-features=VizDisplayCompositor'
-      ],
-      executablePath: process.env.NODE_ENV === 'production' ? 
-        (process.env.CHROME_PATH || '/usr/bin/google-chrome-stable') : undefined,
-      timeout: 30000
-    },
-    webVersionCache: {
-      type: 'remote',
-      remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html'
+      args: ['--no-sandbox']
     }
   });
 
@@ -90,6 +57,48 @@ export const initializeSingleWhatsAppBot = (): SingleBotConnection => {
     autoReconnect: true,
     maxReconnectAttempts: 5
   };
+
+  // ============================================
+  // REGISTER ALL EVENT HANDLERS BEFORE INITIALIZE
+  // ============================================
+
+  // Debug: Log all events
+  client.on('change_state', (state) => {
+    console.log('🔄 WhatsApp state changed:', state);
+  });
+
+  // Track processed messages to prevent duplicates
+  const processedMessages = new Set<string>();
+
+  // Handle incoming messages - MUST be registered before initialize()
+  // Using 'message' event only (more reliable than message_create)
+  client.on('message', async (message: any) => {
+    console.log('📩 [message event] Received message:', {
+      from: message.from,
+      body: message.body?.substring(0, 50),
+      type: message.type,
+      id: message.id._serialized,
+      timestamp: new Date().toISOString()
+    });
+
+    // Deduplication: Check if we already processed this message
+    const messageId = message.id._serialized;
+    if (processedMessages.has(messageId)) {
+      console.log('⏭️ Skipping duplicate message:', messageId);
+      return;
+    }
+
+    // Mark as processed
+    processedMessages.add(messageId);
+
+    // Clean up old processed messages (keep only last 100)
+    if (processedMessages.size > 100) {
+      const firstItem = processedMessages.values().next().value;
+      processedMessages.delete(firstItem);
+    }
+
+    await handleIncomingMessage(message);
+  });
 
   // Set up event handlers
   client.on('qr', async (qr) => {
@@ -111,13 +120,11 @@ export const initializeSingleWhatsAppBot = (): SingleBotConnection => {
     botConnection!.status = 'ready';
     botConnection!.qrCode = null;
     botConnection!.reconnectAttempts = 0;
-    
-    // Register universal message handlers
-    registerUniversalMessageHandlers();
-    
+
     // Send info about available chats
     client.getChats().then(chats => {
       console.log(`📱 WhatsApp Bot has access to ${chats.length} chats`);
+      console.log('✅ Message event listener is active and ready to receive messages');
     }).catch(console.error);
   });
 
@@ -127,25 +134,29 @@ export const initializeSingleWhatsAppBot = (): SingleBotConnection => {
     botConnection!.reconnectAttempts = 0;
   });
 
+  client.on('loading_screen', (percent, message) => {
+    console.log(`📱 WhatsApp loading: ${percent}% - ${message}`);
+  });
+
   client.on('auth_failure', (msg) => {
     console.error(`❌ WhatsApp Bot authentication failed: ${msg}`);
     botConnection!.status = 'disconnected';
-    
+
     // Attempt auto-reconnection for auth failures
     if (botConnection!.autoReconnect && botConnection!.reconnectAttempts < botConnection!.maxReconnectAttempts) {
       const now = Date.now();
       const timeSinceLastReconnect = now - botConnection!.lastReconnectTime;
       const minReconnectInterval = 60000; // 1 minute minimum for auth failures
-      
+
       if (timeSinceLastReconnect >= minReconnectInterval) {
         botConnection!.reconnectAttempts++;
         botConnection!.lastReconnectTime = now;
-        
+
         console.log(`🔄 Auto-reconnecting WhatsApp Bot after auth failure (attempt ${botConnection!.reconnectAttempts}/${botConnection!.maxReconnectAttempts})`);
-        
+
         // Schedule reconnection with longer delay for auth failures
         const backoffDelay = Math.min(60000 * Math.pow(2, botConnection!.reconnectAttempts - 1), 600000); // Max 10 minutes
-        
+
         setTimeout(async () => {
           try {
             await reconnectSingleWhatsAppBot();
@@ -160,22 +171,22 @@ export const initializeSingleWhatsAppBot = (): SingleBotConnection => {
   client.on('disconnected', (reason) => {
     console.log(`📱 WhatsApp Bot disconnected: ${reason}`);
     botConnection!.status = 'disconnected';
-    
+
     // Attempt auto-reconnection if enabled
     if (botConnection!.autoReconnect && botConnection!.reconnectAttempts < botConnection!.maxReconnectAttempts) {
       const now = Date.now();
       const timeSinceLastReconnect = now - botConnection!.lastReconnectTime;
       const minReconnectInterval = 30000; // 30 seconds minimum between reconnection attempts
-      
+
       if (timeSinceLastReconnect >= minReconnectInterval) {
         botConnection!.reconnectAttempts++;
         botConnection!.lastReconnectTime = now;
-        
+
         console.log(`🔄 Auto-reconnecting WhatsApp Bot (attempt ${botConnection!.reconnectAttempts}/${botConnection!.maxReconnectAttempts})`);
-        
+
         // Schedule reconnection with exponential backoff
         const backoffDelay = Math.min(30000 * Math.pow(2, botConnection!.reconnectAttempts - 1), 300000); // Max 5 minutes
-        
+
         setTimeout(async () => {
           try {
             await reconnectSingleWhatsAppBot();
@@ -189,13 +200,6 @@ export const initializeSingleWhatsAppBot = (): SingleBotConnection => {
     }
   });
 
-  client.on('message_create', (message) => {
-    // Log outgoing messages for debugging
-    if (message.fromMe) {
-      console.log(`📤 Bot sent message to ${message.to}: ${message.body}`);
-    }
-  });
-
   // Initialize the client with retry logic
   const initializeWithRetry = async (attempt = 1) => {
     try {
@@ -205,13 +209,13 @@ export const initializeSingleWhatsAppBot = (): SingleBotConnection => {
     } catch (error) {
       console.error(`❌ Failed to initialize WhatsApp Bot (attempt ${attempt}):`, error);
       botConnection!.status = 'disconnected';
-      
+
       // Handle specific errors
       const errorMessage = error instanceof Error ? error.message : String(error);
-      if (errorMessage.includes('ERR_INSUFFICIENT_RESOURCES') || 
-          errorMessage.includes('net::ERR_') ||
-          errorMessage.includes('Target closed')) {
-        
+      if (errorMessage.includes('ERR_INSUFFICIENT_RESOURCES') ||
+        errorMessage.includes('net::ERR_') ||
+        errorMessage.includes('Target closed')) {
+
         if (attempt < 3) { // Retry up to 3 times for network errors
           console.log(`🔄 Retrying WhatsApp Bot initialization in ${attempt * 10} seconds...`);
           setTimeout(() => {
@@ -220,7 +224,7 @@ export const initializeSingleWhatsAppBot = (): SingleBotConnection => {
           return;
         }
       }
-      
+
       // If max retries reached or other error, mark as failed
       console.error('❌ Failed to initialize WhatsApp Bot: Connection failed');
     }
@@ -245,12 +249,12 @@ export const reconnectSingleWhatsAppBot = async (): Promise<{ success: boolean; 
         console.error('Error destroying existing WhatsApp Bot connection:', error);
       }
     }
-    
+
     console.log('🔄 Starting WhatsApp Bot reconnection process...');
-    
+
     // Create new connection
     const connection = initializeSingleWhatsAppBot();
-    
+
     // Wait for connection result with timeout
     return new Promise((resolve) => {
       const timeout = setTimeout(() => {
@@ -270,7 +274,7 @@ export const reconnectSingleWhatsAppBot = async (): Promise<{ success: boolean; 
           });
         }
       }, 30000); // Reduced timeout to 30 seconds for faster QR response
-      
+
       const checkInterval = setInterval(() => {
         if (!botConnection) {
           clearTimeout(timeout);
@@ -282,7 +286,7 @@ export const reconnectSingleWhatsAppBot = async (): Promise<{ success: boolean; 
           });
           return;
         }
-        
+
         // Prioritize QR code generation - return immediately when QR is available
         if (botConnection.qrCode && botConnection.status === 'qr_received') {
           clearTimeout(timeout);
@@ -305,7 +309,7 @@ export const reconnectSingleWhatsAppBot = async (): Promise<{ success: boolean; 
         // Remove the immediate disconnected check - let it try longer
       }, 500); // Check more frequently (every 500ms) for faster QR detection
     });
-    
+
   } catch (error) {
     console.error('Error during WhatsApp Bot reconnection:', error);
     return {
@@ -343,7 +347,7 @@ export const getSingleBotConnectionState = () => {
  * @returns Promise with result
  */
 export const sendSingleBotMessage = async (
-  whatsappNumber: string, 
+  whatsappNumber: string,
   message: string
 ): Promise<{ success: boolean; message?: string }> => {
   try {
@@ -353,16 +357,16 @@ export const sendSingleBotMessage = async (
         message: 'WhatsApp Bot not ready'
       };
     }
-    
+
     // Format the number correctly
     const chatId = whatsappNumber.includes('@c.us') ? whatsappNumber : `${whatsappNumber}@c.us`;
-    
+
     await botConnection.client.sendMessage(chatId, message);
-    
+
     return {
       success: true
     };
-    
+
   } catch (error) {
     console.error('Error sending WhatsApp Bot message:', error);
     return {
@@ -384,10 +388,10 @@ export const disconnectSingleWhatsAppBot = async (): Promise<{ success: boolean;
         message: 'No WhatsApp Bot connection found'
       };
     }
-    
+
     await botConnection.client.destroy();
     botConnection = null;
-    
+
     return {
       success: true,
       message: 'WhatsApp Bot disconnected successfully'
@@ -401,38 +405,43 @@ export const disconnectSingleWhatsAppBot = async (): Promise<{ success: boolean;
   }
 };
 
-/**
- * Register universal message handlers for all users
- */
-const registerUniversalMessageHandlers = (): void => {
-  if (!botConnection || botConnection.status !== 'ready') {
-    console.error('Cannot register message handlers: Bot not ready');
-    return;
-  }
+// Removed registerUniversalMessageHandlers - no longer needed
 
-  // Handle incoming messages with comprehensive AI processing
-  botConnection.client.on('message', async (message: any) => {
-    console.log(`📥 Message received from ${message.from}: ${message.body}`);
-    
-    // Get WhatsApp number without suffix
-    const whatsappNumber = message.from.replace('@c.us', '');
-    
-    // Skip messages from groups or status updates
-    if (message.from.includes('@g.us') || message.from.includes('status@broadcast')) {
+/**
+ * Handle incoming WhatsApp message
+ */
+const handleIncomingMessage = async (message: any): Promise<void> => {
+  try {
+    // Skip messages from self
+    if (message.fromMe) {
       return;
     }
-    
+
+    console.log(`📥 Processing message from ${message.from}: ${message.body}`);
+
+    // Get WhatsApp number without suffix
+    const whatsappNumber = message.from.replace('@c.us', '');
+
+    // Skip messages from groups or status updates
+    if (message.from.includes('@g.us') || message.from.includes('status@broadcast')) {
+      console.log('⏭️ Skipping group/status message');
+      return;
+    }
+
     // Get user ID from WhatsApp number
     const messageUserId = await getUserIdFromWhatsApp(whatsappNumber);
-    
+    console.log(`👤 User lookup for ${whatsappNumber}: ${messageUserId || 'NOT FOUND'}`);
+
     if (!messageUserId) {
       // Check for activation command first
       const activationPattern = /^AKTIVASI:\s*([A-Z0-9]{6})$/i;
-      const activationMatch = message.body.match(activationPattern);
+      const activationMatch = message.body?.match(activationPattern);
 
       if (activationMatch) {
+        console.log(`🔑 Activation code detected: ${activationMatch[1]}`);
         await handleActivationCode(message, activationMatch[1].toUpperCase(), whatsappNumber);
       } else {
+        console.log('📤 Sending "account not connected" message');
         await message.reply(
           `🔒 *Akun Belum Terhubung*\n\n` +
           `Nomor WhatsApp Anda belum terhubung ke akun Monly AI.\n\n` +
@@ -448,71 +457,66 @@ const registerUniversalMessageHandlers = (): void => {
     }
 
     // Handle different message types for authenticated users
-    try {
-      // Handle text commands
-      if (message.type === 'chat' && message.body) {
-        const messageText = message.body.toLowerCase().trim();
-        
-        // Special commands
-        if (messageText === 'bantuan' || messageText === 'help') {
-          await showHelpMessage(message);
-          return;
-        }
-        
-        if (messageText === 'saldo' || messageText === 'balance' || messageText === 'ringkasan') {
-          await showBalanceSummary(message, messageUserId);
-          return;
-        }
-        
-        if (messageText === 'status') {
-          await message.reply(
-            `✅ *Status Koneksi*\n\n` +
-            `🔗 WhatsApp terhubung dengan akun Monly AI\n` +
-            `📱 Nomor: ${whatsappNumber}\n` +
-            `🤖 Bot aktif dan siap mencatat transaksi\n\n` +
-            `Kirim "bantuan" untuk melihat cara penggunaan.`
-          );
-          return;
-        }
-        
-        // Process as transaction text (reuse existing logic)
-        await processTextMessage(message, messageUserId);
+    if (message.type === 'chat' && message.body) {
+      const messageText = message.body.toLowerCase().trim();
+
+      // Special commands
+      if (messageText === 'bantuan' || messageText === 'help') {
+        await showHelpMessage(message);
+        return;
       }
-      
-      // Handle voice messages
-      else if (message.type === 'ptt' || message.type === 'audio') {
-        await message.reply('🎤 Memproses pesan suara...');
-        await processVoiceMessage(message, messageUserId);
+
+      if (messageText === 'saldo' || messageText === 'balance' || messageText === 'ringkasan') {
+        await showBalanceSummary(message, messageUserId);
+        return;
       }
-      
-      // Handle image messages (receipts)
-      else if (message.type === 'image') {
-        await message.reply('📸 Memproses gambar struk...');
-        await processImageMessage(message, messageUserId);
-      }
-      
-      // Handle unsupported message types
-      else {
+
+      if (messageText === 'status') {
         await message.reply(
-          `🤖 *Jenis Pesan Tidak Didukung*\n\n` +
-          `Saya dapat memproses:\n` +
-          `• 📝 Pesan teks (untuk transaksi)\n` +
-          `• 🎤 Pesan suara (untuk transaksi)\n` +
-          `• 📸 Foto struk/nota\n\n` +
-          `Kirim "bantuan" untuk panduan lengkap.`
+          `✅ *Status Koneksi*\n\n` +
+          `🔗 WhatsApp terhubung dengan akun Monly AI\n` +
+          `📱 Nomor: ${whatsappNumber}\n` +
+          `🤖 Bot aktif dan siap mencatat transaksi\n\n` +
+          `Kirim "bantuan" untuk melihat cara penggunaan.`
         );
+        return;
       }
-      
-    } catch (error) {
-      console.error('Error processing WhatsApp message:', error);
+
+      // Process as transaction text
+      await processTextMessage(message, messageUserId);
+    }
+    // Handle voice messages
+    else if (message.type === 'ptt' || message.type === 'audio') {
+      await message.reply('🎤 Memproses pesan suara...');
+      await processVoiceMessage(message, messageUserId);
+    }
+    // Handle image messages (receipts)
+    else if (message.type === 'image') {
+      await message.reply('📸 Memproses gambar struk...');
+      await processImageMessage(message, messageUserId);
+    }
+    // Handle unsupported message types
+    else {
       await message.reply(
-        `❌ *Terjadi Kesalahan*\n\n` +
-        `Maaf, terjadi kesalahan dalam memproses pesan Anda. Silakan coba lagi nanti atau hubungi support.`
+        `🤖 *Jenis Pesan Tidak Didukung*\n\n` +
+        `Saya dapat memproses:\n` +
+        `• 📝 Pesan teks (untuk transaksi)\n` +
+        `• 🎤 Pesan suara (untuk transaksi)\n` +
+        `• 📸 Foto struk/nota\n\n` +
+        `Kirim "bantuan" untuk panduan lengkap.`
       );
     }
-  });
-
-  console.log('✅ Universal message handlers registered for WhatsApp Bot');
+  } catch (error) {
+    console.error('❌ Error processing WhatsApp message:', error);
+    try {
+      await message.reply(
+        `❌ *Terjadi Kesalahan*\n\n` +
+        `Maaf, terjadi kesalahan dalam memproses pesan Anda. Silakan coba lagi nanti.`
+      );
+    } catch (replyError) {
+      console.error('Failed to send error reply:', replyError);
+    }
+  }
 };
 
 // Helper function to get user ID from WhatsApp number
@@ -521,12 +525,12 @@ const getUserIdFromWhatsApp = async (whatsappNumber: string): Promise<string | n
     const { db } = await import('./db');
     const { whatsappIntegrations } = await import('@shared/schema');
     const { eq } = await import('drizzle-orm');
-    
+
     const connection = await db.select()
       .from(whatsappIntegrations)
       .where(eq(whatsappIntegrations.whatsappNumber, whatsappNumber))
       .limit(1);
-      
+
     return connection.length > 0 ? connection[0].userId : null;
   } catch (error) {
     console.error('Error getting user ID from WhatsApp:', error);
@@ -540,9 +544,9 @@ const handleActivationCode = async (message: any, code: string, whatsappNumber: 
     const { db } = await import('./db');
     const { whatsappActivationCodes, whatsappIntegrations } = await import('@shared/schema');
     const { eq, and, gt, isNull } = await import('drizzle-orm');
-    
+
     console.log(`Processing activation code: ${code} for WhatsApp: ${whatsappNumber}`);
-    
+
     // Check if activation code exists and is still valid
     const currentTime = Date.now();
     const activationCode = await db.select()
@@ -599,9 +603,9 @@ const handleActivationCode = async (message: any, code: string, whatsappNumber: 
       `💡 Ketik "bantuan" untuk panduan lengkap atau langsung mulai dengan mengirim transaksi seperti:\n` +
       `"Makan siang 50000"`
     );
-    
+
     console.log(`WhatsApp ${whatsappNumber} successfully activated for user ${codeData.userId}`);
-    
+
   } catch (error) {
     console.error('Error processing activation:', error);
     await message.reply('❌ Terjadi kesalahan saat memproses aktivasi. Silakan coba lagi.');

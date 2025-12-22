@@ -1,7 +1,9 @@
 version: '3.8'
 
+# Development Docker Compose
+# Usage: docker-compose up -d
+
 services:
-  # Development container for MonlyAI (SQLite based)
   monlyai-dev:
     build:
       context: .
@@ -9,17 +11,24 @@ services:
     container_name: monlyai-dev
     restart: unless-stopped
     environment:
-      - NODE_ENV=production
+      - NODE_ENV=development
       - PORT=5000
-      - DATABASE_URL=file:/app/database.sqlite
+      - DATABASE_URL=file:/app/data/database.sqlite
+      - SESSION_SECRET=${SESSION_SECRET:-dev-secret}
+      - JWT_SECRET=${JWT_SECRET:-dev-jwt-secret}
+      - AI_PROVIDER=${AI_PROVIDER:-openai}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - SESSION_SECRET=${SESSION_SECRET}
-      - JWT_SECRET=${JWT_SECRET}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - MEGALLM_API_KEY=${MEGALLM_API_KEY}
+      - MEGALLM_BASE_URL=${MEGALLM_BASE_URL}
+      - AI_MODEL_CHAT=${AI_MODEL_CHAT:-gpt-4o-mini}
+      - AI_MODEL_ANALYSIS=${AI_MODEL_ANALYSIS:-gpt-4o-mini}
+      - AI_MODEL_VISION=${AI_MODEL_VISION:-gpt-4o-mini}
+      - AI_MODEL_FALLBACK=${AI_MODEL_FALLBACK:-gpt-3.5-turbo}
     ports:
       - "5000:5000"
     volumes:
-      - ./database.sqlite:/app/database.sqlite
-      - ./migrations:/app/migrations
+      - ./data:/app/data
       - whatsapp_sessions:/app/.wwebjs_auth
     networks:
       - monlyai-network

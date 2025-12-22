@@ -1,9 +1,24 @@
 import OpenAI from "openai";
+import { getAIClient, getModelForTask } from "./ai-provider";
 
-// the newest OpenAI model is "gpt-4.1-nano" which was released May 13, 2024. do not change this unless explicitly requested by the user
-const openai = new OpenAI({ 
-  apiKey: process.env.OPENAI_API_KEY || process.env.OPENAI_KEY || "default_key"
-});
+// Use AI provider abstraction for multi-provider support
+const openai = getAIClient();
+
+/**
+ * Helper function to clean AI response content
+ * Removes markdown code blocks that some AI providers add
+ * @param content - Raw AI response content
+ * @returns Cleaned JSON string
+ */
+function cleanAIResponse(content: string | null | undefined): string {
+  if (!content) return "{}";
+
+  // Remove markdown code blocks (```json ... ``` or ``` ... ```)
+  return content
+    .replace(/```json\s*/g, '')
+    .replace(/```\s*/g, '')
+    .trim();
+}
 
 // Helper function to get currency symbol
 function getCurrencySymbol(currency: string): string {
@@ -29,7 +44,7 @@ function parseIndonesianAmount(text: string): number {
   const cleanText = text.toLowerCase()
     .replace(/bayar|beli|transfer|gaji|biaya|pendaftaran|kuliah|sekolah|dari|untuk|ke|di|dengan/g, '')
     .trim();
-  
+
   // Patterns for Indonesian amounts
   const patterns = [
     // "500rb", "500ribu" 
@@ -41,12 +56,12 @@ function parseIndonesianAmount(text: string): number {
     // Plain numbers "500000"
     /(\d{3,})/
   ];
-  
+
   for (const pattern of patterns) {
     const match = cleanText.match(pattern);
     if (match) {
       const num = parseFloat(match[1].replace(',', '.'));
-      
+
       if (pattern.source.includes('rb|ribu')) {
         return num * 1000;
       } else if (pattern.source.includes('jt|juta')) {
@@ -58,7 +73,7 @@ function parseIndonesianAmount(text: string): number {
       }
     }
   }
-  
+
   return 0;
 }
 
@@ -99,17 +114,17 @@ function getCurrentDateContext(language: string = 'id'): string {
   const timezone = getTimezone();
   const now = new Date();
   const today = now.toISOString().split('T')[0]; // YYYY-MM-DD
-  const dayOfWeek = now.toLocaleDateString(language === 'id' ? 'id-ID' : 'en-US', { 
+  const dayOfWeek = now.toLocaleDateString(language === 'id' ? 'id-ID' : 'en-US', {
     weekday: 'long',
     timeZone: timezone
   });
-  const monthName = now.toLocaleDateString(language === 'id' ? 'id-ID' : 'en-US', { 
+  const monthName = now.toLocaleDateString(language === 'id' ? 'id-ID' : 'en-US', {
     month: 'long',
     timeZone: timezone
   });
   const year = now.getFullYear();
   const date = now.getDate();
-  
+
   if (language === 'id') {
     return `Hari ini: ${dayOfWeek}, ${date} ${monthName} ${year} (${today}) - Timezone: ${timezone}`;
   } else {
@@ -120,19 +135,19 @@ function getCurrentDateContext(language: string = 'id'): string {
 // Helper function to parse relative dates to Unix timestamp
 function parseRelativeDate(text: string, language: string = 'id'): number | null {
   const timezone = getTimezone();
-  
+
   // Get current date in the specific timezone
   const now = new Date();
   const utcNow = new Date(now.toLocaleString('en-US', { timeZone: 'UTC' }));
   const localNow = new Date(now.toLocaleString('en-US', { timeZone: timezone }));
   const timezoneOffset = utcNow.getTime() - localNow.getTime();
-  
+
   // Create today's date at midnight in the target timezone
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  
+
   console.log(`📅 Parsing relative date: "${text}" with timezone: ${timezone}`);
   console.log(`📅 Current time: ${now.toLocaleString('id-ID', { timeZone: timezone })}`);
-  
+
   // Indonesian relative date patterns
   if (language === 'id') {
     if (/kemarin|yesterday/i.test(text)) {
@@ -142,7 +157,7 @@ function parseRelativeDate(text: string, language: string = 'id'): number | null
       console.log(`📅 "kemarin" parsed as: ${timestamp} (${new Date(timestamp * 1000).toLocaleDateString('id-ID', { timeZone: timezone })})`);
       return timestamp;
     }
-    
+
     if (/lusa|day after tomorrow/i.test(text)) {
       const dayAfterTomorrow = new Date(today);
       dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 2);
@@ -150,7 +165,7 @@ function parseRelativeDate(text: string, language: string = 'id'): number | null
       console.log(`📅 "lusa" parsed as: ${timestamp} (${new Date(timestamp * 1000).toLocaleDateString('id-ID', { timeZone: timezone })})`);
       return timestamp;
     }
-    
+
     if (/besok|tomorrow/i.test(text)) {
       const tomorrow = new Date(today);
       tomorrow.setDate(tomorrow.getDate() + 1);
@@ -158,7 +173,7 @@ function parseRelativeDate(text: string, language: string = 'id'): number | null
       console.log(`📅 "besok" parsed as: ${timestamp} (${new Date(timestamp * 1000).toLocaleDateString('id-ID', { timeZone: timezone })})`);
       return timestamp;
     }
-    
+
     // Pattern for "X hari yang lalu" or "X days ago"
     const daysAgoMatch = text.match(/(\d+)\s*(hari|days?)\s*(yang\s*)?(lalu|ago)/i);
     if (daysAgoMatch) {
@@ -169,7 +184,7 @@ function parseRelativeDate(text: string, language: string = 'id'): number | null
       console.log(`📅 "${daysAgo} hari lalu" parsed as: ${timestamp} (${new Date(timestamp * 1000).toLocaleDateString('id-ID', { timeZone: timezone })})`);
       return timestamp;
     }
-    
+
     // Pattern for "minggu lalu" or "last week"
     if (/minggu\s+(lalu|kemarin)|last\s+week/i.test(text)) {
       const lastWeek = new Date(today);
@@ -179,7 +194,7 @@ function parseRelativeDate(text: string, language: string = 'id'): number | null
       return timestamp;
     }
   }
-  
+
   // English relative date patterns  
   if (/yesterday/i.test(text)) {
     const yesterday = new Date(today);
@@ -188,7 +203,7 @@ function parseRelativeDate(text: string, language: string = 'id'): number | null
     console.log(`📅 "yesterday" parsed as: ${timestamp} (${new Date(timestamp * 1000).toLocaleDateString('en-US', { timeZone: timezone })})`);
     return timestamp;
   }
-  
+
   if (/tomorrow/i.test(text)) {
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
@@ -196,7 +211,7 @@ function parseRelativeDate(text: string, language: string = 'id'): number | null
     console.log(`📅 "tomorrow" parsed as: ${timestamp} (${new Date(timestamp * 1000).toLocaleDateString('en-US', { timeZone: timezone })})`);
     return timestamp;
   }
-  
+
   const daysAgoMatch = text.match(/(\d+)\s*days?\s+ago/i);
   if (daysAgoMatch) {
     const daysAgo = parseInt(daysAgoMatch[1]);
@@ -206,7 +221,7 @@ function parseRelativeDate(text: string, language: string = 'id'): number | null
     console.log(`📅 "${daysAgo} days ago" parsed as: ${timestamp} (${new Date(timestamp * 1000).toLocaleDateString('en-US', { timeZone: timezone })})`);
     return timestamp;
   }
-  
+
   if (/last\s+week/i.test(text)) {
     const lastWeek = new Date(today);
     lastWeek.setDate(lastWeek.getDate() - 7);
@@ -214,7 +229,7 @@ function parseRelativeDate(text: string, language: string = 'id'): number | null
     console.log(`📅 "last week" parsed as: ${timestamp} (${new Date(timestamp * 1000).toLocaleDateString('en-US', { timeZone: timezone })})`);
     return timestamp;
   }
-  
+
   console.log(`📅 No relative date pattern found in: "${text}"`);
   return null;
 }
@@ -223,19 +238,19 @@ function parseRelativeDate(text: string, language: string = 'id'): number | null
 function parseSpecificDate(text: string, language: string = 'id'): number | null {
   const now = new Date();
   const currentYear = now.getFullYear();
-  
+
   // Indonesian month names
   const indonesianMonths: Record<string, number> = {
     'januari': 0, 'februari': 1, 'maret': 2, 'april': 3, 'mei': 4, 'juni': 5,
     'juli': 6, 'agustus': 7, 'september': 8, 'oktober': 9, 'november': 10, 'desember': 11
   };
-  
+
   // English month names  
   const englishMonths: Record<string, number> = {
     'january': 0, 'february': 1, 'march': 2, 'april': 3, 'may': 4, 'june': 5,
     'july': 6, 'august': 7, 'september': 8, 'october': 9, 'november': 10, 'december': 11
   };
-  
+
   if (language === 'id') {
     // Pattern: "tanggal 15 juli" or "15 juli" or "15/7" or "15-7-2024"
     const datePatterns = [
@@ -243,7 +258,7 @@ function parseSpecificDate(text: string, language: string = 'id'): number | null
       /(\d{1,2})[-\/](\d{1,2})(?:[-\/](\d{4}))?/,
       /(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/
     ];
-    
+
     for (const pattern of datePatterns) {
       const match = text.match(pattern);
       if (match) {
@@ -253,7 +268,7 @@ function parseSpecificDate(text: string, language: string = 'id'): number | null
           const monthName = match[2].toLowerCase();
           const year = match[3] ? parseInt(match[3]) : currentYear;
           const monthIndex = indonesianMonths[monthName];
-          
+
           if (monthIndex !== undefined && day >= 1 && day <= 31) {
             const date = new Date(year, monthIndex, day);
             return Math.floor(date.getTime() / 1000);
@@ -263,7 +278,7 @@ function parseSpecificDate(text: string, language: string = 'id'): number | null
           const year = parseInt(match[1]);
           const month = parseInt(match[2]) - 1; // Month is 0-indexed
           const day = parseInt(match[3]);
-          
+
           if (month >= 0 && month <= 11 && day >= 1 && day <= 31) {
             const date = new Date(year, month, day);
             return Math.floor(date.getTime() / 1000);
@@ -273,7 +288,7 @@ function parseSpecificDate(text: string, language: string = 'id'): number | null
           const day = parseInt(match[1]);
           const month = parseInt(match[2]) - 1; // Month is 0-indexed
           const year = match[3] ? parseInt(match[3]) : currentYear;
-          
+
           if (month >= 0 && month <= 11 && day >= 1 && day <= 31) {
             const date = new Date(year, month, day);
             return Math.floor(date.getTime() / 1000);
@@ -289,7 +304,7 @@ function parseSpecificDate(text: string, language: string = 'id'): number | null
       /(\d{1,2})[-\/](\d{1,2})(?:[-\/](\d{4}))?/,
       /(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/
     ];
-    
+
     for (const pattern of datePatterns) {
       const match = text.match(pattern);
       if (match) {
@@ -300,7 +315,7 @@ function parseSpecificDate(text: string, language: string = 'id'): number | null
             const day = parseInt(match[2]);
             const year = match[3] ? parseInt(match[3]) : currentYear;
             const monthIndex = englishMonths[monthName];
-            
+
             if (monthIndex !== undefined && day >= 1 && day <= 31) {
               const date = new Date(year, monthIndex, day);
               return Math.floor(date.getTime() / 1000);
@@ -311,7 +326,7 @@ function parseSpecificDate(text: string, language: string = 'id'): number | null
             const monthName = match[2].toLowerCase();
             const year = match[3] ? parseInt(match[3]) : currentYear;
             const monthIndex = englishMonths[monthName];
-            
+
             if (monthIndex !== undefined && day >= 1 && day <= 31) {
               const date = new Date(year, monthIndex, day);
               return Math.floor(date.getTime() / 1000);
@@ -322,7 +337,7 @@ function parseSpecificDate(text: string, language: string = 'id'): number | null
           const year = parseInt(match[1]);
           const month = parseInt(match[2]) - 1;
           const day = parseInt(match[3]);
-          
+
           if (month >= 0 && month <= 11 && day >= 1 && day <= 31) {
             const date = new Date(year, month, day);
             return Math.floor(date.getTime() / 1000);
@@ -332,7 +347,7 @@ function parseSpecificDate(text: string, language: string = 'id'): number | null
           const day = parseInt(match[1]);
           const month = parseInt(match[2]) - 1;
           const year = match[3] ? parseInt(match[3]) : currentYear;
-          
+
           if (month >= 0 && month <= 11 && day >= 1 && day <= 31) {
             const date = new Date(year, month, day);
             return Math.floor(date.getTime() / 1000);
@@ -341,18 +356,18 @@ function parseSpecificDate(text: string, language: string = 'id'): number | null
       }
     }
   }
-  
+
   return null;
 }
 
 export async function analyzeTransactionText(
-  text: string, 
-  availableCategories: any[] = [], 
+  text: string,
+  availableCategories: any[] = [],
   userPreferences?: UserPreferences
 ): Promise<TransactionAnalysis> {
   try {
     // Build categories list from database
-    const categoryList = availableCategories.length > 0 
+    const categoryList = availableCategories.length > 0
       ? availableCategories.map(cat => `- ${cat.name}${cat.type ? ` (${cat.type})` : ''}`).join('\n          ')
       : `- Food & Dining
           - Transportation
@@ -371,12 +386,12 @@ export async function analyzeTransactionText(
     const currency = userPreferences?.defaultCurrency || 'USD';
     const currencySymbol = getCurrencySymbol(currency);
     const autoCategorize = userPreferences?.autoCategorize ?? true;
-    
+
     // Get current date context for AI
     const dateContext = getCurrentDateContext(language);
 
     const response = await openai.chat.completions.create({
-      model: "gpt-4.1-nano",
+      model: getModelForTask("analysis"),
       messages: [
         {
           role: "system",
@@ -471,11 +486,11 @@ export async function analyzeTransactionText(
       response_format: { type: "json_object" },
     });
 
-    const result = JSON.parse(response.choices[0].message.content || "{}");
-    
+    const result = JSON.parse(cleanAIResponse(response.choices[0].message.content));
+
     // Fallback parsing for Indonesian number formats if AI fails
     let amount = Math.abs(parseFloat(result.amount || "0"));
-    
+
     if (amount === 0 || amount < 100) {
       // Try to parse Indonesian format manually as fallback
       const indonesianAmount = parseIndonesianAmount(text);
@@ -484,15 +499,15 @@ export async function analyzeTransactionText(
         console.log(`Fallback parsing detected amount: ${amount} from text: "${text}"`);
       }
     }
-    
+
     // Parse date if provided by AI, otherwise use fallback parsing
     let transactionDate: number | undefined;
-    
+
     // PRIORITY 1: Try fallback parsing first (more reliable)
     const relativeDate = parseRelativeDate(text, userPreferences?.language || 'id');
     const specificDate = parseSpecificDate(text, userPreferences?.language || 'id');
     const fallbackDate = relativeDate || specificDate || undefined;
-    
+
     // Use fallback date if available (most reliable)
     if (fallbackDate) {
       transactionDate = fallbackDate;
@@ -501,7 +516,7 @@ export async function analyzeTransactionText(
       // PRIORITY 2: Validate AI provided date only if fallback failed
       const minTimestamp = new Date('2020-01-01').getTime() / 1000; // 1577836800
       const maxTimestamp = new Date('2030-12-31').getTime() / 1000; // 1924963200
-      
+
       if (result.date >= minTimestamp && result.date <= maxTimestamp) {
         transactionDate = result.date;
         console.log(`⚠️ Using AI timestamp (fallback failed): ${result.date} (${new Date(result.date * 1000).toLocaleDateString()})`);
@@ -520,14 +535,14 @@ export async function analyzeTransactionText(
     } else {
       console.log(`ℹ️ No date from AI and no fallback parsing available`);
     }
-    
+
     // Log the final result
     if (transactionDate) {
       console.log(`📅 FINAL transaction date: ${transactionDate} (${new Date(transactionDate * 1000).toLocaleDateString('id-ID', { timeZone: getTimezone() })})`);
     } else {
       console.log(`📅 No date parsed, will use current date`);
     }
-    
+
     const analysis: TransactionAnalysis = {
       amount: amount,  // Use processed amount (either from AI or fallback)
       description: result.description || "Transaction",
@@ -536,12 +551,12 @@ export async function analyzeTransactionText(
       confidence: Math.max(0, Math.min(1, parseFloat(result.confidence || "0.8"))),
       suggestedNewCategory: result.suggestedNewCategory
     };
-    
+
     // Only add date if it was parsed
     if (transactionDate) {
       analysis.date = transactionDate;
     }
-    
+
     return analysis;
   } catch (error) {
     console.error("Failed to analyze transaction text:", error);
@@ -550,13 +565,13 @@ export async function analyzeTransactionText(
 }
 
 export async function processReceiptImage(
-  base64Image: string, 
-  availableCategories: any[] = [], 
+  base64Image: string,
+  availableCategories: any[] = [],
   userPreferences?: UserPreferences
 ): Promise<OCRResult> {
   try {
     // Format categories for AI
-    const categoryList = availableCategories.length > 0 
+    const categoryList = availableCategories.length > 0
       ? availableCategories.map(cat => `- ${cat.name}`).join('\n')
       : `- Food & Dining
 - Transportation  
@@ -574,7 +589,7 @@ export async function processReceiptImage(
     const autoCategorize = userPreferences?.autoCategorize ?? true;
 
     const response = await openai.chat.completions.create({
-      model: "gpt-4.1-nano",
+      model: getModelForTask("vision"),
       messages: [
         {
           role: "user",
@@ -644,9 +659,9 @@ export async function processReceiptImage(
       max_tokens: 1500,
     });
 
-    const result = JSON.parse(response.choices[0].message.content || "{}");
+    const result = JSON.parse(cleanAIResponse(response.choices[0].message.content));
     console.log('Receipt analysis result:', result);
-    
+
     return {
       text: result.text || "",
       transactions: result.transactions || [],
@@ -654,14 +669,30 @@ export async function processReceiptImage(
     };
   } catch (error) {
     console.error("Failed to process receipt image:", error);
-    throw new Error("Failed to process receipt: " + (error instanceof Error ? error.message : String(error)));
+
+    // Better error messages for different error types
+    let errorMessage = "Failed to process receipt";
+
+    if (error instanceof Error) {
+      if (error.message.includes("timeout") || error.message.includes("timed out")) {
+        errorMessage = "Request timeout - image processing took too long. Please try with a clearer/smaller image.";
+      } else if (error.message.includes("rate limit")) {
+        errorMessage = "Rate limit exceeded. Please wait a moment and try again.";
+      } else if (error.message.includes("invalid") || error.message.includes("format")) {
+        errorMessage = "Invalid image format. Please send a clear photo of the receipt.";
+      } else {
+        errorMessage = `Failed to process receipt: ${error.message}`;
+      }
+    }
+
+    throw new Error(errorMessage);
   }
 }
 
 export async function categorizeTransaction(description: string, amount: number): Promise<string> {
   try {
     const response = await openai.chat.completions.create({
-      model: "gpt-4.1-nano",
+      model: getModelForTask("analysis"),
       messages: [
         {
           role: "system",
@@ -687,7 +718,7 @@ export async function categorizeTransaction(description: string, amount: number)
       response_format: { type: "json_object" },
     });
 
-    const result = JSON.parse(response.choices[0].message.content || "{}");
+    const result = JSON.parse(cleanAIResponse(response.choices[0].message.content));
     return result.category || "Other";
   } catch (error) {
     console.error("Failed to categorize transaction:", error);
@@ -701,7 +732,7 @@ export async function generateFinancialInsights(
 ): Promise<string[]> {
   try {
     const response = await openai.chat.completions.create({
-      model: "gpt-4.1-nano",
+      model: getModelForTask("analysis"),
       messages: [
         {
           role: "system",
@@ -721,7 +752,7 @@ export async function generateFinancialInsights(
       response_format: { type: "json_object" },
     });
 
-    const result = JSON.parse(response.choices[0].message.content || "{}");
+    const result = JSON.parse(cleanAIResponse(response.choices[0].message.content));
     return result.insights || [];
   } catch (error) {
     console.error("Failed to generate insights:", error);
@@ -748,13 +779,13 @@ export interface CategoryAnalysis {
 }
 
 export async function analyzeBudgetCommand(
-  text: string, 
-  availableCategories: any[] = [], 
+  text: string,
+  availableCategories: any[] = [],
   userPreferences?: UserPreferences
 ): Promise<BudgetAnalysis> {
   try {
     // Build categories list from database
-    const categoryList = availableCategories.length > 0 
+    const categoryList = availableCategories.length > 0
       ? availableCategories.map(cat => `- ${cat.name}${cat.type ? ` (${cat.type})` : ''}`).join('\n          ')
       : `- Food & Dining
           - Transportation
@@ -771,7 +802,7 @@ export async function analyzeBudgetCommand(
     const currencySymbol = getCurrencySymbol(currency);
 
     const response = await openai.chat.completions.create({
-      model: "gpt-4.1-nano",
+      model: getModelForTask("analysis"),
       messages: [
         {
           role: "system",
@@ -822,8 +853,8 @@ export async function analyzeBudgetCommand(
       response_format: { type: "json_object" },
     });
 
-    const result = JSON.parse(response.choices[0].message.content || "{}");
-    
+    const result = JSON.parse(cleanAIResponse(response.choices[0].message.content));
+
     return {
       action: result.action || "check",
       category: result.category,
@@ -838,13 +869,13 @@ export async function analyzeBudgetCommand(
 }
 
 export async function analyzeCategoryCommand(
-  text: string, 
-  availableCategories: any[] = [], 
+  text: string,
+  availableCategories: any[] = [],
   userPreferences?: UserPreferences
 ): Promise<CategoryAnalysis> {
   try {
     // Build categories list from database
-    const categoryList = availableCategories.length > 0 
+    const categoryList = availableCategories.length > 0
       ? availableCategories.map(cat => `- ${cat.name}${cat.type ? ` (${cat.type})` : ''}`).join('\n          ')
       : `- Food & Dining
           - Transportation
@@ -859,7 +890,7 @@ export async function analyzeCategoryCommand(
     const language = userPreferences?.language === 'id' ? 'Indonesian' : 'English';
 
     const response = await openai.chat.completions.create({
-      model: "gpt-4.1-nano",
+      model: getModelForTask("analysis"),
       messages: [
         {
           role: "system",
@@ -906,8 +937,8 @@ export async function analyzeCategoryCommand(
       response_format: { type: "json_object" },
     });
 
-    const result = JSON.parse(response.choices[0].message.content || "{}");
-    
+    const result = JSON.parse(cleanAIResponse(response.choices[0].message.content));
+
     return {
       action: result.action || "list",
       categoryName: result.categoryName,
@@ -942,10 +973,10 @@ export async function generateBudgetAlert(
 ): Promise<BudgetAlert> {
   const percentage = (spent / budgetAmount) * 100;
   const currencySymbol = getCurrencySymbol(currency);
-  
+
   let alertType: "warning" | "danger" | "exceeded";
   let message: string;
-  
+
   if (percentage >= 100) {
     alertType = "exceeded";
     if (language === 'id') {
@@ -975,7 +1006,7 @@ export async function generateBudgetAlert(
       message = `✅ ${categoryName} budget is safe. Used: ${percentage.toFixed(1)}%. Remaining: ${currencySymbol}${(budgetAmount - spent).toLocaleString()}`;
     }
   }
-  
+
   return {
     categoryId: categoryName.toLowerCase().replace(/\s+/g, '_'),
     categoryName,
@@ -1000,7 +1031,7 @@ export interface FinancialProfile {
   totalIncome: number;
   totalExpenses: number;
   savingsRate: number;
-  topCategories: Array<{category: string; amount: number; percentage: number}>;
+  topCategories: Array<{ category: string; amount: number; percentage: number }>;
   monthlyPattern: any[];
   riskLevel: "conservative" | "moderate" | "aggressive";
 }
@@ -1013,24 +1044,24 @@ export async function analyzeFinancialProfile(
   try {
     const now = new Date();
     const threeMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 3, 1);
-    
+
     // Filter recent transactions (last 3 months)
-    const recentTransactions = transactions.filter(t => 
+    const recentTransactions = transactions.filter(t =>
       new Date(t.date * 1000) >= threeMonthsAgo
     );
-    
+
     const income = recentTransactions
       .filter(t => t.type === 'income')
       .reduce((sum, t) => sum + t.amount, 0);
-    
+
     const expenses = recentTransactions
       .filter(t => t.type === 'expense')
       .reduce((sum, t) => sum + t.amount, 0);
-    
+
     const monthlyIncome = income / 3;
     const monthlyExpenses = expenses / 3;
     const savingsRate = monthlyIncome > 0 ? ((monthlyIncome - monthlyExpenses) / monthlyIncome) * 100 : 0;
-    
+
     // Analyze spending by category
     const categorySpending: Record<string, number> = {};
     recentTransactions
@@ -1039,7 +1070,7 @@ export async function analyzeFinancialProfile(
         const categoryName = t.category?.name || 'Other';
         categorySpending[categoryName] = (categorySpending[categoryName] || 0) + t.amount;
       });
-    
+
     const topCategories = Object.entries(categorySpending)
       .map(([category, amount]) => ({
         category,
@@ -1048,7 +1079,7 @@ export async function analyzeFinancialProfile(
       }))
       .sort((a, b) => b.amount - a.amount)
       .slice(0, 5);
-    
+
     // Determine risk level based on savings rate
     let riskLevel: "conservative" | "moderate" | "aggressive";
     if (savingsRate >= 20) {
@@ -1058,7 +1089,7 @@ export async function analyzeFinancialProfile(
     } else {
       riskLevel = "conservative";
     }
-    
+
     return {
       totalIncome: monthlyIncome,
       totalExpenses: monthlyExpenses,
@@ -1085,7 +1116,7 @@ export async function generateBudgetRecommendations(
     const language = userPreferences?.language === 'id' ? 'Indonesian' : 'English';
     const currency = userPreferences?.defaultCurrency || 'USD';
     const currencySymbol = getCurrencySymbol(currency);
-    
+
     // Create financial summary for AI
     const financialSummary = {
       monthlyIncome: financialProfile.totalIncome,
@@ -1094,25 +1125,25 @@ export async function generateBudgetRecommendations(
       riskLevel: financialProfile.riskLevel,
       topSpendingCategories: financialProfile.topCategories
     };
-    
+
     // Filter transactions for the specific category if we have raw transaction data
     let categoryTransactions: any[] = [];
     if (rawTransactions && missingCategory) {
-      categoryTransactions = rawTransactions.filter(t => 
-        t.category?.name === missingCategory || 
+      categoryTransactions = rawTransactions.filter(t =>
+        t.category?.name === missingCategory ||
         (typeof t.category === 'string' && t.category === missingCategory)
       );
-      console.log(`[BUDGET AI DEBUG] Found ${categoryTransactions.length} transactions for category ${missingCategory}:`, 
+      console.log(`[BUDGET AI DEBUG] Found ${categoryTransactions.length} transactions for category ${missingCategory}:`,
         categoryTransactions.map(t => ({ description: t.description, amount: t.amount, category: t.category }))
       );
     }
-    
-    const categoryList = availableCategories.map(cat => 
+
+    const categoryList = availableCategories.map(cat =>
       `- ${cat.name} (ID: ${cat.id})`
     ).join('\n');
-    
+
     let prompt = '';
-    
+
     if (missingCategory) {
       // Single category recommendation
       prompt = `As a financial advisor AI, recommend a budget for the "${missingCategory}" category based on this user's financial profile.`;
@@ -1120,9 +1151,9 @@ export async function generateBudgetRecommendations(
       // All categories recommendation
       prompt = `As a financial advisor AI, recommend budgets for ALL available categories based on this user's financial profile.`;
     }
-    
+
     const response = await openai.chat.completions.create({
-      model: "gpt-4.1-nano",
+      model: getModelForTask("analysis"),
       messages: [
         {
           role: "system",
@@ -1134,7 +1165,7 @@ export async function generateBudgetRecommendations(
           ${categoryTransactions.length > 0 ? `
           =================== ACTUAL TRANSACTIONS TO ANALYZE ===================
           FOR CATEGORY "${missingCategory}", THESE ARE THE REAL TRANSACTIONS:
-          ${categoryTransactions.map((t, i) => 
+          ${categoryTransactions.map((t, i) =>
             `${i + 1}. DESCRIPTION: "${t.description}" - AMOUNT: ${currencySymbol}${t.amount.toLocaleString()}`
           ).join('\n          ')}
           
@@ -1203,7 +1234,7 @@ export async function generateBudgetRecommendations(
         },
         {
           role: "user",
-          content: missingCategory 
+          content: missingCategory
             ? `Please recommend a budget for "${missingCategory}" category only. Return valid JSON with "recommendations" array.`
             : `Please recommend budgets for all available categories. Return valid JSON with "recommendations" array.`
         },
@@ -1211,21 +1242,21 @@ export async function generateBudgetRecommendations(
       response_format: { type: "json_object" },
       temperature: 0.3, // Lower temperature for more consistent JSON
     });
-    
+
     console.log(`[BUDGET AI DEBUG] AI Response for category ${missingCategory}:`, response.choices[0].message.content);
 
     let result;
     try {
-      result = JSON.parse(response.choices[0].message.content || "{}");
+      result = JSON.parse(cleanAIResponse(response.choices[0].message.content));
     } catch (parseError) {
       console.error(`[BUDGET AI ERROR] Invalid JSON response:`, response.choices[0].message.content);
       console.error(`[BUDGET AI ERROR] Parse error:`, parseError);
-      
+
       // Fallback: create a simple recommendation based on transaction amounts
       if (categoryTransactions.length > 0) {
         const avgAmount = categoryTransactions.reduce((sum, t) => sum + t.amount, 0) / categoryTransactions.length;
         const recommendedAmount = Math.round(avgAmount * 1.2); // 20% buffer
-        
+
         result = {
           recommendations: [{
             category: missingCategory,
@@ -1244,19 +1275,19 @@ export async function generateBudgetRecommendations(
             category: missingCategory,
             categoryId: availableCategories.find(cat => cat.name === missingCategory)?.id || 0,
             recommendedAmount: 100000,
-            period: "monthly", 
+            period: "monthly",
             reasoning: "Budget minimal untuk kategori ini.",
             confidence: 0.5
           }]
         };
       }
     }
-    
+
     const recommendations = result.recommendations || [];
-    
+
     // Ensure recommendations is an array
     return Array.isArray(recommendations) ? recommendations : [recommendations];
-    
+
   } catch (error) {
     console.error('Error generating budget recommendations:', error);
     throw error;
@@ -1287,9 +1318,9 @@ export async function analyzeSavingsCommand(
 ): Promise<SavingsAnalysis> {
   try {
     console.log('Analyzing savings command:', text);
-    
+
     const goalsList = userGoals.map(g => `- ${g.name}: ${g.currentAmount}/${g.targetAmount} (${g.category || 'general'})`).join('\n');
-    
+
     const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
@@ -1378,9 +1409,9 @@ export async function analyzeSavingsCommand(
       response_format: { type: "json_object" },
     });
 
-    const result = JSON.parse(response.choices[0].message.content || "{}");
+    const result = JSON.parse(cleanAIResponse(response.choices[0].message.content));
     console.log('Savings command analysis result:', result);
-    
+
     return {
       action: result.action || 'unknown',
       confidence: result.confidence || 0,
@@ -1393,7 +1424,7 @@ export async function analyzeSavingsCommand(
       description: result.description,
       category: result.category
     };
-    
+
   } catch (error) {
     console.error('Error analyzing savings command:', error);
     return {

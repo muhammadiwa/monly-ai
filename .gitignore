@@ -145,10 +145,8 @@ Network Trash Folder
 Temporary Items
 .apdisk
 
-# Docker
+# Docker (keep Dockerfile and docker-compose files)
 .dockerignore
-Dockerfile
-docker-compose*.yml
 
 # Backup files
 *.bak
@@ -186,3 +184,5 @@ vite.config.ts.*
 # cache whatsapp
 .wwebjs_cache
 .wwebjs_auth
+
+.kiro
