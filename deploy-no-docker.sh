@@ -57,7 +57,8 @@ fi
 echo ""
 echo -e "${BLUE}📦 Step 2: Installing PM2...${NC}"
 if ! command -v pm2 &> /dev/null; then
-    sudo npm install -g pm2
+    # Install PM2 without sudo (use npx or install globally for user)
+    npm install -g pm2
     echo "✅ PM2 installed"
 else
     echo "✅ PM2 already installed"
