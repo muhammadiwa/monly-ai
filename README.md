@@ -88,3 +88,173 @@ Lihat [DEPLOYMENT.md](./DEPLOYMENT.md) untuk panduan lengkap deployment dengan D
 - AI chat assistant
 - WhatsApp notifications
 - Multi-currency & multi-language support
+
+
+## WhatsApp Integration Management
+
+### Health Monitoring
+
+Check WhatsApp bot health status:
+```bash
+npm run whatsapp:health
+
+# Or directly:
+curl http://localhost:5000/api/system/whatsapp-health
+```
+
+### Version Management
+
+Current WhatsApp Web.js version is **locked at 1.34.2** to prevent breaking changes.
+
+**Why version locking?**
+- WhatsApp Web.js frequently updates
+- Updates can introduce breaking changes
+- Locked version ensures stability in production
+
+### Rollback to Stable Version
+
+If WhatsApp bot stops working after an update:
+
+```bash
+# Windows
+npm run whatsapp:rollback
+
+# Mac/Linux
+npm run whatsapp:rollback:unix
+```
+
+This will:
+1. Stop the application
+2. Backup current WhatsApp session
+3. Clear cache
+4. Install stable version (1.34.2)
+5. Restart application
+
+### Update Strategy
+
+See [WHATSAPP_UPDATE_STRATEGY.md](./WHATSAPP_UPDATE_STRATEGY.md) for complete guide on:
+- Monitoring for updates
+- Testing new versions
+- Safe update process
+- Automated health checks
+- CI/CD integration
+
+### Health Monitoring Features
+
+The app includes automatic health monitoring:
+- ✅ Checks WhatsApp connection every 5 minutes
+- ✅ Auto-recovery after 3 failed checks
+- ✅ Detailed health status endpoint
+- ✅ System metrics and AI provider info
+
+**Health Status Endpoint:**
+```bash
+GET /api/system/whatsapp-health
+
+Response:
+{
+  "success": true,
+  "timestamp": "2025-12-22T10:00:00.000Z",
+  "whatsapp": {
+    "version": "1.34.2",
+    "status": "ready",
+    "connected": true
+  },
+  "healthMonitor": {
+    "connected": true,
+    "failureCount": 0,
+    "lastCheck": "2025-12-22T10:00:00.000Z"
+  },
+  "aiProvider": {
+    "provider": "openrouter",
+    "models": {...}
+  },
+  "system": {
+    "uptime": 3600,
+    "memory": {...}
+  }
+}
+```
+
+## Troubleshooting
+
+### WhatsApp Bot Not Responding
+
+1. Check health status:
+   ```bash
+   npm run whatsapp:health
+   ```
+
+2. Check logs for errors:
+   ```bash
+   pm2 logs monly-ai  # Production
+   # Or check console in development
+   ```
+
+3. If bot is disconnected, try rollback:
+   ```bash
+   npm run whatsapp:rollback
+   ```
+
+4. Clear session and restart:
+   ```bash
+   # Stop app
+   pm2 stop monly-ai
+   
+   # Clear WhatsApp session
+   rm -rf .wwebjs_auth .wwebjs_cache
+   
+   # Restart
+   pm2 restart monly-ai
+   ```
+
+### After WhatsApp Web.js Update
+
+If you manually updated WhatsApp Web.js and things broke:
+
+1. **Immediate rollback:**
+   ```bash
+   npm run whatsapp:rollback
+   ```
+
+2. **Check what changed:**
+   - Review [WhatsApp Web.js changelog](https://github.com/pedroslopez/whatsapp-web.js/releases)
+   - Check for breaking changes
+   - Test in staging first
+
+3. **Update safely:**
+   - Test in development first
+   - Monitor health endpoint
+   - Keep backup of working version
+   - Update version lock in rollback script
+
+### Health Monitor Not Working
+
+If automatic recovery isn't working:
+
+1. Check if health monitor is running:
+   ```bash
+   curl http://localhost:5000/api/system/whatsapp-health
+   ```
+
+2. Restart application:
+   ```bash
+   pm2 restart monly-ai
+   ```
+
+3. Check server logs for health monitor messages:
+   ```bash
+   pm2 logs monly-ai | grep "Health"
+   ```
+
+## Production Deployment
+
+See [DEPLOYMENT.md](./DEPLOYMENT.md) for complete production deployment guide.
+
+**Important for Production:**
+- ✅ WhatsApp Web.js version is locked
+- ✅ Health monitoring is automatic
+- ✅ Rollback script is ready
+- ✅ Session backups are created
+- ✅ Monitor `/api/system/whatsapp-health` endpoint
+

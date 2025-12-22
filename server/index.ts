@@ -3,6 +3,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { initializeSingleWhatsAppBot } from "./whatsapp-single-bot";
+import { getHealthMonitor } from "./whatsapp-health-monitor";
 import { startTransactionReminderScheduler } from "./transaction-reminder-scheduler";
 
 const app = express();
@@ -53,7 +54,7 @@ app.use((req, res, next) => {
   // importantly only setup vite in development and after
   // setting up all the other routes so the catch-all route
   // doesn't interfere with the other routes
-  
+
   // Add an API debug endpoint to help diagnose issues
   app.get('/api/debug', (req, res) => {
     res.json({ message: 'API is working correctly', timestamp: new Date().toISOString() });
@@ -74,12 +75,18 @@ app.use((req, res, next) => {
     reusePort: true,
   }, () => {
     log(`serving on port ${port}`);
-    
+
     // Initialize single WhatsApp bot for all users
     log('🤖 Initializing WhatsApp Bot...');
     try {
       initializeSingleWhatsAppBot();
       log('✅ WhatsApp Bot initialization started');
+
+      // Start health monitoring
+      log('🏥 Starting WhatsApp health monitor...');
+      const healthMonitor = getHealthMonitor();
+      healthMonitor.start();
+      log('✅ WhatsApp health monitor started');
     } catch (error) {
       log(`❌ WhatsApp Bot initialization failed: ${error}`);
     }

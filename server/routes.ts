@@ -8,11 +8,13 @@ import { AIFinancialIntelligenceEngine } from './ai-intelligence';
 import whatsappSingleBotRoutes from './whatsapp-single-bot-routes';
 import whatsappMultiAccountRoutes from './whatsapp-multi-account-routes';
 import { triggerTransactionRemindersManually } from './transaction-reminder-scheduler';
+import { getHealthMonitor } from './whatsapp-health-monitor';
+import { getSingleBotConnectionState } from './whatsapp-single-bot';
 import multer from "multer";
 import { z } from "zod";
 import session from "express-session";
 import MemoryStore from "memorystore";
-import { getAIClient, getModelForTask } from "./ai-provider";
+import { getAIClient, getModelForTask, getCurrentProviderInfo } from "./ai-provider";
 
 // Helper function to get currency symbol
 function getCurrencySymbol(currency: string): string {
@@ -1473,7 +1475,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userPreferences = await storage.getUserPreferences(req.user!.id);
 
       // Create a proper file-like object for OpenAI Whisper
-      const audioFile = new File([req.file.buffer], req.file.originalname || 'audio.webm', {
+      // Convert Buffer to Uint8Array for proper type compatibility
+      const audioBuffer = new Uint8Array(req.file.buffer);
+      const audioFile = new File([audioBuffer], req.file.originalname || 'audio.webm', {
         type: req.file.mimetype || 'audio/webm'
       });
 
@@ -1927,6 +1931,89 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({
         success: false,
         error: "Failed to get notification logs"
+      });
+    }
+  });
+
+  // ============================================
+  // SYSTEM HEALTH & MONITORING ENDPOINTS
+  // ============================================
+
+  /**
+   * WhatsApp Health Status
+   * GET /api/system/whatsapp-health
+   * Returns current WhatsApp bot health status
+   */
+  app.get("/api/system/whatsapp-health", async (req, res) => {
+    try {
+      const healthMonitor = getHealthMonitor();
+      const botState = getSingleBotConnectionState();
+      const aiProvider = getCurrentProviderInfo();
+
+      // Get WhatsApp Web.js version
+      let whatsappVersion = 'unknown';
+      try {
+        const packageJson = require('whatsapp-web.js/package.json');
+        whatsappVersion = packageJson.version;
+      } catch (e) {
+        console.error('Failed to get WhatsApp Web.js version:', e);
+      }
+
+      res.json({
+        success: true,
+        timestamp: new Date().toISOString(),
+        whatsapp: {
+          version: whatsappVersion,
+          status: botState.status,
+          connected: botState.connected,
+          qrCodeAvailable: !!botState.qrCode
+        },
+        healthMonitor: healthMonitor.getStatus(),
+        aiProvider: {
+          provider: aiProvider.provider,
+          baseURL: aiProvider.baseURL,
+          models: aiProvider.models
+        },
+        system: {
+          uptime: process.uptime(),
+          memory: process.memoryUsage(),
+          nodeVersion: process.version,
+          platform: process.platform
+        }
+      });
+    } catch (error) {
+      console.error("Health check error:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to get health status"
+      });
+    }
+  });
+
+  /**
+   * System Status (Public)
+   * GET /api/system/status
+   * Basic system status without sensitive info
+   */
+  app.get("/api/system/status", async (req, res) => {
+    try {
+      const botState = getSingleBotConnectionState();
+
+      res.json({
+        success: true,
+        status: "operational",
+        services: {
+          api: "operational",
+          whatsapp: botState.connected ? "operational" : "degraded",
+          database: "operational"
+        },
+        timestamp: new Date().toISOString()
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        status: "error",
+        timestamp: new Date().toISOString()
       });
     }
   });

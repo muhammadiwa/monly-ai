@@ -94,7 +94,9 @@ export const initializeSingleWhatsAppBot = (): SingleBotConnection => {
     // Clean up old processed messages (keep only last 100)
     if (processedMessages.size > 100) {
       const firstItem = processedMessages.values().next().value;
-      processedMessages.delete(firstItem);
+      if (firstItem) {
+        processedMessages.delete(firstItem);
+      }
     }
 
     await handleIncomingMessage(message);

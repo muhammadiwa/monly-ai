@@ -13,7 +13,10 @@
     "db:push": "drizzle-kit push",
     "migrate": "tsx server/migrate.ts",
     "migrate:status": "tsx server/migrate.ts status",
-    "migrate:rollback": "tsx server/migrate.ts rollback"
+    "migrate:rollback": "tsx server/migrate.ts rollback",
+    "whatsapp:rollback": "powershell -ExecutionPolicy Bypass -File scripts/rollback-whatsapp.ps1",
+    "whatsapp:rollback:unix": "bash scripts/rollback-whatsapp.sh",
+    "whatsapp:health": "curl http://localhost:5000/api/system/whatsapp-health"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -90,7 +93,7 @@
     "tw-animate-css": "^1.2.5",
     "vaul": "^1.1.2",
     "vite": "^5.4.0",
-    "whatsapp-web.js": "^1.34.2",
+    "whatsapp-web.js": "1.34.2",
     "wouter": "^3.3.5",
     "xlsx": "^0.18.5",
     "zod": "^3.25.76",

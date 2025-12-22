@@ -11,24 +11,24 @@ interface TransactionReminderService {
 }
 
 class TransactionReminderServiceImpl implements TransactionReminderService {
-  
+
   /**
    * Check all users and send reminders to those who haven't logged transactions today
    */
   async checkAndSendReminders(): Promise<void> {
     console.log('🔔 Starting transaction reminders check...');
-    
+
     try {
       // Get all users with transaction reminders enabled
       const usersWithReminders = await storage.getUsersWithTransactionReminders();
-      
+
       console.log(`Found ${usersWithReminders.length} users with transaction reminders enabled`);
-      
+
       for (const user of usersWithReminders) {
         try {
           // Check if user has logged any transaction today
           const hasLoggedToday = await this.hasUserLoggedTransactionToday(user.id);
-          
+
           if (!hasLoggedToday) {
             console.log(`📱 Sending reminder to user ${user.id} (${user.email})`);
             await this.sendReminderToUser(user.id);
@@ -39,7 +39,7 @@ class TransactionReminderServiceImpl implements TransactionReminderService {
           console.error(`❌ Error processing reminders for user ${user.id}:`, error);
         }
       }
-      
+
       console.log('✅ Transaction reminders check completed');
     } catch (error) {
       console.error('❌ Error in transaction reminders check:', error);
@@ -53,7 +53,7 @@ class TransactionReminderServiceImpl implements TransactionReminderService {
     try {
       // Get user's WhatsApp numbers
       const whatsappNumbers = await this.getUserWhatsAppNumbers(userId);
-      
+
       if (whatsappNumbers.length === 0) {
         console.log(`⚠️ User ${userId} has no WhatsApp numbers connected`);
         return;
@@ -62,15 +62,15 @@ class TransactionReminderServiceImpl implements TransactionReminderService {
       // Get user preferences for language
       const userPrefs = await storage.getUserPreferences(userId);
       const language = userPrefs?.language || 'en';
-      
+
       // Create reminder message based on language
       const message = this.createReminderMessage(language);
-      
+
       // Send message to all connected WhatsApp numbers
       for (const whatsappNumber of whatsappNumbers) {
         try {
           const result = await sendSingleBotMessage(whatsappNumber, message);
-          
+
           // Log the notification
           await this.logNotification({
             userId,
@@ -81,7 +81,7 @@ class TransactionReminderServiceImpl implements TransactionReminderService {
             sentAt: Date.now(),
             errorMessage: result.success ? undefined : result.message,
           });
-          
+
           if (result.success) {
             console.log(`✅ Reminder sent successfully to ${whatsappNumber}`);
           } else {
@@ -89,7 +89,7 @@ class TransactionReminderServiceImpl implements TransactionReminderService {
           }
         } catch (error) {
           console.error(`❌ Error sending reminder to ${whatsappNumber}:`, error);
-          
+
           // Log the failed notification
           await this.logNotification({
             userId,
@@ -115,17 +115,17 @@ class TransactionReminderServiceImpl implements TransactionReminderService {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const todayTimestamp = Math.floor(today.getTime() / 1000);
-      
+
       const tomorrow = new Date(today);
       tomorrow.setDate(tomorrow.getDate() + 1);
       const tomorrowTimestamp = Math.floor(tomorrow.getTime() / 1000);
-      
+
       const transactions = await storage.getUserTransactionsInDateRange(
-        userId, 
-        todayTimestamp, 
+        userId,
+        todayTimestamp,
         tomorrowTimestamp
       );
-      
+
       return transactions.length > 0;
     } catch (error) {
       console.error(`Error checking transactions for user ${userId}:`, error);
@@ -153,10 +153,7 @@ class TransactionReminderServiceImpl implements TransactionReminderService {
    */
   async logNotification(log: InsertNotificationLog): Promise<void> {
     try {
-      await storage.createNotificationLog({
-        ...log,
-        createdAt: Date.now(),
-      });
+      await storage.createNotificationLog(log);
     } catch (error) {
       console.error('Error logging notification:', error);
     }

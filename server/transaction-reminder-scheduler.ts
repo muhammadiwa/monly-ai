@@ -24,14 +24,13 @@ export function startTransactionReminderScheduler() {
   // '0 0 20 * * *' = Every day at 8:00 PM
   const reminderJob = cron.schedule('0 0 20 * * *', async () => {
     console.log('⏰ Running daily transaction reminder check at', new Date().toLocaleString());
-    
+
     try {
       await transactionReminderService.checkAndSendReminders();
     } catch (error) {
       console.error('❌ Error in scheduled transaction reminder check:', error);
     }
   }, {
-    scheduled: true,
     timezone: process.env.TZ || 'Asia/Jakarta' // Use timezone from environment
   });
 
@@ -69,7 +68,7 @@ export function stopTransactionReminderScheduler() {
 // Manual trigger function for testing
 export async function triggerTransactionRemindersManually() {
   console.log('🧪 Manually triggering transaction reminders...');
-  
+
   try {
     await transactionReminderService.checkAndSendReminders();
     console.log('✅ Manual transaction reminders completed');
