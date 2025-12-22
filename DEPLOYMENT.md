@@ -10,11 +10,12 @@
 
 ```bash
 # 1. Clone project ke server
-cd /opt
-git clone <your-repo> monlyai
-cd monlyai
+cd /var/www/html
+git clone <your-repo> monly-ai
+cd monly-ai
 
 # 2. Generate secrets
+chmod +x generate-secrets.sh
 ./generate-secrets.sh
 
 # 3. Edit environment file
@@ -23,23 +24,63 @@ nano .env.production
 # - Update DOMAIN dan ACME_EMAIL
 
 # 4. Deploy
+chmod +x deploy.sh
 ./deploy.sh
 ```
 
 ## Install Docker (jika belum)
+
+### Option 1: Docker Compose V2 (Recommended)
 
 ```bash
 # Install Docker
 curl -fsSL https://get.docker.com -o get-docker.sh
 sudo sh get-docker.sh
 
-# Install Docker Compose
-sudo curl -L "https://github.com/docker/compose/releases/download/v2.20.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-sudo chmod +x /usr/local/bin/docker-compose
+# Install Docker Compose Plugin (V2)
+sudo apt-get update
+sudo apt-get install docker-compose-plugin
+
+# Verify installation
+docker compose version
 
 # Add user to docker group
 sudo usermod -aG docker $USER
 newgrp docker
+```
+
+### Option 2: Docker Compose V1 (Legacy)
+
+```bash
+# Install Docker
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo sh get-docker.sh
+
+# Install Docker Compose V1
+sudo curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+sudo chmod +x /usr/local/bin/docker-compose
+
+# Verify installation
+docker-compose version
+
+# Add user to docker group
+sudo usermod -aG docker $USER
+newgrp docker
+```
+
+## Troubleshooting: docker-compose command not found
+
+Jika mendapat error `docker-compose: command not found`, gunakan `docker compose` (dengan spasi):
+
+```bash
+# Semua script sudah menggunakan docker compose (V2)
+./deploy.sh
+./monitor.sh
+
+# Manual commands
+docker compose -f docker-compose.prod.yml ps
+docker compose -f docker-compose.prod.yml logs -f
+docker compose -f docker-compose.prod.yml restart
 ```
 
 ## Environment Variables

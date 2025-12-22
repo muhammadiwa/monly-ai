@@ -13,7 +13,7 @@ echo "=============================="
 # Check Docker services
 echo ""
 echo "🐳 Docker Services:"
-docker-compose -f docker-compose.prod.yml ps 2>/dev/null || echo "No services running"
+docker compose -f docker-compose.prod.yml ps 2>/dev/null || echo "No services running"
 
 # Check container resource usage
 echo ""
@@ -33,14 +33,23 @@ free -h | head -2
 # Application health check
 echo ""
 echo "🏥 Health Check:"
-if curl -s -f http://localhost:3000/api/debug >/dev/null 2>&1; then
+if curl -s -f http://localhost:5000/api/system/status >/dev/null 2>&1; then
     echo -e "${GREEN}✅ API: Healthy${NC}"
+    curl -s http://localhost:5000/api/system/status | grep -o '"status":"[^"]*"' || true
 else
     echo -e "${RED}❌ API: Unhealthy${NC}"
+fi
+
+# WhatsApp Health Check
+if curl -s -f http://localhost:5000/api/system/whatsapp-health >/dev/null 2>&1; then
+    echo -e "${GREEN}✅ WhatsApp: Connected${NC}"
+else
+    echo -e "${YELLOW}⚠️  WhatsApp: Check required${NC}"
 fi
 
 echo ""
 echo "=============================="
 echo "📋 Commands:"
-echo "   Logs: docker-compose -f docker-compose.prod.yml logs -f"
-echo "   Restart: docker-compose -f docker-compose.prod.yml restart"
+echo "   Logs: docker compose -f docker-compose.prod.yml logs -f"
+echo "   Restart: docker compose -f docker-compose.prod.yml restart"
+echo "   Health: curl http://localhost:5000/api/system/whatsapp-health"

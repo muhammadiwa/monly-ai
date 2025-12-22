@@ -26,16 +26,16 @@ export $(cat .env.production | grep -v '^#' | xargs)
 mkdir -p nginx
 
 echo "🛑 Stopping existing containers..."
-docker-compose -f docker-compose.prod.yml down --remove-orphans 2>/dev/null || true
+docker compose -f docker-compose.prod.yml down --remove-orphans 2>/dev/null || true
 
 echo "📦 Pulling latest images..."
-docker-compose -f docker-compose.prod.yml pull 2>/dev/null || true
+docker compose -f docker-compose.prod.yml pull 2>/dev/null || true
 
 echo "🏗️  Building application..."
-docker-compose -f docker-compose.prod.yml build --no-cache
+docker compose -f docker-compose.prod.yml build --no-cache
 
 echo "🚀 Starting services..."
-docker-compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml up -d
 
 echo "⏳ Waiting for services to start..."
 sleep 15
@@ -43,17 +43,17 @@ sleep 15
 # Check if services are running
 echo ""
 echo "📊 Service Status:"
-docker-compose -f docker-compose.prod.yml ps
+docker compose -f docker-compose.prod.yml ps
 
-if docker-compose -f docker-compose.prod.yml ps | grep -q "Up"; then
+if docker compose -f docker-compose.prod.yml ps | grep -q "Up"; then
     echo ""
     echo -e "${GREEN}🎉 Deployment Complete!${NC}"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "📱 Access: https://${DOMAIN:-monlyai.web.id}"
-    echo "📋 Logs: docker-compose -f docker-compose.prod.yml logs -f"
+    echo "📋 Logs: docker compose -f docker-compose.prod.yml logs -f"
     echo "📊 Monitor: ./monitor.sh"
 else
     echo -e "${RED}❌ Some services failed to start${NC}"
-    docker-compose -f docker-compose.prod.yml logs --tail=20
+    docker compose -f docker-compose.prod.yml logs --tail=20
     exit 1
 fi
