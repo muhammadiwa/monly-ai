@@ -14,6 +14,7 @@
     "migrate": "tsx server/migrate.ts",
     "migrate:status": "tsx server/migrate.ts status",
     "migrate:rollback": "tsx server/migrate.ts rollback",
+    "seed:admin": "tsx server/seed-admin-data.ts",
     "whatsapp:rollback": "powershell -ExecutionPolicy Bypass -File scripts/rollback-whatsapp.ps1",
     "whatsapp:rollback:unix": "bash scripts/rollback-whatsapp.sh",
     "whatsapp:health": "curl http://localhost:5000/api/system/whatsapp-health"

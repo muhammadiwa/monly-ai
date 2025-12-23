@@ -7,6 +7,7 @@ import { requireAuth, hashPassword, verifyPassword, generateToken, type AuthRequ
 import { AIFinancialIntelligenceEngine } from './ai-intelligence';
 import whatsappSingleBotRoutes from './whatsapp-single-bot-routes';
 import whatsappMultiAccountRoutes from './whatsapp-multi-account-routes';
+import adminRoutes from './admin/admin-routes';
 import { triggerTransactionRemindersManually } from './transaction-reminder-scheduler';
 import { getHealthMonitor } from './whatsapp-health-monitor';
 import { getSingleBotConnectionState } from './whatsapp-single-bot';
@@ -52,6 +53,9 @@ const loginSchema = z.object({
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Register Admin routes
+  app.use('/api', adminRoutes);
+
   // Register WhatsApp routes
   // WhatsApp routes (Single Bot System)
   app.use('/api', whatsappSingleBotRoutes);

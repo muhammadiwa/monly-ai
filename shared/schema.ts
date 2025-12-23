@@ -28,6 +28,8 @@ export const users = sqliteTable("users", {
   lastName: text("last_name"),
   profileImageUrl: text("profile_image_url"),
   password: text("password"), // For demo authentication
+  subscriptionPlanId: integer("subscription_plan_id"),
+  subscriptionStatus: text("subscription_status").default("free"),
   createdAt: integer("created_at"), // Unix timestamp
   updatedAt: integer("updated_at"), // Unix timestamp
 });
@@ -173,6 +175,134 @@ export const goalSavingsPlans = sqliteTable("goal_savings_plans", {
   updatedAt: integer("updated_at"), // Unix timestamp
 });
 
+// Admin Panel Tables
+
+// Admin users table
+export const adminUsers = sqliteTable("admin_users", {
+  id: text("id").primaryKey().notNull(),
+  email: text("email").unique().notNull(),
+  name: text("name").notNull(),
+  password: text("password").notNull(),
+  role: text("role", { enum: ["super_admin", "admin", "support"] }).notNull().default("admin"),
+  lastLogin: integer("last_login"),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+});
+
+// Subscription plans table
+export const subscriptionPlans = sqliteTable("subscription_plans", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  name: text("name").notNull().unique(),
+  displayName: text("display_name").notNull(),
+  description: text("description"),
+  priceMonthly: real("price_monthly").notNull(),
+  priceYearly: real("price_yearly").notNull(),
+  currency: text("currency").notNull().default("IDR"),
+  features: text("features").notNull(), // JSON array
+  limits: text("limits").notNull(), // JSON object
+  isActive: integer("is_active", { mode: 'boolean' }).default(true),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+});
+
+// User subscriptions table
+export const userSubscriptions = sqliteTable("user_subscriptions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: text("user_id").references(() => users.id).notNull(),
+  planId: integer("plan_id").references(() => subscriptionPlans.id).notNull(),
+  status: text("status", { enum: ["active", "expired", "cancelled", "pending"] }).notNull().default("active"),
+  billingCycle: text("billing_cycle", { enum: ["monthly", "yearly"] }).notNull(),
+  startDate: integer("start_date").notNull(),
+  endDate: integer("end_date").notNull(),
+  autoRenew: integer("auto_renew", { mode: 'boolean' }).default(true),
+  cancelledAt: integer("cancelled_at"),
+  cancellationReason: text("cancellation_reason"),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+}, (table) => [
+  index("idx_user_subscriptions_user_id").on(table.userId),
+  index("idx_user_subscriptions_status").on(table.status),
+]);
+
+// Payments table
+export const payments = sqliteTable("payments", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: text("user_id").references(() => users.id).notNull(),
+  subscriptionId: integer("subscription_id").references(() => userSubscriptions.id),
+  amount: real("amount").notNull(),
+  currency: text("currency").notNull().default("IDR"),
+  paymentMethod: text("payment_method", { enum: ["credit_card", "bank_transfer", "e_wallet", "other"] }).notNull(),
+  status: text("status", { enum: ["pending", "paid", "failed", "refunded"] }).notNull().default("pending"),
+  midtransTransactionId: text("midtrans_transaction_id"),
+  midtransOrderId: text("midtrans_order_id").unique(),
+  paidAt: integer("paid_at"),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+}, (table) => [
+  index("idx_payments_user_id").on(table.userId),
+  index("idx_payments_status").on(table.status),
+  index("idx_payments_midtrans_order_id").on(table.midtransOrderId),
+]);
+
+// Invoices table
+export const invoices = sqliteTable("invoices", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  invoiceNumber: text("invoice_number").unique().notNull(),
+  userId: text("user_id").references(() => users.id).notNull(),
+  paymentId: integer("payment_id").references(() => payments.id),
+  amount: real("amount").notNull(),
+  currency: text("currency").notNull().default("IDR"),
+  items: text("items").notNull(), // JSON array
+  status: text("status", { enum: ["draft", "sent", "paid", "cancelled"] }).notNull().default("draft"),
+  issuedAt: integer("issued_at").notNull(),
+  dueAt: integer("due_at").notNull(),
+  paidAt: integer("paid_at"),
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+}, (table) => [
+  index("idx_invoices_user_id").on(table.userId),
+]);
+
+// System settings table
+export const systemSettings = sqliteTable("system_settings", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  category: text("category").notNull(),
+  key: text("key").notNull().unique(),
+  value: text("value").notNull(),
+  dataType: text("data_type", { enum: ["string", "number", "boolean", "json"] }).notNull(),
+  description: text("description"),
+  updatedBy: text("updated_by").references(() => adminUsers.id),
+  updatedAt: integer("updated_at").notNull(),
+});
+
+// Admin activity log table
+export const adminActivityLogs = sqliteTable("admin_activity_logs", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  adminId: text("admin_id").references(() => adminUsers.id).notNull(),
+  action: text("action").notNull(),
+  resourceType: text("resource_type").notNull(),
+  resourceId: text("resource_id"),
+  details: text("details"), // JSON object
+  ipAddress: text("ip_address"),
+  createdAt: integer("created_at").notNull(),
+}, (table) => [
+  index("idx_admin_activity_logs_admin_id").on(table.adminId),
+  index("idx_admin_activity_logs_created_at").on(table.createdAt),
+]);
+
+// Midtrans webhook logs table
+export const midtransWebhookLogs = sqliteTable("midtrans_webhook_logs", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  orderId: text("order_id").notNull(),
+  transactionId: text("transaction_id"),
+  eventType: text("event_type").notNull(),
+  payload: text("payload").notNull(), // JSON
+  signature: text("signature"),
+  status: text("status", { enum: ["processed", "failed"] }).notNull(),
+  errorMessage: text("error_message"),
+  createdAt: integer("created_at").notNull(),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many, one }) => ({
   transactions: many(transactions),
@@ -180,6 +310,13 @@ export const usersRelations = relations(users, ({ many, one }) => ({
   categories: many(categories),
   goals: many(goals),
   preferences: one(userPreferences),
+  subscriptions: many(userSubscriptions),
+  payments: many(payments),
+  invoices: many(invoices),
+  subscriptionPlan: one(subscriptionPlans, {
+    fields: [users.subscriptionPlanId],
+    references: [subscriptionPlans.id],
+  }),
 }));
 
 export const userPreferencesRelations = relations(userPreferences, ({ one }) => ({
@@ -275,6 +412,74 @@ export const notificationLogsRelations = relations(notificationLogs, ({ one }) =
   }),
 }));
 
+// Admin Panel Relations
+
+// Admin users relations
+export const adminUsersRelations = relations(adminUsers, ({ many }) => ({
+  activityLogs: many(adminActivityLogs),
+  settingsUpdates: many(systemSettings),
+}));
+
+// Subscription plans relations
+export const subscriptionPlansRelations = relations(subscriptionPlans, ({ many }) => ({
+  subscriptions: many(userSubscriptions),
+  users: many(users),
+}));
+
+// User subscriptions relations
+export const userSubscriptionsRelations = relations(userSubscriptions, ({ one, many }) => ({
+  user: one(users, {
+    fields: [userSubscriptions.userId],
+    references: [users.id],
+  }),
+  plan: one(subscriptionPlans, {
+    fields: [userSubscriptions.planId],
+    references: [subscriptionPlans.id],
+  }),
+  payments: many(payments),
+}));
+
+// Payments relations
+export const paymentsRelations = relations(payments, ({ one, many }) => ({
+  user: one(users, {
+    fields: [payments.userId],
+    references: [users.id],
+  }),
+  subscription: one(userSubscriptions, {
+    fields: [payments.subscriptionId],
+    references: [userSubscriptions.id],
+  }),
+  invoices: many(invoices),
+}));
+
+// Invoices relations
+export const invoicesRelations = relations(invoices, ({ one }) => ({
+  user: one(users, {
+    fields: [invoices.userId],
+    references: [users.id],
+  }),
+  payment: one(payments, {
+    fields: [invoices.paymentId],
+    references: [payments.id],
+  }),
+}));
+
+// System settings relations
+export const systemSettingsRelations = relations(systemSettings, ({ one }) => ({
+  updatedByAdmin: one(adminUsers, {
+    fields: [systemSettings.updatedBy],
+    references: [adminUsers.id],
+  }),
+}));
+
+// Admin activity logs relations
+export const adminActivityLogsRelations = relations(adminActivityLogs, ({ one }) => ({
+  admin: one(adminUsers, {
+    fields: [adminActivityLogs.adminId],
+    references: [adminUsers.id],
+  }),
+}));
+
 // Insert schemas
 export const insertCategorySchema = createInsertSchema(categories).omit({
   id: true,
@@ -324,6 +529,52 @@ export const insertNotificationLogSchema = createInsertSchema(notificationLogs).
   createdAt: true,
 });
 
+// Admin Panel Insert Schemas
+export const insertAdminUserSchema = createInsertSchema(adminUsers).omit({
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertSubscriptionPlanSchema = createInsertSchema(subscriptionPlans).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const updateSubscriptionPlanSchema = insertSubscriptionPlanSchema.partial();
+
+export const insertUserSubscriptionSchema = createInsertSchema(userSubscriptions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertPaymentSchema = createInsertSchema(payments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertInvoiceSchema = createInsertSchema(invoices).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertSystemSettingSchema = createInsertSchema(systemSettings).omit({
+  id: true,
+});
+
+export const insertAdminActivityLogSchema = createInsertSchema(adminActivityLogs).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertMidtransWebhookLogSchema = createInsertSchema(midtransWebhookLogs).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -346,3 +597,41 @@ export type WhatsappActivationCode = typeof whatsappActivationCodes.$inferSelect
 export type InsertWhatsappActivationCode = z.infer<typeof insertWhatsappActivationCodeSchema>;
 export type NotificationLog = typeof notificationLogs.$inferSelect;
 export type InsertNotificationLog = z.infer<typeof insertNotificationLogSchema>;
+
+// Admin Panel Types
+export type AdminUser = typeof adminUsers.$inferSelect;
+export type InsertAdminUser = z.infer<typeof insertAdminUserSchema>;
+
+export type SubscriptionPlan = typeof subscriptionPlans.$inferSelect;
+export type InsertSubscriptionPlan = z.infer<typeof insertSubscriptionPlanSchema>;
+export type UpdateSubscriptionPlan = z.infer<typeof updateSubscriptionPlanSchema>;
+
+export type UserSubscription = typeof userSubscriptions.$inferSelect;
+export type InsertUserSubscription = z.infer<typeof insertUserSubscriptionSchema>;
+export type UserSubscriptionWithDetails = UserSubscription & {
+  user: User;
+  plan: SubscriptionPlan;
+};
+
+export type Payment = typeof payments.$inferSelect;
+export type InsertPayment = z.infer<typeof insertPaymentSchema>;
+export type PaymentWithDetails = Payment & {
+  user: User;
+  subscription: UserSubscription | null;
+};
+
+export type Invoice = typeof invoices.$inferSelect;
+export type InsertInvoice = z.infer<typeof insertInvoiceSchema>;
+export type InvoiceWithDetails = Invoice & {
+  user: User;
+  payment: Payment | null;
+};
+
+export type SystemSetting = typeof systemSettings.$inferSelect;
+export type InsertSystemSetting = z.infer<typeof insertSystemSettingSchema>;
+
+export type AdminActivityLog = typeof adminActivityLogs.$inferSelect;
+export type InsertAdminActivityLog = z.infer<typeof insertAdminActivityLogSchema>;
+
+export type MidtransWebhookLog = typeof midtransWebhookLogs.$inferSelect;
+export type InsertMidtransWebhookLog = z.infer<typeof insertMidtransWebhookLogSchema>;
