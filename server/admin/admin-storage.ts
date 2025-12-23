@@ -1,5 +1,5 @@
 import { db } from "../db";
-import { adminUsers, adminActivityLogs, users, userSubscriptions, subscriptionPlans, payments, invoices, midtransWebhookLogs, transactions, budgets, goals } from "@shared/schema";
+import { adminUsers, adminActivityLogs, users, userSubscriptions, subscriptionPlans, payments, invoices, midtransWebhookLogs, transactions, budgets, goals, systemSettings } from "@shared/schema";
 import { eq, sql, desc, and } from "drizzle-orm";
 
 export interface AdminUserData {
@@ -2643,6 +2643,327 @@ export class AdminStorage {
             page,
             totalPages: Math.ceil(total / limit),
         };
+    }
+
+    // System Settings Functions
+
+    // Get all system settings or filter by category
+    async getSystemSettings(category?: string) {
+        if (category) {
+            const settings = await db
+                .select()
+                .from(systemSettings)
+                .where(eq(systemSettings.category, category))
+                .all();
+
+            return settings.map(setting => ({
+                id: setting.id,
+                category: setting.category,
+                key: setting.key,
+                value: this.parseSettingValue(setting.value, setting.dataType),
+                dataType: setting.dataType,
+                description: setting.description,
+                updatedBy: setting.updatedBy,
+                updatedAt: setting.updatedAt,
+            }));
+        }
+
+        const settings = await db
+            .select()
+            .from(systemSettings)
+            .all();
+
+        return settings.map(setting => ({
+            id: setting.id,
+            category: setting.category,
+            key: setting.key,
+            value: this.parseSettingValue(setting.value, setting.dataType),
+            dataType: setting.dataType,
+            description: setting.description,
+            updatedBy: setting.updatedBy,
+            updatedAt: setting.updatedAt,
+        }));
+    }
+
+    // Get all feature flags (settings with category = 'features')
+    async getFeatureFlags() {
+        const featureFlags = await db
+            .select()
+            .from(systemSettings)
+            .where(eq(systemSettings.category, 'features'))
+            .all();
+
+        return featureFlags.map(flag => ({
+            id: flag.id,
+            category: flag.category,
+            key: flag.key,
+            value: this.parseSettingValue(flag.value, flag.dataType),
+            dataType: flag.dataType,
+            description: flag.description,
+            updatedBy: flag.updatedBy,
+            updatedAt: flag.updatedAt,
+        }));
+    }
+
+    // Get system setting by key
+    async getSystemSettingByKey(key: string) {
+        const setting = await db
+            .select()
+            .from(systemSettings)
+            .where(eq(systemSettings.key, key))
+            .get();
+
+        if (!setting) {
+            return null;
+        }
+
+        return {
+            id: setting.id,
+            category: setting.category,
+            key: setting.key,
+            value: this.parseSettingValue(setting.value, setting.dataType),
+            dataType: setting.dataType,
+            description: setting.description,
+            updatedBy: setting.updatedBy,
+            updatedAt: setting.updatedAt,
+        };
+    }
+
+    // Update system setting by key
+    async updateSystemSetting(key: string, value: any, adminId: string) {
+        const now = Math.floor(Date.now() / 1000);
+
+        // Get existing setting to determine data type
+        const existingSetting = await db
+            .select()
+            .from(systemSettings)
+            .where(eq(systemSettings.key, key))
+            .get();
+
+        if (!existingSetting) {
+            throw new Error('Setting not found');
+        }
+
+        // Serialize value based on data type
+        const serializedValue = this.serializeSettingValue(value, existingSetting.dataType);
+
+        // Update setting
+        await db
+            .update(systemSettings)
+            .set({
+                value: serializedValue,
+                updatedBy: adminId,
+                updatedAt: now,
+            })
+            .where(eq(systemSettings.key, key))
+            .run();
+
+        // Get updated setting
+        const updatedSetting = await this.getSystemSettingByKey(key);
+
+        return updatedSetting;
+    }
+
+    // Get audit log with pagination and filtering
+    async getAuditLog(options: {
+        page: number;
+        limit: number;
+        adminId?: string;
+        action?: string;
+        resourceType?: string;
+        dateFrom?: number;
+        dateTo?: number;
+    }) {
+        const { page, limit, adminId, action, resourceType, dateFrom, dateTo } = options;
+        const offset = (page - 1) * limit;
+
+        // Build WHERE conditions
+        const conditions = [];
+
+        if (adminId) {
+            conditions.push(eq(adminActivityLogs.adminId, adminId));
+        }
+
+        if (action) {
+            conditions.push(eq(adminActivityLogs.action, action));
+        }
+
+        if (resourceType) {
+            conditions.push(eq(adminActivityLogs.resourceType, resourceType));
+        }
+
+        if (dateFrom) {
+            conditions.push(sql`${adminActivityLogs.createdAt} >= ${dateFrom}`);
+        }
+
+        if (dateTo) {
+            conditions.push(sql`${adminActivityLogs.createdAt} <= ${dateTo}`);
+        }
+
+        // Build WHERE clause
+        const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+        // Fetch total count
+        const countQuery = whereClause
+            ? db.select({ count: sql<number>`count(*)` }).from(adminActivityLogs).where(whereClause)
+            : db.select({ count: sql<number>`count(*)` }).from(adminActivityLogs);
+
+        const countResult = await countQuery;
+        const total = countResult[0]?.count || 0;
+
+        // Fetch audit logs with admin details
+        const logsQuery = db
+            .select({
+                id: adminActivityLogs.id,
+                adminId: adminActivityLogs.adminId,
+                adminName: adminUsers.name,
+                adminEmail: adminUsers.email,
+                action: adminActivityLogs.action,
+                resourceType: adminActivityLogs.resourceType,
+                resourceId: adminActivityLogs.resourceId,
+                details: adminActivityLogs.details,
+                ipAddress: adminActivityLogs.ipAddress,
+                createdAt: adminActivityLogs.createdAt,
+            })
+            .from(adminActivityLogs)
+            .leftJoin(adminUsers, eq(adminActivityLogs.adminId, adminUsers.id))
+            .orderBy(desc(adminActivityLogs.createdAt))
+            .limit(limit)
+            .offset(offset);
+
+        const logs = whereClause
+            ? await logsQuery.where(whereClause)
+            : await logsQuery;
+
+        return {
+            logs: logs.map(log => ({
+                id: log.id,
+                admin: {
+                    id: log.adminId,
+                    name: log.adminName || 'Unknown',
+                    email: log.adminEmail || 'Unknown',
+                },
+                action: log.action,
+                resourceType: log.resourceType,
+                resourceId: log.resourceId,
+                details: log.details ? JSON.parse(log.details) : null,
+                ipAddress: log.ipAddress,
+                createdAt: log.createdAt,
+            })),
+            total,
+            page,
+            totalPages: Math.ceil(total / limit),
+        };
+    }
+
+    // Helper function to parse setting value based on data type
+    private parseSettingValue(value: string, dataType: string): any {
+        switch (dataType) {
+            case 'number':
+                return parseFloat(value);
+            case 'boolean':
+                return value === 'true' || value === '1';
+            case 'json':
+                try {
+                    return JSON.parse(value);
+                } catch {
+                    return value;
+                }
+            case 'string':
+            default:
+                return value;
+        }
+    }
+
+    // Helper function to serialize setting value based on data type
+    private serializeSettingValue(value: any, dataType: string): string {
+        switch (dataType) {
+            case 'number':
+                return String(value);
+            case 'boolean':
+                return value ? 'true' : 'false';
+            case 'json':
+                return JSON.stringify(value);
+            case 'string':
+            default:
+                return String(value);
+        }
+    }
+
+    /**
+     * Upsert system setting (insert or update)
+     * Creates a new setting if it doesn't exist, updates if it does
+     */
+    async upsertSystemSetting(params: {
+        category: string;
+        key: string;
+        value: any;
+        dataType: 'string' | 'number' | 'boolean' | 'json';
+        description?: string;
+        updatedBy: string;
+    }): Promise<any> {
+        const now = Math.floor(Date.now() / 1000);
+
+        // Serialize value based on data type
+        const serializedValue = this.serializeSettingValue(params.value, params.dataType);
+
+        // Check if setting exists
+        const existingSetting = await db
+            .select()
+            .from(systemSettings)
+            .where(eq(systemSettings.key, params.key))
+            .limit(1);
+
+        if (existingSetting.length > 0) {
+            // Update existing setting
+            const updated = await db
+                .update(systemSettings)
+                .set({
+                    value: serializedValue,
+                    dataType: params.dataType,
+                    description: params.description,
+                    updatedBy: params.updatedBy,
+                    updatedAt: now,
+                })
+                .where(eq(systemSettings.key, params.key))
+                .returning();
+
+            return {
+                id: updated[0].id,
+                category: updated[0].category,
+                key: updated[0].key,
+                value: this.parseSettingValue(updated[0].value, updated[0].dataType),
+                dataType: updated[0].dataType,
+                description: updated[0].description,
+                updatedBy: updated[0].updatedBy,
+                updatedAt: updated[0].updatedAt,
+            };
+        } else {
+            // Insert new setting
+            const inserted = await db
+                .insert(systemSettings)
+                .values({
+                    category: params.category,
+                    key: params.key,
+                    value: serializedValue,
+                    dataType: params.dataType,
+                    description: params.description || null,
+                    updatedBy: params.updatedBy,
+                    updatedAt: now,
+                })
+                .returning();
+
+            return {
+                id: inserted[0].id,
+                category: inserted[0].category,
+                key: inserted[0].key,
+                value: this.parseSettingValue(inserted[0].value, inserted[0].dataType),
+                dataType: inserted[0].dataType,
+                description: inserted[0].description,
+                updatedBy: inserted[0].updatedBy,
+                updatedAt: inserted[0].updatedAt,
+            };
+        }
     }
 }
 

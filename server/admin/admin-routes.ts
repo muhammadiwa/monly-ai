@@ -2,6 +2,7 @@ import { Router, Response, Request } from 'express';
 import { z } from 'zod';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
 import {
     generateAdminToken,
     verifyAdminPassword,
@@ -2660,6 +2661,1165 @@ router.get('/admin/midtrans/webhooks', requireAdminAuth, async (req: AdminAuthRe
             error: {
                 code: 'INTERNAL_SERVER_ERROR',
                 message: 'Failed to fetch webhook logs'
+            }
+        });
+    }
+});
+
+// System Settings API
+
+// Validation schema for updating settings
+const updateSettingSchema = z.object({
+    value: z.any(), // Can be string, number, boolean, or JSON
+});
+
+// Validation schema for updating feature flags
+const updateFeatureFlagSchema = z.object({
+    enabled: z.boolean(),
+    plans: z.array(z.string()).optional(), // Optional: specific plans this feature is enabled for
+});
+
+// GET /api/admin/settings - Get all system settings or filter by category
+router.get('/admin/settings', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        const category = req.query.category as string;
+
+        // Validate category if provided
+        const validCategories = ['general', 'payment', 'email', 'whatsapp', 'features'];
+        if (category && !validCategories.includes(category)) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: `Invalid category. Must be one of: ${validCategories.join(', ')}`
+                }
+            });
+        }
+
+        // Fetch settings from database
+        const settings = await adminStorage.getSystemSettings(category);
+
+        // Log admin activity
+        await adminStorage.logAdminActivity({
+            adminId: req.admin.id,
+            action: 'VIEW_SETTINGS',
+            resourceType: 'SYSTEM_SETTINGS',
+            details: { category },
+            ipAddress: req.ip || req.socket.remoteAddress,
+        });
+
+        res.json({
+            success: true,
+            data: settings,
+        });
+    } catch (error) {
+        console.error('Error fetching system settings:', error);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to fetch system settings'
+            }
+        });
+    }
+});
+
+// GET /api/admin/settings/features - Get all feature flags
+// IMPORTANT: This route must come BEFORE /admin/settings/:key to avoid matching "features" as a key
+router.get('/admin/settings/features', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        // Fetch feature flags from database (category = 'features')
+        const featureFlags = await adminStorage.getFeatureFlags();
+
+        // Log admin activity
+        await adminStorage.logAdminActivity({
+            adminId: req.admin.id,
+            action: 'VIEW_FEATURE_FLAGS',
+            resourceType: 'FEATURE_FLAGS',
+            ipAddress: req.ip || req.socket.remoteAddress,
+        });
+
+        res.json({
+            success: true,
+            data: featureFlags,
+        });
+    } catch (error) {
+        console.error('Error fetching feature flags:', error);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to fetch feature flags'
+            }
+        });
+    }
+});
+
+// GET /api/admin/settings/audit-log - Get audit log with pagination and filtering
+// IMPORTANT: This route must come BEFORE /admin/settings/:key to avoid matching "audit-log" as a key
+router.get('/admin/settings/audit-log', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        // Parse query parameters
+        const pageParam = req.query.page as string;
+        const limitParam = req.query.limit as string;
+        const page = pageParam ? parseInt(pageParam) : 1;
+        const limit = limitParam ? parseInt(limitParam) : 20;
+        const adminId = req.query.adminId as string;
+        const action = req.query.action as string;
+        const resourceType = req.query.resourceType as string;
+        const dateFrom = req.query.dateFrom ? parseInt(req.query.dateFrom as string) : undefined;
+        const dateTo = req.query.dateTo ? parseInt(req.query.dateTo as string) : undefined;
+
+        // Validate pagination parameters
+        if (isNaN(page) || page < 1) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Page must be greater than 0'
+                }
+            });
+        }
+
+        if (isNaN(limit) || limit < 1 || limit > 100) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Limit must be between 1 and 100'
+                }
+            });
+        }
+
+        // Validate date parameters if provided
+        if (dateFrom && isNaN(dateFrom)) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Invalid dateFrom parameter'
+                }
+            });
+        }
+
+        if (dateTo && isNaN(dateTo)) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Invalid dateTo parameter'
+                }
+            });
+        }
+
+        // Fetch audit log from database
+        const result = await adminStorage.getAuditLog({
+            page,
+            limit,
+            adminId,
+            action,
+            resourceType,
+            dateFrom,
+            dateTo,
+        });
+
+        // Log admin activity
+        await adminStorage.logAdminActivity({
+            adminId: req.admin.id,
+            action: 'VIEW_AUDIT_LOG',
+            resourceType: 'AUDIT_LOG',
+            details: { page, limit, adminId, action, resourceType, dateFrom, dateTo },
+            ipAddress: req.ip || req.socket.remoteAddress,
+        });
+
+        res.json({
+            success: true,
+            data: result,
+        });
+    } catch (error) {
+        console.error('Error fetching audit log:', error);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to fetch audit log'
+            }
+        });
+    }
+});
+
+// PUT /api/admin/settings/features/:key - Update feature flag by key
+// IMPORTANT: This route must come BEFORE /admin/settings/:key to avoid matching "features" as a key
+router.put('/admin/settings/features/:key', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        const featureKey = req.params.key;
+
+        // Validate input
+        const validatedData = updateFeatureFlagSchema.parse(req.body);
+
+        // Get old feature flag value for audit log
+        const oldFeatureFlag = await adminStorage.getSystemSettingByKey(featureKey);
+
+        if (!oldFeatureFlag) {
+            return res.status(404).json({
+                success: false,
+                error: {
+                    code: 'RESOURCE_NOT_FOUND',
+                    message: 'Feature flag not found'
+                }
+            });
+        }
+
+        // Verify it's a feature flag (category = 'features')
+        if (oldFeatureFlag.category !== 'features') {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Setting is not a feature flag'
+                }
+            });
+        }
+
+        // Build feature flag value object
+        const featureFlagValue = {
+            enabled: validatedData.enabled,
+            plans: validatedData.plans || [], // Empty array means enabled for all plans
+        };
+
+        // Update feature flag in database
+        const updatedFeatureFlag = await adminStorage.updateSystemSetting(
+            featureKey,
+            featureFlagValue,
+            req.admin.id
+        );
+
+        // Log admin activity with old and new values
+        await adminStorage.logAdminActivity({
+            adminId: req.admin.id,
+            action: 'UPDATE_FEATURE_FLAG',
+            resourceType: 'FEATURE_FLAGS',
+            resourceId: featureKey,
+            details: {
+                key: featureKey,
+                oldValue: oldFeatureFlag.value,
+                newValue: featureFlagValue,
+            },
+            ipAddress: req.ip || req.socket.remoteAddress,
+        });
+
+        res.json({
+            success: true,
+            data: updatedFeatureFlag,
+            message: 'Feature flag updated successfully',
+        });
+    } catch (error) {
+        console.error('Error updating feature flag:', error);
+
+        if (error instanceof z.ZodError) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Invalid input data',
+                    details: error.errors
+                }
+            });
+        }
+
+        if (error instanceof Error && error.message === 'Setting not found') {
+            return res.status(404).json({
+                success: false,
+                error: {
+                    code: 'RESOURCE_NOT_FOUND',
+                    message: 'Feature flag not found'
+                }
+            });
+        }
+
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to update feature flag'
+            }
+        });
+    }
+});
+
+// Payment Gateway Configuration API
+
+// Encryption key from environment or generate a default one (should be in env for production)
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'dev-encryption-key-32-chars!!'; // Must be 32 chars
+const ENCRYPTION_ALGORITHM = 'aes-256-cbc';
+
+/**
+ * Encrypt sensitive data
+ */
+function encryptData(text: string): string {
+    try {
+        // Ensure key is 32 bytes
+        const key = Buffer.from(ENCRYPTION_KEY.padEnd(32, '0').slice(0, 32));
+        const iv = randomBytes(16);
+        const cipher = createCipheriv(ENCRYPTION_ALGORITHM, key, iv);
+
+        let encrypted = cipher.update(text, 'utf8', 'hex');
+        encrypted += cipher.final('hex');
+
+        // Return IV + encrypted data
+        return iv.toString('hex') + ':' + encrypted;
+    } catch (error) {
+        console.error('Encryption error:', error);
+        throw new Error('Failed to encrypt data');
+    }
+}
+
+/**
+ * Decrypt sensitive data
+ */
+function decryptData(encryptedText: string): string {
+    try {
+        // Ensure key is 32 bytes
+        const key = Buffer.from(ENCRYPTION_KEY.padEnd(32, '0').slice(0, 32));
+        const parts = encryptedText.split(':');
+
+        if (parts.length !== 2) {
+            throw new Error('Invalid encrypted data format');
+        }
+
+        const iv = Buffer.from(parts[0], 'hex');
+        const encrypted = parts[1];
+        const decipher = createDecipheriv(ENCRYPTION_ALGORITHM, key, iv);
+
+        let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+        decrypted += decipher.final('utf8');
+
+        return decrypted;
+    } catch (error) {
+        console.error('Decryption error:', error);
+        throw new Error('Failed to decrypt data');
+    }
+}
+
+// Validation schema for payment gateway configuration
+const paymentGatewayConfigSchema = z.object({
+    serverKey: z.string().min(1, 'Server key is required'),
+    clientKey: z.string().min(1, 'Client key is required'),
+    isProduction: z.boolean().default(false),
+    webhookUrl: z.string().url('Invalid webhook URL').optional(),
+});
+
+// GET /api/admin/settings/payment - Get payment gateway configuration
+// IMPORTANT: This route must come BEFORE /admin/settings/:key to avoid matching "payment" as a key
+router.get('/admin/settings/payment', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        // Fetch payment gateway settings from database
+        const settings = await adminStorage.getSystemSettings('payment');
+
+        // Decrypt sensitive credentials for display (masked)
+        const config: any = {
+            serverKey: '',
+            clientKey: '',
+            isProduction: false,
+            webhookUrl: '',
+        };
+
+        for (const setting of settings) {
+            if (setting.key === 'payment.midtrans.server_key' && setting.value) {
+                try {
+                    const decrypted = decryptData(setting.value as string);
+                    // Mask the key for security (show first 8 and last 4 chars)
+                    config.serverKey = decrypted.length > 12
+                        ? decrypted.substring(0, 8) + '...' + decrypted.substring(decrypted.length - 4)
+                        : '***';
+                    config.hasServerKey = true;
+                } catch (error) {
+                    console.error('Error decrypting server key:', error);
+                    config.serverKey = 'Error decrypting';
+                    config.hasServerKey = false;
+                }
+            } else if (setting.key === 'payment.midtrans.client_key' && setting.value) {
+                try {
+                    const decrypted = decryptData(setting.value as string);
+                    // Mask the key for security
+                    config.clientKey = decrypted.length > 12
+                        ? decrypted.substring(0, 8) + '...' + decrypted.substring(decrypted.length - 4)
+                        : '***';
+                    config.hasClientKey = true;
+                } catch (error) {
+                    console.error('Error decrypting client key:', error);
+                    config.clientKey = 'Error decrypting';
+                    config.hasClientKey = false;
+                }
+            } else if (setting.key === 'payment.midtrans.is_production') {
+                config.isProduction = setting.value === true || setting.value === 'true';
+            } else if (setting.key === 'payment.midtrans.webhook_url') {
+                config.webhookUrl = setting.value as string;
+            }
+        }
+
+        // If no settings found, return current environment variables (masked)
+        if (settings.length === 0) {
+            const envServerKey = process.env.MIDTRANS_SERVER_KEY || '';
+            const envClientKey = process.env.MIDTRANS_CLIENT_KEY || '';
+
+            config.serverKey = envServerKey.length > 12
+                ? envServerKey.substring(0, 8) + '...' + envServerKey.substring(envServerKey.length - 4)
+                : envServerKey ? '***' : 'Not configured';
+            config.clientKey = envClientKey.length > 12
+                ? envClientKey.substring(0, 8) + '...' + envClientKey.substring(envClientKey.length - 4)
+                : envClientKey ? '***' : 'Not configured';
+            config.isProduction = process.env.MIDTRANS_IS_PRODUCTION === 'true';
+            config.webhookUrl = process.env.MIDTRANS_WEBHOOK_URL || '';
+            config.hasServerKey = !!envServerKey;
+            config.hasClientKey = !!envClientKey;
+            config.source = 'environment';
+        } else {
+            config.source = 'database';
+        }
+
+        // Log admin activity
+        await adminStorage.logAdminActivity({
+            adminId: req.admin.id,
+            action: 'VIEW_PAYMENT_SETTINGS',
+            resourceType: 'PAYMENT_SETTINGS',
+            ipAddress: req.ip || req.socket.remoteAddress,
+        });
+
+        res.json({
+            success: true,
+            data: config,
+        });
+    } catch (error) {
+        console.error('Error fetching payment gateway settings:', error);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to fetch payment gateway settings'
+            }
+        });
+    }
+});
+
+// PUT /api/admin/settings/payment - Update payment gateway configuration
+// IMPORTANT: This route must come BEFORE /admin/settings/:key to avoid matching "payment" as a key
+router.put('/admin/settings/payment', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        // Validate input
+        const validatedData = paymentGatewayConfigSchema.parse(req.body);
+
+        // Encrypt sensitive credentials before storing
+        const encryptedServerKey = encryptData(validatedData.serverKey);
+        const encryptedClientKey = encryptData(validatedData.clientKey);
+
+        // Get old settings for audit log
+        const oldSettings = await adminStorage.getSystemSettings('payment');
+        const oldConfig: any = {};
+        for (const setting of oldSettings) {
+            if (setting.key === 'payment.midtrans.is_production') {
+                oldConfig.isProduction = setting.value;
+            } else if (setting.key === 'payment.midtrans.webhook_url') {
+                oldConfig.webhookUrl = setting.value;
+            }
+        }
+
+        // Update or create settings in database
+        await adminStorage.upsertSystemSetting({
+            category: 'payment',
+            key: 'payment.midtrans.server_key',
+            value: encryptedServerKey,
+            dataType: 'string',
+            description: 'Midtrans Server Key (encrypted)',
+            updatedBy: req.admin.id,
+        });
+
+        await adminStorage.upsertSystemSetting({
+            category: 'payment',
+            key: 'payment.midtrans.client_key',
+            value: encryptedClientKey,
+            dataType: 'string',
+            description: 'Midtrans Client Key (encrypted)',
+            updatedBy: req.admin.id,
+        });
+
+        await adminStorage.upsertSystemSetting({
+            category: 'payment',
+            key: 'payment.midtrans.is_production',
+            value: validatedData.isProduction,
+            dataType: 'boolean',
+            description: 'Midtrans Production Mode',
+            updatedBy: req.admin.id,
+        });
+
+        if (validatedData.webhookUrl) {
+            await adminStorage.upsertSystemSetting({
+                category: 'payment',
+                key: 'payment.midtrans.webhook_url',
+                value: validatedData.webhookUrl,
+                dataType: 'string',
+                description: 'Midtrans Webhook URL',
+                updatedBy: req.admin.id,
+            });
+        }
+
+        // Log admin activity (don't log actual credentials)
+        await adminStorage.logAdminActivity({
+            adminId: req.admin.id,
+            action: 'UPDATE_PAYMENT_SETTINGS',
+            resourceType: 'PAYMENT_SETTINGS',
+            details: {
+                isProduction: validatedData.isProduction,
+                webhookUrl: validatedData.webhookUrl,
+                serverKeyUpdated: true,
+                clientKeyUpdated: true,
+                oldConfig,
+            },
+            ipAddress: req.ip || req.socket.remoteAddress,
+        });
+
+        // Test Midtrans connection with new credentials
+        let connectionTestResult = {
+            success: false,
+            message: 'Connection test not performed',
+        };
+
+        try {
+            // Create a temporary Midtrans service instance with new credentials
+            const testApiUrl = validatedData.isProduction
+                ? 'https://api.midtrans.com/v2'
+                : 'https://api.sandbox.midtrans.com/v2';
+
+            // Test connection by making a simple API call
+            const testOrderId = `test-${Date.now()}`;
+            const authHeader = Buffer.from(validatedData.serverKey + ':').toString('base64');
+
+            const response = await fetch(`${testApiUrl}/${testOrderId}/status`, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json',
+                    'Authorization': `Basic ${authHeader}`,
+                },
+            });
+
+            // Even if the order doesn't exist (404), if we get a proper response, credentials are valid
+            if (response.status === 404 || response.status === 200) {
+                connectionTestResult = {
+                    success: true,
+                    message: 'Midtrans API connection successful. Credentials are valid.',
+                };
+            } else if (response.status === 401) {
+                connectionTestResult = {
+                    success: false,
+                    message: 'Invalid Midtrans credentials. Please check your Server Key.',
+                };
+            } else {
+                const errorData = await response.json().catch(() => ({}));
+                connectionTestResult = {
+                    success: false,
+                    message: `Midtrans API returned status ${response.status}: ${errorData.status_message || 'Unknown error'}`,
+                };
+            }
+        } catch (error) {
+            console.error('Error testing Midtrans connection:', error);
+            connectionTestResult = {
+                success: false,
+                message: `Failed to test connection: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            };
+        }
+
+        res.json({
+            success: true,
+            message: 'Payment gateway settings updated successfully',
+            data: {
+                isProduction: validatedData.isProduction,
+                webhookUrl: validatedData.webhookUrl,
+                connectionTest: connectionTestResult,
+            },
+        });
+    } catch (error) {
+        console.error('Error updating payment gateway settings:', error);
+        console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+
+        if (error instanceof z.ZodError) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Invalid input data',
+                    details: error.errors
+                }
+            });
+        }
+
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to update payment gateway settings',
+                details: error instanceof Error ? error.message : 'Unknown error'
+            }
+        });
+    }
+});
+
+// Email Configuration API
+
+// Validation schema for email settings
+const emailConfigSchema = z.object({
+    smtpHost: z.string().min(1, 'SMTP host is required'),
+    smtpPort: z.number().int().min(1).max(65535, 'SMTP port must be between 1 and 65535'),
+    smtpUser: z.string().min(1, 'SMTP user is required'),
+    smtpPassword: z.string().min(1, 'SMTP password is required'),
+    smtpFrom: z.string().email('Invalid sender email address'),
+    smtpSecure: z.boolean().optional().default(false),
+});
+
+// GET /api/admin/settings/email - Get email configuration
+// IMPORTANT: This route must come BEFORE /admin/settings/:key to avoid matching "email" as a key
+router.get('/admin/settings/email', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        // Fetch email settings from database
+        const emailSettings = await adminStorage.getSystemSettings('email');
+
+        // Build email configuration object
+        const emailConfig: any = {
+            smtpHost: '',
+            smtpPort: 587,
+            smtpUser: '',
+            smtpFrom: '',
+            smtpSecure: false,
+        };
+
+        for (const setting of emailSettings) {
+            if (setting.key === 'email.smtp.host') {
+                emailConfig.smtpHost = setting.value;
+            } else if (setting.key === 'email.smtp.port') {
+                emailConfig.smtpPort = parseInt(setting.value);
+            } else if (setting.key === 'email.smtp.user') {
+                emailConfig.smtpUser = setting.value;
+            } else if (setting.key === 'email.smtp.password') {
+                // Decrypt password before sending (but mask it)
+                try {
+                    const decryptedPassword = decryptData(setting.value);
+                    emailConfig.smtpPassword = '********'; // Mask password
+                    emailConfig.hasPassword = decryptedPassword.length > 0;
+                } catch (error) {
+                    emailConfig.smtpPassword = '';
+                    emailConfig.hasPassword = false;
+                }
+            } else if (setting.key === 'email.smtp.from') {
+                emailConfig.smtpFrom = setting.value;
+            } else if (setting.key === 'email.smtp.secure') {
+                emailConfig.smtpSecure = setting.value === 'true' || setting.value === true;
+            }
+        }
+
+        // Log admin activity
+        await adminStorage.logAdminActivity({
+            adminId: req.admin.id,
+            action: 'VIEW_EMAIL_SETTINGS',
+            resourceType: 'EMAIL_SETTINGS',
+            ipAddress: req.ip || req.socket.remoteAddress,
+        });
+
+        res.json({
+            success: true,
+            data: emailConfig,
+        });
+    } catch (error) {
+        console.error('Error fetching email settings:', error);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to fetch email settings'
+            }
+        });
+    }
+});
+
+// PUT /api/admin/settings/email - Update email configuration
+// IMPORTANT: This route must come BEFORE /admin/settings/:key to avoid matching "email" as a key
+router.put('/admin/settings/email', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        // Validate input
+        const validatedData = emailConfigSchema.parse(req.body);
+
+        // Encrypt password before storing
+        const encryptedPassword = encryptData(validatedData.smtpPassword);
+
+        // Get old settings for audit log
+        const oldSettings = await adminStorage.getSystemSettings('email');
+        const oldConfig: any = {};
+        for (const setting of oldSettings) {
+            if (setting.key === 'email.smtp.host') {
+                oldConfig.smtpHost = setting.value;
+            } else if (setting.key === 'email.smtp.port') {
+                oldConfig.smtpPort = setting.value;
+            } else if (setting.key === 'email.smtp.user') {
+                oldConfig.smtpUser = setting.value;
+            } else if (setting.key === 'email.smtp.from') {
+                oldConfig.smtpFrom = setting.value;
+            } else if (setting.key === 'email.smtp.secure') {
+                oldConfig.smtpSecure = setting.value;
+            }
+        }
+
+        // Update or create settings in database
+        await adminStorage.upsertSystemSetting({
+            category: 'email',
+            key: 'email.smtp.host',
+            value: validatedData.smtpHost,
+            dataType: 'string',
+            description: 'SMTP Server Host',
+            updatedBy: req.admin.id,
+        });
+
+        await adminStorage.upsertSystemSetting({
+            category: 'email',
+            key: 'email.smtp.port',
+            value: String(validatedData.smtpPort),
+            dataType: 'number',
+            description: 'SMTP Server Port',
+            updatedBy: req.admin.id,
+        });
+
+        await adminStorage.upsertSystemSetting({
+            category: 'email',
+            key: 'email.smtp.user',
+            value: validatedData.smtpUser,
+            dataType: 'string',
+            description: 'SMTP Username',
+            updatedBy: req.admin.id,
+        });
+
+        await adminStorage.upsertSystemSetting({
+            category: 'email',
+            key: 'email.smtp.password',
+            value: encryptedPassword,
+            dataType: 'string',
+            description: 'SMTP Password (encrypted)',
+            updatedBy: req.admin.id,
+        });
+
+        await adminStorage.upsertSystemSetting({
+            category: 'email',
+            key: 'email.smtp.from',
+            value: validatedData.smtpFrom,
+            dataType: 'string',
+            description: 'Email Sender Address',
+            updatedBy: req.admin.id,
+        });
+
+        await adminStorage.upsertSystemSetting({
+            category: 'email',
+            key: 'email.smtp.secure',
+            value: String(validatedData.smtpSecure || false),
+            dataType: 'boolean',
+            description: 'Use SSL/TLS',
+            updatedBy: req.admin.id,
+        });
+
+        // Log admin activity (don't log actual password)
+        await adminStorage.logAdminActivity({
+            adminId: req.admin.id,
+            action: 'UPDATE_EMAIL_SETTINGS',
+            resourceType: 'EMAIL_SETTINGS',
+            details: {
+                smtpHost: validatedData.smtpHost,
+                smtpPort: validatedData.smtpPort,
+                smtpUser: validatedData.smtpUser,
+                smtpFrom: validatedData.smtpFrom,
+                smtpSecure: validatedData.smtpSecure,
+                passwordUpdated: true,
+                oldConfig,
+            },
+            ipAddress: req.ip || req.socket.remoteAddress,
+        });
+
+        res.json({
+            success: true,
+            message: 'Email settings updated successfully',
+            data: {
+                smtpHost: validatedData.smtpHost,
+                smtpPort: validatedData.smtpPort,
+                smtpUser: validatedData.smtpUser,
+                smtpFrom: validatedData.smtpFrom,
+                smtpSecure: validatedData.smtpSecure,
+            },
+        });
+    } catch (error) {
+        console.error('Error updating email settings:', error);
+        console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+
+        if (error instanceof z.ZodError) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Invalid input data',
+                    details: error.errors
+                }
+            });
+        }
+
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to update email settings',
+                details: error instanceof Error ? error.message : 'Unknown error'
+            }
+        });
+    }
+});
+
+// POST /api/admin/settings/email/test - Test email configuration
+// IMPORTANT: This route must come BEFORE /admin/settings/:key to avoid matching "email" as a key
+router.post('/admin/settings/email/test', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        // Validate input
+        const testEmailSchema = z.object({
+            recipientEmail: z.string().email('Invalid recipient email address'),
+        });
+
+        const { recipientEmail } = testEmailSchema.parse(req.body);
+
+        // Fetch email settings from database
+        const emailSettings = await adminStorage.getSystemSettings('email');
+
+        // Build email configuration
+        let smtpHost = '';
+        let smtpPort = 587;
+        let smtpUser = '';
+        let smtpPassword = '';
+        let smtpFrom = '';
+        let smtpSecure = false;
+
+        for (const setting of emailSettings) {
+            if (setting.key === 'email.smtp.host') {
+                smtpHost = setting.value;
+            } else if (setting.key === 'email.smtp.port') {
+                smtpPort = parseInt(setting.value);
+            } else if (setting.key === 'email.smtp.user') {
+                smtpUser = setting.value;
+            } else if (setting.key === 'email.smtp.password') {
+                // Decrypt password
+                try {
+                    smtpPassword = decryptData(setting.value);
+                } catch (error) {
+                    console.error('Error decrypting SMTP password:', error);
+                }
+            } else if (setting.key === 'email.smtp.from') {
+                smtpFrom = setting.value;
+            } else if (setting.key === 'email.smtp.secure') {
+                smtpSecure = setting.value === 'true' || setting.value === true;
+            }
+        }
+
+        // Validate that all required settings are present
+        if (!smtpHost || !smtpUser || !smtpPassword || !smtpFrom) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Email settings are incomplete. Please configure SMTP settings first.'
+                }
+            });
+        }
+
+        // Import nodemailer dynamically
+        const nodemailer = await import('nodemailer');
+
+        // Create transporter
+        const transporter = nodemailer.default.createTransport({
+            host: smtpHost,
+            port: smtpPort,
+            secure: smtpSecure,
+            auth: {
+                user: smtpUser,
+                pass: smtpPassword,
+            },
+        });
+
+        // Verify connection
+        await transporter.verify();
+
+        // Send test email
+        const info = await transporter.sendMail({
+            from: smtpFrom,
+            to: recipientEmail,
+            subject: 'Test Email from Monly Admin Panel',
+            text: 'This is a test email to verify your SMTP configuration is working correctly.',
+            html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                    <h2 style="color: #333;">Test Email</h2>
+                    <p>This is a test email to verify your SMTP configuration is working correctly.</p>
+                    <p>If you received this email, your email settings are configured properly.</p>
+                    <hr style="border: 1px solid #eee; margin: 20px 0;">
+                    <p style="color: #666; font-size: 12px;">
+                        Sent from Monly Admin Panel<br>
+                        ${new Date().toLocaleString()}
+                    </p>
+                </div>
+            `,
+        });
+
+        // Log admin activity
+        await adminStorage.logAdminActivity({
+            adminId: req.admin.id,
+            action: 'TEST_EMAIL_SETTINGS',
+            resourceType: 'EMAIL_SETTINGS',
+            details: {
+                recipientEmail,
+                messageId: info.messageId,
+                success: true,
+            },
+            ipAddress: req.ip || req.socket.remoteAddress,
+        });
+
+        res.json({
+            success: true,
+            message: `Test email sent successfully to ${recipientEmail}`,
+            data: {
+                messageId: info.messageId,
+                recipientEmail,
+            },
+        });
+    } catch (error) {
+        console.error('Error sending test email:', error);
+
+        // Log failed test attempt
+        if (req.admin) {
+            await adminStorage.logAdminActivity({
+                adminId: req.admin.id,
+                action: 'TEST_EMAIL_SETTINGS',
+                resourceType: 'EMAIL_SETTINGS',
+                details: {
+                    success: false,
+                    error: error instanceof Error ? error.message : 'Unknown error',
+                },
+                ipAddress: req.ip || req.socket.remoteAddress,
+            });
+        }
+
+        if (error instanceof z.ZodError) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Invalid input data',
+                    details: error.errors
+                }
+            });
+        }
+
+        // Handle specific SMTP errors
+        let errorMessage = 'Failed to send test email';
+        if (error instanceof Error) {
+            if (error.message.includes('EAUTH')) {
+                errorMessage = 'Authentication failed. Please check your SMTP username and password.';
+            } else if (error.message.includes('ECONNREFUSED')) {
+                errorMessage = 'Connection refused. Please check your SMTP host and port.';
+            } else if (error.message.includes('ETIMEDOUT')) {
+                errorMessage = 'Connection timed out. Please check your SMTP host and port.';
+            } else if (error.message.includes('ENOTFOUND')) {
+                errorMessage = 'SMTP host not found. Please check your SMTP host.';
+            } else {
+                errorMessage = error.message;
+            }
+        }
+
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'EMAIL_TEST_FAILED',
+                message: errorMessage,
+                details: error instanceof Error ? error.message : 'Unknown error'
+            }
+        });
+    }
+});
+
+// PUT /api/admin/settings/:key - Update system setting by key
+// IMPORTANT: This route must come AFTER specific routes like /admin/settings/features/:key and /admin/settings/payment
+router.put('/admin/settings/:key', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        const settingKey = req.params.key;
+
+        // Validate input
+        const validatedData = updateSettingSchema.parse(req.body);
+
+        // Get old setting value for audit log
+        const oldSetting = await adminStorage.getSystemSettingByKey(settingKey);
+
+        if (!oldSetting) {
+            return res.status(404).json({
+                success: false,
+                error: {
+                    code: 'RESOURCE_NOT_FOUND',
+                    message: 'Setting not found'
+                }
+            });
+        }
+
+        // Update setting in database
+        const updatedSetting = await adminStorage.updateSystemSetting(
+            settingKey,
+            validatedData.value,
+            req.admin.id
+        );
+
+        // Log admin activity with old and new values
+        await adminStorage.logAdminActivity({
+            adminId: req.admin.id,
+            action: 'UPDATE_SETTING',
+            resourceType: 'SYSTEM_SETTINGS',
+            resourceId: settingKey,
+            details: {
+                key: settingKey,
+                oldValue: oldSetting.value,
+                newValue: validatedData.value,
+            },
+            ipAddress: req.ip || req.socket.remoteAddress,
+        });
+
+        res.json({
+            success: true,
+            data: updatedSetting,
+            message: 'Setting updated successfully',
+        });
+    } catch (error) {
+        console.error('Error updating system setting:', error);
+
+        if (error instanceof z.ZodError) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Invalid input data',
+                    details: error.errors
+                }
+            });
+        }
+
+        if (error instanceof Error && error.message === 'Setting not found') {
+            return res.status(404).json({
+                success: false,
+                error: {
+                    code: 'RESOURCE_NOT_FOUND',
+                    message: 'Setting not found'
+                }
+            });
+        }
+
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to update system setting'
             }
         });
     }
