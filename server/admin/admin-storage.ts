@@ -1,5 +1,5 @@
 import { db } from "../db";
-import { adminUsers, adminActivityLogs, users, userSubscriptions, subscriptionPlans, payments } from "@shared/schema";
+import { adminUsers, adminActivityLogs, users, userSubscriptions, subscriptionPlans, payments, transactions, budgets, goals } from "@shared/schema";
 import { eq, sql, desc } from "drizzle-orm";
 
 export interface AdminUserData {
@@ -650,6 +650,128 @@ export class AdminStorage {
         return { labels, data };
     }
 
+    // Get user list with pagination, search, and filtering
+    async getUserList(params: {
+        page?: number;
+        limit?: number;
+        search?: string;
+        plan?: string;
+        status?: string;
+    }): Promise<{
+        users: any[];
+        total: number;
+        page: number;
+        totalPages: number;
+    }> {
+        const page = params.page || 1;
+        const limit = params.limit || 20;
+        const offset = (page - 1) * limit;
+
+        // Build WHERE conditions
+        const conditions: any[] = [];
+
+        // Search by name, email, or user ID
+        if (params.search) {
+            const searchTerm = `%${params.search}%`;
+            conditions.push(
+                sql`(
+                    ${users.email} LIKE ${searchTerm} OR
+                    ${users.firstName} LIKE ${searchTerm} OR
+                    ${users.lastName} LIKE ${searchTerm} OR
+                    ${users.id} LIKE ${searchTerm}
+                )`
+            );
+        }
+
+        // Filter by subscription status
+        if (params.status) {
+            conditions.push(eq(users.subscriptionStatus, params.status));
+        }
+
+        // Build WHERE clause
+        const whereClause = conditions.length > 0
+            ? sql`WHERE ${sql.join(conditions, sql` AND `)}`
+            : sql``;
+
+        // Get total count using raw SQL
+        const countQuery = sql`
+            SELECT COUNT(*) as count
+            FROM ${users}
+            ${params.plan ? sql`LEFT JOIN ${subscriptionPlans} ON ${users.subscriptionPlanId} = ${subscriptionPlans.id}` : sql``}
+            ${whereClause}
+            ${params.plan ? sql`AND ${subscriptionPlans.name} = ${params.plan}` : sql``}
+        `;
+        const countResult = await db.all(countQuery);
+        const total = (countResult[0] as any)?.count || 0;
+
+        // Build main query with joins
+        let mainQuery;
+
+        if (params.plan) {
+            // Filter by subscription plan name
+            mainQuery = sql`
+                SELECT 
+                    ${users.id},
+                    ${users.email},
+                    ${users.firstName},
+                    ${users.lastName},
+                    ${users.subscriptionStatus},
+                    ${users.createdAt},
+                    ${users.updatedAt},
+                    ${subscriptionPlans.name} as subscriptionPlan,
+                    ${subscriptionPlans.displayName} as subscriptionPlanDisplay,
+                    (SELECT COUNT(*) FROM ${transactions} WHERE ${transactions.userId} = ${users.id}) as transactionCount
+                FROM ${users}
+                LEFT JOIN ${subscriptionPlans} ON ${users.subscriptionPlanId} = ${subscriptionPlans.id}
+                ${whereClause}
+                ${params.plan ? sql`AND ${subscriptionPlans.name} = ${params.plan}` : sql``}
+                ORDER BY ${users.createdAt} DESC
+                LIMIT ${limit} OFFSET ${offset}
+            `;
+        } else {
+            mainQuery = sql`
+                SELECT 
+                    ${users.id},
+                    ${users.email},
+                    ${users.firstName},
+                    ${users.lastName},
+                    ${users.subscriptionStatus},
+                    ${users.createdAt},
+                    ${users.updatedAt},
+                    ${subscriptionPlans.name} as subscriptionPlan,
+                    ${subscriptionPlans.displayName} as subscriptionPlanDisplay,
+                    (SELECT COUNT(*) FROM ${transactions} WHERE ${transactions.userId} = ${users.id}) as transactionCount
+                FROM ${users}
+                LEFT JOIN ${subscriptionPlans} ON ${users.subscriptionPlanId} = ${subscriptionPlans.id}
+                ${whereClause}
+                ORDER BY ${users.createdAt} DESC
+                LIMIT ${limit} OFFSET ${offset}
+            `;
+        }
+
+        const result = await db.all(mainQuery);
+        const userList = result.map((row: any) => ({
+            id: row.id,
+            name: `${row.firstName || ''} ${row.lastName || ''}`.trim() || 'N/A',
+            email: row.email || 'N/A',
+            subscriptionPlan: row.subscriptionPlan || 'free',
+            subscriptionPlanDisplay: row.subscriptionPlanDisplay || 'Free',
+            status: row.subscriptionStatus || 'free',
+            registrationDate: row.createdAt,
+            lastLogin: row.updatedAt,
+            transactionCount: row.transactionCount || 0,
+        }));
+
+        const totalPages = Math.ceil(total / limit);
+
+        return {
+            users: userList,
+            total,
+            page,
+            totalPages,
+        };
+    }
+
     // Get revenue analytics
     async getRevenueAnalytics(): Promise<{
         mrr: number;
@@ -755,6 +877,381 @@ export class AdminStorage {
             revenueGrowth: Math.round(revenueGrowth * 100) / 100,
             revenueByPlan,
             revenueByMethod,
+        };
+    }
+
+    // Get user details by ID
+    async getUserDetails(userId: string): Promise<any> {
+        // Fetch user profile
+        const [user] = await db
+            .select()
+            .from(users)
+            .where(eq(users.id, userId));
+
+        if (!user) {
+            return null;
+        }
+
+        // Fetch user subscription details
+        const subscriptionResult = await db
+            .select({
+                id: userSubscriptions.id,
+                planId: userSubscriptions.planId,
+                status: userSubscriptions.status,
+                billingCycle: userSubscriptions.billingCycle,
+                startDate: userSubscriptions.startDate,
+                endDate: userSubscriptions.endDate,
+                autoRenew: userSubscriptions.autoRenew,
+                planName: subscriptionPlans.name,
+                planDisplayName: subscriptionPlans.displayName,
+                priceMonthly: subscriptionPlans.priceMonthly,
+                priceYearly: subscriptionPlans.priceYearly,
+            })
+            .from(userSubscriptions)
+            .leftJoin(subscriptionPlans, eq(userSubscriptions.planId, subscriptionPlans.id))
+            .where(eq(userSubscriptions.userId, userId))
+            .orderBy(desc(userSubscriptions.createdAt))
+            .limit(1);
+
+        const subscription = subscriptionResult[0] || null;
+
+        // Fetch usage statistics
+        const transactionCountResult = await db
+            .select({ count: sql<number>`COUNT(*)` })
+            .from(transactions)
+            .where(eq(transactions.userId, userId));
+        const transactionCount = transactionCountResult[0]?.count || 0;
+
+        const budgetCountResult = await db
+            .select({ count: sql<number>`COUNT(*)` })
+            .from(budgets)
+            .where(eq(budgets.userId, userId));
+        const budgetCount = budgetCountResult[0]?.count || 0;
+
+        const goalCountResult = await db
+            .select({ count: sql<number>`COUNT(*)` })
+            .from(goals)
+            .where(eq(goals.userId, userId));
+        const goalCount = goalCountResult[0]?.count || 0;
+
+        // Fetch login history (using updatedAt as proxy for last login)
+        // In a real system, you'd have a separate login_history table
+        const loginHistory = [
+            {
+                timestamp: user.updatedAt,
+                ipAddress: 'N/A',
+                device: 'N/A',
+            }
+        ];
+
+        return {
+            id: user.id,
+            name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'N/A',
+            email: user.email || 'N/A',
+            subscriptionPlan: subscription?.planName || 'free',
+            subscriptionPlanDisplay: subscription?.planDisplayName || 'Free',
+            status: user.subscriptionStatus || 'free',
+            registrationDate: user.createdAt,
+            lastLogin: user.updatedAt,
+            profile: {
+                firstName: user.firstName || '',
+                lastName: user.lastName || '',
+                phone: null, // Not in current schema
+                profileImageUrl: user.profileImageUrl,
+            },
+            subscription: subscription ? {
+                plan: subscription.planName,
+                planDisplay: subscription.planDisplayName,
+                startDate: subscription.startDate,
+                endDate: subscription.endDate,
+                status: subscription.status,
+                autoRenew: Boolean(subscription.autoRenew),
+                billingCycle: subscription.billingCycle,
+                price: subscription.billingCycle === 'monthly'
+                    ? subscription.priceMonthly
+                    : subscription.priceYearly,
+            } : null,
+            usage: {
+                transactionCount,
+                budgetCount,
+                goalCount,
+                accountCount: 0, // Not tracked in current schema
+            },
+            activity: {
+                loginHistory,
+                lastActive: user.updatedAt,
+            },
+        };
+    }
+
+    // Suspend user account
+    async suspendUser(userId: string, reason: string): Promise<void> {
+        const now = Math.floor(Date.now() / 1000);
+
+        // Update user status to suspended
+        await db
+            .update(users)
+            .set({
+                subscriptionStatus: 'suspended',
+                updatedAt: now,
+            })
+            .where(eq(users.id, userId));
+
+        // Cancel all active subscriptions
+        await db
+            .update(userSubscriptions)
+            .set({
+                status: 'cancelled',
+                cancelledAt: now,
+                cancellationReason: `Account suspended: ${reason}`,
+                updatedAt: now,
+            })
+            .where(sql`${userSubscriptions.userId} = ${userId} AND ${userSubscriptions.status} = 'active'`);
+    }
+
+    // Activate user account
+    async activateUser(userId: string): Promise<void> {
+        const now = Math.floor(Date.now() / 1000);
+
+        // Update user status to active (or free if no subscription)
+        await db
+            .update(users)
+            .set({
+                subscriptionStatus: 'active',
+                updatedAt: now,
+            })
+            .where(eq(users.id, userId));
+    }
+
+    // Soft delete user account
+    async deleteUser(userId: string, reason: string): Promise<void> {
+        const now = Math.floor(Date.now() / 1000);
+
+        // Update user status to deleted and anonymize personal data
+        await db
+            .update(users)
+            .set({
+                subscriptionStatus: 'deleted',
+                email: `deleted_${userId}@deleted.local`,
+                firstName: 'Deleted',
+                lastName: 'User',
+                profileImageUrl: null,
+                updatedAt: now,
+            })
+            .where(eq(users.id, userId));
+
+        // Cancel all active subscriptions
+        await db
+            .update(userSubscriptions)
+            .set({
+                status: 'cancelled',
+                cancelledAt: now,
+                cancellationReason: `Account deleted: ${reason}`,
+                updatedAt: now,
+            })
+            .where(sql`${userSubscriptions.userId} = ${userId} AND ${userSubscriptions.status} = 'active'`);
+
+        // Note: Transaction data is preserved for compliance
+        // WhatsApp integrations and other data remain for audit purposes
+    }
+
+    // Get user data for export with filtering and date range
+    async getUserDataForExport(params: {
+        search?: string;
+        plan?: string;
+        status?: string;
+        dateFrom?: number;
+        dateTo?: number;
+    }): Promise<any[]> {
+        // Build WHERE conditions
+        const conditions: any[] = [];
+
+        // Search by name, email, or user ID
+        if (params.search) {
+            const searchTerm = `%${params.search}%`;
+            conditions.push(
+                sql`(
+                    ${users.email} LIKE ${searchTerm} OR
+                    ${users.firstName} LIKE ${searchTerm} OR
+                    ${users.lastName} LIKE ${searchTerm} OR
+                    ${users.id} LIKE ${searchTerm}
+                )`
+            );
+        }
+
+        // Filter by subscription status
+        if (params.status) {
+            conditions.push(eq(users.subscriptionStatus, params.status));
+        }
+
+        // Filter by date range (registration date)
+        if (params.dateFrom) {
+            conditions.push(sql`${users.createdAt} >= ${params.dateFrom}`);
+        }
+
+        if (params.dateTo) {
+            conditions.push(sql`${users.createdAt} <= ${params.dateTo}`);
+        }
+
+        // Build WHERE clause
+        const whereClause = conditions.length > 0
+            ? sql`WHERE ${sql.join(conditions, sql` AND `)}`
+            : sql``;
+
+        // Build main query with joins
+        let mainQuery;
+
+        if (params.plan) {
+            // Filter by subscription plan name
+            mainQuery = sql`
+                SELECT 
+                    ${users.id},
+                    ${users.email},
+                    ${users.firstName},
+                    ${users.lastName},
+                    ${users.subscriptionStatus},
+                    ${users.createdAt},
+                    ${users.updatedAt},
+                    ${subscriptionPlans.name} as subscriptionPlan,
+                    ${subscriptionPlans.displayName} as subscriptionPlanDisplay,
+                    (SELECT COUNT(*) FROM ${transactions} WHERE ${transactions.userId} = ${users.id}) as transactionCount,
+                    (SELECT COUNT(*) FROM ${budgets} WHERE ${budgets.userId} = ${users.id}) as budgetCount,
+                    (SELECT COUNT(*) FROM ${goals} WHERE ${goals.userId} = ${users.id}) as goalCount
+                FROM ${users}
+                LEFT JOIN ${subscriptionPlans} ON ${users.subscriptionPlanId} = ${subscriptionPlans.id}
+                ${whereClause}
+                ${params.plan ? sql`AND ${subscriptionPlans.name} = ${params.plan}` : sql``}
+                ORDER BY ${users.createdAt} DESC
+            `;
+        } else {
+            mainQuery = sql`
+                SELECT 
+                    ${users.id},
+                    ${users.email},
+                    ${users.firstName},
+                    ${users.lastName},
+                    ${users.subscriptionStatus},
+                    ${users.createdAt},
+                    ${users.updatedAt},
+                    ${subscriptionPlans.name} as subscriptionPlan,
+                    ${subscriptionPlans.displayName} as subscriptionPlanDisplay,
+                    (SELECT COUNT(*) FROM ${transactions} WHERE ${transactions.userId} = ${users.id}) as transactionCount,
+                    (SELECT COUNT(*) FROM ${budgets} WHERE ${budgets.userId} = ${users.id}) as budgetCount,
+                    (SELECT COUNT(*) FROM ${goals} WHERE ${goals.userId} = ${users.id}) as goalCount
+                FROM ${users}
+                LEFT JOIN ${subscriptionPlans} ON ${users.subscriptionPlanId} = ${subscriptionPlans.id}
+                ${whereClause}
+                ORDER BY ${users.createdAt} DESC
+            `;
+        }
+
+        const result = await db.all(mainQuery);
+
+        return result.map((row: any) => ({
+            id: row.id,
+            email: row.email || 'N/A',
+            firstName: row.firstName || '',
+            lastName: row.lastName || '',
+            fullName: `${row.firstName || ''} ${row.lastName || ''}`.trim() || 'N/A',
+            subscriptionPlan: row.subscriptionPlan || 'free',
+            subscriptionPlanDisplay: row.subscriptionPlanDisplay || 'Free',
+            status: row.subscriptionStatus || 'free',
+            registrationDate: row.createdAt,
+            lastLogin: row.updatedAt,
+            transactionCount: row.transactionCount || 0,
+            budgetCount: row.budgetCount || 0,
+            goalCount: row.goalCount || 0,
+        }));
+    }
+
+    // Get user activity analytics
+    async getUserActivity(userId: string): Promise<{
+        loginHistory: Array<{
+            timestamp: number;
+            ipAddress: string;
+            device: string;
+        }>;
+        engagementMetrics: {
+            dau: boolean; // Daily Active User (active in last 24 hours)
+            wau: boolean; // Weekly Active User (active in last 7 days)
+            mau: boolean; // Monthly Active User (active in last 30 days)
+            lastActiveDate: number;
+            totalDaysActive: number;
+        };
+        retentionMetrics: {
+            daysSinceRegistration: number;
+            daysSinceLastActive: number;
+            isRetained: boolean; // Active in last 30 days
+            activityRate: number; // Percentage of days active since registration
+        };
+    }> {
+        const now = Math.floor(Date.now() / 1000);
+        const oneDayAgo = now - (24 * 60 * 60);
+        const sevenDaysAgo = now - (7 * 24 * 60 * 60);
+        const thirtyDaysAgo = now - (30 * 24 * 60 * 60);
+
+        // Fetch user data
+        const [user] = await db
+            .select()
+            .from(users)
+            .where(eq(users.id, userId));
+
+        if (!user) {
+            throw new Error('User not found');
+        }
+
+        // Login history - using updatedAt as proxy for activity
+        // In a real system, you'd have a separate login_history or user_activity_logs table
+        const loginHistory = [
+            {
+                timestamp: user.updatedAt || user.createdAt || now,
+                ipAddress: 'N/A', // Would come from login_history table
+                device: 'N/A', // Would come from login_history table
+            }
+        ];
+
+        // Calculate engagement metrics
+        const lastActiveDate = user.updatedAt || user.createdAt || now;
+        const dau = lastActiveDate >= oneDayAgo;
+        const wau = lastActiveDate >= sevenDaysAgo;
+        const mau = lastActiveDate >= thirtyDaysAgo;
+
+        // Count total days with activity (transactions created)
+        // This gives us a proxy for how many days the user has been active
+        const activityDaysResult = await db
+            .select({
+                count: sql<number>`COUNT(DISTINCT DATE(datetime(${transactions.createdAt}, 'unixepoch')))`,
+            })
+            .from(transactions)
+            .where(eq(transactions.userId, userId));
+        const totalDaysActive = activityDaysResult[0]?.count || 0;
+
+        // Calculate retention metrics
+        const registrationDate = user.createdAt || now;
+        const daysSinceRegistration = Math.floor((now - registrationDate) / (24 * 60 * 60));
+        const daysSinceLastActive = Math.floor((now - lastActiveDate) / (24 * 60 * 60));
+        const isRetained = mau; // User is retained if they're a MAU
+
+        // Activity rate: percentage of days active since registration
+        const activityRate = daysSinceRegistration > 0
+            ? (totalDaysActive / daysSinceRegistration) * 100
+            : 0;
+
+        return {
+            loginHistory,
+            engagementMetrics: {
+                dau,
+                wau,
+                mau,
+                lastActiveDate,
+                totalDaysActive,
+            },
+            retentionMetrics: {
+                daysSinceRegistration,
+                daysSinceLastActive,
+                isRetained,
+                activityRate: Math.round(activityRate * 100) / 100,
+            },
         };
     }
 }

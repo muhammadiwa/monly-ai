@@ -423,4 +423,518 @@ router.get('/admin/dashboard/charts/subscriptions', requireAdminAuth, async (req
     }
 });
 
+// GET /api/admin/users - User list with pagination, search, and filtering
+router.get('/admin/users', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        // Parse query parameters
+        const page = parseInt(req.query.page as string) || 1;
+        const limit = parseInt(req.query.limit as string) || 20;
+        const search = req.query.search as string;
+        const plan = req.query.plan as string;
+        const status = req.query.status as string;
+
+        // Validate pagination parameters
+        if (page < 1) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Page must be greater than 0'
+                }
+            });
+        }
+
+        if (limit < 1 || limit > 100) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Limit must be between 1 and 100'
+                }
+            });
+        }
+
+        // Fetch user list from database
+        const result = await adminStorage.getUserList({
+            page,
+            limit,
+            search,
+            plan,
+            status,
+        });
+
+        // Log admin activity
+        await adminStorage.logAdminActivity({
+            adminId: req.admin.id,
+            action: 'VIEW_USER_LIST',
+            resourceType: 'USER',
+            details: { page, limit, search, plan, status },
+            ipAddress: req.ip || req.socket.remoteAddress,
+        });
+
+        res.json({
+            success: true,
+            data: result,
+        });
+    } catch (error) {
+        console.error('Error fetching user list:', error);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to fetch user list'
+            }
+        });
+    }
+});
+
+// GET /api/admin/users/export - Export user data as CSV
+// IMPORTANT: This route must come BEFORE /admin/users/:id to avoid matching "export" as an ID
+router.get('/admin/users/export', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        // Parse query parameters
+        const search = req.query.search as string;
+        const plan = req.query.plan as string;
+        const status = req.query.status as string;
+        const dateFrom = req.query.dateFrom ? parseInt(req.query.dateFrom as string) : undefined;
+        const dateTo = req.query.dateTo ? parseInt(req.query.dateTo as string) : undefined;
+
+        // Validate date range if provided
+        if (dateFrom && isNaN(dateFrom)) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Invalid dateFrom parameter'
+                }
+            });
+        }
+
+        if (dateTo && isNaN(dateTo)) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Invalid dateTo parameter'
+                }
+            });
+        }
+
+        // Fetch user data for export
+        const userData = await adminStorage.getUserDataForExport({
+            search,
+            plan,
+            status,
+            dateFrom,
+            dateTo,
+        });
+
+        // Log admin activity
+        await adminStorage.logAdminActivity({
+            adminId: req.admin.id,
+            action: 'EXPORT_USER_DATA',
+            resourceType: 'USER',
+            details: { search, plan, status, dateFrom, dateTo, count: userData.length },
+            ipAddress: req.ip || req.socket.remoteAddress,
+        });
+
+        // Generate CSV content
+        const csvHeaders = [
+            'User ID',
+            'Email',
+            'First Name',
+            'Last Name',
+            'Full Name',
+            'Subscription Plan',
+            'Status',
+            'Registration Date',
+            'Last Login',
+            'Transaction Count',
+            'Budget Count',
+            'Goal Count'
+        ];
+
+        const csvRows = userData.map(user => [
+            user.id,
+            user.email,
+            user.firstName,
+            user.lastName,
+            user.fullName,
+            user.subscriptionPlanDisplay,
+            user.status,
+            user.registrationDate && !isNaN(user.registrationDate) ? new Date(user.registrationDate * 1000).toISOString() : '',
+            user.lastLogin && !isNaN(user.lastLogin) ? new Date(user.lastLogin * 1000).toISOString() : '',
+            user.transactionCount,
+            user.budgetCount,
+            user.goalCount
+        ]);
+
+        // Escape CSV values (handle commas, quotes, newlines)
+        const escapeCSV = (value: any): string => {
+            if (value === null || value === undefined) {
+                return '';
+            }
+            const stringValue = String(value);
+            if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
+                return `"${stringValue.replace(/"/g, '""')}"`;
+            }
+            return stringValue;
+        };
+
+        // Build CSV content
+        const csvContent = [
+            csvHeaders.map(escapeCSV).join(','),
+            ...csvRows.map(row => row.map(escapeCSV).join(','))
+        ].join('\n');
+
+        // Set response headers for CSV download
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+        const filename = `users-export-${timestamp}.csv`;
+
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Pragma', 'no-cache');
+
+        // Send CSV content
+        res.send(csvContent);
+    } catch (error) {
+        console.error('Error exporting user data:', error);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to export user data'
+            }
+        });
+    }
+});
+
+// GET /api/admin/users/:id - Get user details
+router.get('/admin/users/:id', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        const userId = req.params.id;
+
+        // Fetch user details from database
+        const userDetails = await adminStorage.getUserDetails(userId);
+
+        if (!userDetails) {
+            return res.status(404).json({
+                success: false,
+                error: {
+                    code: 'RESOURCE_NOT_FOUND',
+                    message: 'User not found'
+                }
+            });
+        }
+
+        // Log admin activity
+        await adminStorage.logAdminActivity({
+            adminId: req.admin.id,
+            action: 'VIEW_USER_DETAILS',
+            resourceType: 'USER',
+            resourceId: userId,
+            ipAddress: req.ip || req.socket.remoteAddress,
+        });
+
+        res.json({
+            success: true,
+            data: userDetails,
+        });
+    } catch (error) {
+        console.error('Error fetching user details:', error);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to fetch user details'
+            }
+        });
+    }
+});
+
+// PUT /api/admin/users/:id/suspend - Suspend user account
+router.put('/admin/users/:id/suspend', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        const userId = req.params.id;
+        const { reason } = req.body;
+
+        // Validate reason
+        if (!reason || typeof reason !== 'string' || reason.trim().length === 0) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Suspension reason is required'
+                }
+            });
+        }
+
+        // Check if user exists
+        const userDetails = await adminStorage.getUserDetails(userId);
+        if (!userDetails) {
+            return res.status(404).json({
+                success: false,
+                error: {
+                    code: 'RESOURCE_NOT_FOUND',
+                    message: 'User not found'
+                }
+            });
+        }
+
+        // Suspend user
+        await adminStorage.suspendUser(userId, reason);
+
+        // Log admin activity
+        await adminStorage.logAdminActivity({
+            adminId: req.admin.id,
+            action: 'SUSPEND_USER',
+            resourceType: 'USER',
+            resourceId: userId,
+            details: { reason },
+            ipAddress: req.ip || req.socket.remoteAddress,
+        });
+
+        // TODO: Send notification email to user
+        // This would be implemented in a separate email service
+
+        res.json({
+            success: true,
+            message: 'User suspended successfully',
+        });
+    } catch (error) {
+        console.error('Error suspending user:', error);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to suspend user'
+            }
+        });
+    }
+});
+
+// PUT /api/admin/users/:id/activate - Activate user account
+router.put('/admin/users/:id/activate', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        const userId = req.params.id;
+
+        // Check if user exists
+        const userDetails = await adminStorage.getUserDetails(userId);
+        if (!userDetails) {
+            return res.status(404).json({
+                success: false,
+                error: {
+                    code: 'RESOURCE_NOT_FOUND',
+                    message: 'User not found'
+                }
+            });
+        }
+
+        // Activate user
+        await adminStorage.activateUser(userId);
+
+        // Log admin activity
+        await adminStorage.logAdminActivity({
+            adminId: req.admin.id,
+            action: 'ACTIVATE_USER',
+            resourceType: 'USER',
+            resourceId: userId,
+            ipAddress: req.ip || req.socket.remoteAddress,
+        });
+
+        // TODO: Send notification email to user
+        // This would be implemented in a separate email service
+
+        res.json({
+            success: true,
+            message: 'User activated successfully',
+        });
+    } catch (error) {
+        console.error('Error activating user:', error);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to activate user'
+            }
+        });
+    }
+});
+
+// DELETE /api/admin/users/:id - Soft delete user account
+router.delete('/admin/users/:id', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        const userId = req.params.id;
+        const { reason } = req.body;
+
+        // Validate reason
+        if (!reason || typeof reason !== 'string' || reason.trim().length === 0) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Deletion reason is required'
+                }
+            });
+        }
+
+        // Check if user exists
+        const userDetails = await adminStorage.getUserDetails(userId);
+        if (!userDetails) {
+            return res.status(404).json({
+                success: false,
+                error: {
+                    code: 'RESOURCE_NOT_FOUND',
+                    message: 'User not found'
+                }
+            });
+        }
+
+        // Soft delete user
+        await adminStorage.deleteUser(userId, reason);
+
+        // Log admin activity
+        await adminStorage.logAdminActivity({
+            adminId: req.admin.id,
+            action: 'DELETE_USER',
+            resourceType: 'USER',
+            resourceId: userId,
+            details: { reason },
+            ipAddress: req.ip || req.socket.remoteAddress,
+        });
+
+        // TODO: Send notification email to user
+        // This would be implemented in a separate email service
+
+        res.json({
+            success: true,
+            message: 'User deleted successfully',
+        });
+    } catch (error) {
+        console.error('Error deleting user:', error);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to delete user'
+            }
+        });
+    }
+});
+
+// GET /api/admin/users/:id/activity - Get user activity analytics
+router.get('/admin/users/:id/activity', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        const userId = req.params.id;
+
+        // Fetch user activity analytics from database
+        const activityData = await adminStorage.getUserActivity(userId);
+
+        // Log admin activity
+        await adminStorage.logAdminActivity({
+            adminId: req.admin.id,
+            action: 'VIEW_USER_ACTIVITY',
+            resourceType: 'USER',
+            resourceId: userId,
+            ipAddress: req.ip || req.socket.remoteAddress,
+        });
+
+        res.json({
+            success: true,
+            data: activityData,
+        });
+    } catch (error) {
+        console.error('Error fetching user activity:', error);
+
+        if (error instanceof Error && error.message === 'User not found') {
+            return res.status(404).json({
+                success: false,
+                error: {
+                    code: 'RESOURCE_NOT_FOUND',
+                    message: 'User not found'
+                }
+            });
+        }
+
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to fetch user activity'
+            }
+        });
+    }
+});
+
 export default router;
