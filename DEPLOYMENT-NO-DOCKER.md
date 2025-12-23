@@ -541,6 +541,47 @@ chmod +x /var/www/html/monly-ai/backup.sh
 
 ## Troubleshooting
 
+### Database Issues
+
+**Problem**: "Cannot open database because the directory does not exist"
+
+**Solution**:
+```bash
+# 1. Check current DATABASE_URL
+cat .env.production | grep DATABASE_URL
+
+# 2. Fix DATABASE_URL (should be relative path)
+sed -i 's|^DATABASE_URL=.*|DATABASE_URL=file:./database.sqlite|' .env.production
+
+# 3. Load environment and initialize database
+export $(grep -v '^#' .env.production | xargs)
+npm run db:push
+
+# 4. Verify database created
+ls -la database.sqlite
+
+# 5. Check database tables
+sqlite3 database.sqlite ".tables"
+
+# 6. Restart application
+pm2 restart monly-ai
+```
+
+**Problem**: Database migration errors
+
+**Solution**:
+```bash
+# Re-run database push with correct environment
+export $(grep -v '^#' .env.production | xargs)
+npm run db:push
+
+# If still failing, check drizzle config
+cat drizzle.config.ts
+
+# Verify DATABASE_URL is set
+echo $DATABASE_URL
+```
+
 ### Application Won't Start
 
 ```bash

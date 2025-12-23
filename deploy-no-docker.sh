@@ -64,10 +64,28 @@ else
     echo "✅ PM2 already installed"
 fi
 
-# Step 3: Install build tools
+# Step 3: Install build tools and Chromium dependencies
 echo ""
-echo -e "${BLUE}🔧 Step 3: Installing build tools...${NC}"
+echo -e "${BLUE}🔧 Step 3: Installing build tools and dependencies...${NC}"
 sudo apt install -y build-essential python3 git
+
+# Install Chromium dependencies for WhatsApp Web.js
+echo "Installing Chromium dependencies for WhatsApp Bot..."
+sudo apt install -y \
+  ca-certificates fonts-liberation \
+  libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 libc6 libcairo2 libcups2t64 \
+  libdbus-1-3 libexpat1 libfontconfig1 libgbm1 libgcc-s1 libglib2.0-0t64 \
+  libgtk-3-0t64 libnspr4 libnss3 libpango-1.0-0 libpangocairo-1.0-0 \
+  libstdc++6 libx11-6 libx11-xcb1 libxcb1 libxcomposite1 libxcursor1 \
+  libxdamage1 libxext6 libxfixes3 libxi6 libxrandr2 libxrender1 libxss1 \
+  libxtst6 lsb-release wget xdg-utils 2>/dev/null || echo "Some packages not available, continuing..."
+
+# Create symlinks for compatibility (Ubuntu 24.04 uses t64 suffix)
+sudo ln -sf /usr/lib/x86_64-linux-gnu/libatk-1.0.so.0t64 /usr/lib/x86_64-linux-gnu/libatk-1.0.so.0 2>/dev/null || true
+sudo ln -sf /usr/lib/x86_64-linux-gnu/libatk-bridge-2.0.so.0t64 /usr/lib/x86_64-linux-gnu/libatk-bridge-2.0.so.0 2>/dev/null || true
+sudo ldconfig
+
+echo "✅ Build tools and dependencies installed"
 
 # Step 4: Install dependencies
 echo ""
@@ -111,16 +129,19 @@ fi
 echo ""
 echo -e "${BLUE}💾 Step 7: Initializing database...${NC}"
 
-# Create data directory if not exists
-mkdir -p data
-
-# Update DATABASE_URL in .env.production if needed
-if grep -q "DATABASE_URL=file:./database.sqlite" .env.production; then
-    echo "Database path already configured"
-else
+# Ensure DATABASE_URL is set correctly in .env.production
+if ! grep -q "^DATABASE_URL=" .env.production; then
     echo "DATABASE_URL=file:./database.sqlite" >> .env.production
+    echo "✅ DATABASE_URL added to .env.production"
+elif ! grep -q "DATABASE_URL=file:./database.sqlite" .env.production; then
+    sed -i 's|^DATABASE_URL=.*|DATABASE_URL=file:./database.sqlite|' .env.production
+    echo "✅ DATABASE_URL updated in .env.production"
+else
+    echo "✅ DATABASE_URL already configured correctly"
 fi
 
+# Load environment and initialize database
+export $(grep -v '^#' .env.production | xargs)
 npm run db:push
 echo "✅ Database initialized"
 
