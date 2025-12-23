@@ -36,10 +36,10 @@ export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   upsertUser(user: UpsertUser): Promise<User>;
   updateUser(id: string, userData: Partial<UpsertUser>): Promise<User>;
-  
-  // Demo authentication methods
+
+  // User authentication methods
   getUserByEmail(email: string): Promise<User | undefined>;
-  createDemoUser(userData: { email: string; name: string; password: string }): Promise<User>;
+  createUser(userData: { email: string; name: string; password: string }): Promise<User>;
 
   // User preferences operations
   getUserPreferences(userId: string): Promise<UserPreferences | undefined>;
@@ -85,11 +85,11 @@ export interface IStorage {
   updateGoal(id: number, goal: Partial<InsertGoal>): Promise<Goal>;
   deleteGoal(id: number): Promise<void>;
   getGoalById(id: number): Promise<Goal | undefined>;
-  
+
   // Goal boost operations
   createGoalBoost(goalId: number, userId: string, amount: number, description?: string): Promise<any>;
   getGoalBoosts(goalId: number): Promise<any[]>;
-  
+
   // Goal savings plan operations
   createGoalSavingsPlan(goalId: number, userId: string, amount: number, frequency: string): Promise<any>;
   updateGoalSavingsPlan(id: number, updates: any): Promise<any>;
@@ -119,7 +119,7 @@ export interface IStorage {
 
   // Get today's spending from database
   getTodaySpending(userId: string): Promise<number>;
-  
+
   // Get weekly spending from database
   getWeeklySpending(userId: string): Promise<number>;
 
@@ -153,16 +153,16 @@ export interface IStorage {
     todaySpending: number;
     weeklySpending: number;
     weeklyBudgetUsed: number;
-    
+
     // Monthly Data
     monthlyIncome: number;
     monthlyExpenseTotal: number;
-    
+
     // Analytics Data
     monthlyExpenses: any[];
     categoryExpenses: any[];
     transactionCount: number;
-    
+
     // Comparison Data
     previousMonth: {
       income: number;
@@ -235,8 +235,11 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
-  async createDemoUser(userData: { email: string; name: string; password: string }): Promise<User> {
-    const userId = `demo_${Math.floor(Date.now() / 1000)}_${Math.random().toString(36).substring(2, 11)}`;
+  async createUser(userData: { email: string; name: string; password: string }): Promise<User> {
+    // Generate proper UUID v4
+    const userId = crypto.randomUUID();
+    const now = Math.floor(Date.now() / 1000);
+
     const [user] = await db
       .insert(users)
       .values({
@@ -246,6 +249,8 @@ export class DatabaseStorage implements IStorage {
         lastName: userData.name.split(' ').slice(1).join(' ') || null,
         password: userData.password,
         profileImageUrl: null,
+        createdAt: now,
+        updatedAt: now,
       })
       .returning();
     return user;
@@ -366,7 +371,7 @@ export class DatabaseStorage implements IStorage {
       .where(eq(transactions.userId, userId))
       .orderBy(desc(transactions.date))
       .limit(limit);
-      
+
     return results.map(row => ({
       ...row.transactions,
       category: row.categories
@@ -390,10 +395,10 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(transactions.date));
 
     // Filter transactions within date range using normalized timestamps
-    const filteredResults = allTransactions.filter(row => 
+    const filteredResults = allTransactions.filter(row =>
       this.isDateInRange(row.transactions.date, startTimestamp, endTimestamp)
     );
-      
+
     return filteredResults.map(row => ({
       ...row.transactions,
       category: row.categories
@@ -412,7 +417,7 @@ export class DatabaseStorage implements IStorage {
         )
       )
       .orderBy(desc(transactions.date));
-      
+
     return results.map(row => ({
       ...row.transactions,
       category: row.categories
@@ -446,9 +451,9 @@ export class DatabaseStorage implements IStorage {
       .from(transactions)
       .leftJoin(categories, eq(transactions.categoryId, categories.id))
       .where(eq(transactions.id, id));
-    
+
     if (!result) return undefined;
-    
+
     return {
       ...result.transactions,
       category: result.categories
@@ -463,7 +468,7 @@ export class DatabaseStorage implements IStorage {
       .leftJoin(categories, eq(budgets.categoryId, categories.id))
       .where(eq(budgets.userId, userId))
       .orderBy(desc(budgets.createdAt));
-      
+
     return results.map(row => ({
       ...row.budgets,
       category: row.categories
@@ -483,17 +488,17 @@ export class DatabaseStorage implements IStorage {
       ...budget,
       updatedAt: Math.floor(Date.now() / 1000) // Always set current timestamp
     };
-    
+
     const [updatedBudget] = await db
       .update(budgets)
       .set(updateData)
       .where(eq(budgets.id, id))
       .returning();
-      
+
     if (!updatedBudget) {
       throw new Error(`Budget with id ${id} not found`);
     }
-    
+
     return updatedBudget;
   }
 
@@ -507,9 +512,9 @@ export class DatabaseStorage implements IStorage {
       .from(budgets)
       .leftJoin(categories, eq(budgets.categoryId, categories.id))
       .where(eq(budgets.id, id));
-    
+
     if (!result) return undefined;
-    
+
     return {
       ...result.budgets,
       category: result.categories
@@ -519,7 +524,7 @@ export class DatabaseStorage implements IStorage {
   async createOrUpdateBudget(budgetData: any): Promise<Budget> {
     // Check if budget already exists for this user and category
     const existingBudget = await this.getBudgetByCategory(budgetData.userId, budgetData.categoryId);
-    
+
     if (existingBudget) {
       // Update existing budget
       return await this.updateBudget(existingBudget.id, {
@@ -570,7 +575,7 @@ export class DatabaseStorage implements IStorage {
         gte(transactions.date, startDate),
         lte(transactions.date, endDate)
       ));
-    
+
     return Number(result[0]?.total || 0);
   }
 
@@ -613,7 +618,7 @@ export class DatabaseStorage implements IStorage {
     // First delete related records to avoid foreign key constraint errors
     await db.delete(goalBoosts).where(eq(goalBoosts.goalId, id));
     await db.delete(goalSavingsPlans).where(eq(goalSavingsPlans.goalId, id));
-    
+
     // Now safe to delete the goal
     await db.delete(goals).where(eq(goals.id, id));
   }
@@ -623,10 +628,10 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(goals)
       .where(eq(goals.id, id));
-    
+
     return result;
   }
-  
+
   // Goal boost operations
   async createGoalBoost(goalId: number, userId: string, amount: number, description?: string): Promise<any> {
     // First update the goal's current amount
@@ -634,20 +639,20 @@ export class DatabaseStorage implements IStorage {
     if (!goal) {
       throw new Error("Goal not found");
     }
-    
+
     const newCurrentAmount = goal.currentAmount + amount;
     await this.updateGoal(goalId, { currentAmount: newCurrentAmount });
-    
+
     // Get user preferences for currency
     const userPreferences = await this.getUserPreferences(userId);
-    
+
     // Create expense transaction to deduct from available balance
     // This is CRITICAL for proper balance calculation
     const allCategories = await this.getCategories(userId);
-    let savingsCategory = allCategories.find(cat => 
+    let savingsCategory = allCategories.find(cat =>
       cat.name.toLowerCase() === "savings" || cat.name.toLowerCase() === "tabungan"
     );
-    
+
     if (!savingsCategory) {
       // Create savings category if it doesn't exist (in Indonesian)
       savingsCategory = await this.createCategory({
@@ -658,9 +663,9 @@ export class DatabaseStorage implements IStorage {
         color: "#0891B2"
       });
     }
-    
+
     const now = Math.floor(Date.now() / 1000);
-    
+
     await this.createTransaction({
       userId,
       amount,
@@ -670,7 +675,7 @@ export class DatabaseStorage implements IStorage {
       date: now,
       currency: userPreferences?.defaultCurrency || "USD"
     });
-    
+
     // Then record the boost
     const [boost] = await db
       .insert(goalBoosts)
@@ -683,10 +688,10 @@ export class DatabaseStorage implements IStorage {
         createdAt: now,
       })
       .returning();
-    
+
     return boost;
   }
-  
+
   async getGoalBoosts(goalId: number): Promise<any[]> {
     return await db
       .select()
@@ -694,14 +699,14 @@ export class DatabaseStorage implements IStorage {
       .where(eq(goalBoosts.goalId, goalId))
       .orderBy(desc(goalBoosts.date));
   }
-  
+
   // Goal savings plan operations
   async createGoalSavingsPlan(goalId: number, userId: string, amount: number, frequency: string): Promise<any> {
     const now = Math.floor(Date.now() / 1000);
-    
+
     // Calculate next contribution date based on frequency
     const nextDate = this.calculateNextContributionDate(frequency);
-    
+
     const [plan] = await db
       .insert(goalSavingsPlans)
       .values({
@@ -715,20 +720,20 @@ export class DatabaseStorage implements IStorage {
         updatedAt: now,
       })
       .returning();
-    
+
     return plan;
   }
-  
+
   async updateGoalSavingsPlan(id: number, updates: any): Promise<any> {
     const now = Math.floor(Date.now() / 1000);
-    
+
     // If we're updating frequency, recalculate next contribution date
     let nextContributionDate;
     if (updates.frequency) {
       const nextDate = this.calculateNextContributionDate(updates.frequency);
       nextContributionDate = Math.floor(nextDate.getTime() / 1000);
     }
-    
+
     const [plan] = await db
       .update(goalSavingsPlans)
       .set({
@@ -738,10 +743,10 @@ export class DatabaseStorage implements IStorage {
       })
       .where(eq(goalSavingsPlans.id, id))
       .returning();
-    
+
     return plan;
   }
-  
+
   async getActiveGoalSavingsPlans(userId: string): Promise<any[]> {
     return await db
       .select()
@@ -754,7 +759,7 @@ export class DatabaseStorage implements IStorage {
       )
       .orderBy(goalSavingsPlans.nextContributionDate);
   }
-  
+
   async getGoalSavingsPlansByGoalId(goalId: number): Promise<any[]> {
     return await db
       .select()
@@ -762,12 +767,12 @@ export class DatabaseStorage implements IStorage {
       .where(eq(goalSavingsPlans.goalId, goalId))
       .orderBy(desc(goalSavingsPlans.createdAt));
   }
-  
+
   // Helper for calculating next contribution date based on frequency
   private calculateNextContributionDate(frequency: string): Date {
     const now = new Date();
-    
-    switch(frequency) {
+
+    switch (frequency) {
       case 'weekly':
         now.setDate(now.getDate() + 7);
         break;
@@ -780,7 +785,7 @@ export class DatabaseStorage implements IStorage {
       default:
         now.setMonth(now.getMonth() + 1); // Default to monthly
     }
-    
+
     return now;
   }
 
@@ -807,14 +812,14 @@ export class DatabaseStorage implements IStorage {
       )
       .groupBy(sql`strftime('%Y-%m', datetime(date/1000, 'unixepoch'))`)
       .orderBy(sql`strftime('%Y-%m', datetime(date/1000, 'unixepoch'))`);
-    
+
     return result;
   }
 
   async getCategoryExpenses(userId: string, startDate: Date, endDate: Date): Promise<any[]> {
     const startTimestamp = startDate.getTime(); // Convert to timestamp
     const endTimestamp = endDate.getTime(); // Convert to timestamp
-    
+
     const result = await db
       .select({
         categoryName: categories.name,
@@ -833,7 +838,7 @@ export class DatabaseStorage implements IStorage {
       )
       .groupBy(categories.name, categories.color)
       .orderBy(desc(sum(transactions.amount)));
-    
+
     return result;
   }
 
@@ -860,7 +865,7 @@ export class DatabaseStorage implements IStorage {
 
     const totalIncome = parseFloat(income[0]?.total || "0");
     const totalExpenses = parseFloat(expenses[0]?.total || "0");
-    
+
     return totalIncome - totalExpenses;
   }
 
@@ -889,7 +894,7 @@ export class DatabaseStorage implements IStorage {
     });
 
     // Filter transactions within date range using normalized timestamps
-    const filteredTransactions = allTransactions.filter(transaction => 
+    const filteredTransactions = allTransactions.filter(transaction =>
       this.isDateInRange(transaction.date, startDate, endDate)
     );
 
@@ -897,7 +902,7 @@ export class DatabaseStorage implements IStorage {
 
     // Calculate total income
     const total = filteredTransactions.reduce((sum, transaction) => sum + transaction.amount, 0);
-    
+
     console.log(`Total monthly income: ${total}`);
     return total;
   }
@@ -927,7 +932,7 @@ export class DatabaseStorage implements IStorage {
     });
 
     // Filter transactions within date range using normalized timestamps
-    const filteredTransactions = allTransactions.filter(transaction => 
+    const filteredTransactions = allTransactions.filter(transaction =>
       this.isDateInRange(transaction.date, startDate, endDate)
     );
 
@@ -935,7 +940,7 @@ export class DatabaseStorage implements IStorage {
 
     // Calculate total expenses
     const total = filteredTransactions.reduce((sum, transaction) => sum + transaction.amount, 0);
-    
+
     console.log(`Total monthly expenses: ${total}`);
     return total;
   }
@@ -984,7 +989,7 @@ export class DatabaseStorage implements IStorage {
     console.log(`Found ${allTransactions.length} expense transactions for user ${userId}`);
 
     // Filter transactions for today using normalized timestamps
-    const todayTransactions = allTransactions.filter(transaction => 
+    const todayTransactions = allTransactions.filter(transaction =>
       this.isDateInRange(transaction.date, startOfToday, endOfToday)
     );
 
@@ -992,7 +997,7 @@ export class DatabaseStorage implements IStorage {
 
     // Calculate total spending for today
     const total = todayTransactions.reduce((sum, transaction) => sum + transaction.amount, 0);
-    
+
     console.log(`Total today spending: ${total}`);
     return total;
   }
@@ -1021,25 +1026,25 @@ export class DatabaseStorage implements IStorage {
     const now = new Date();
     const currentYear = now.getFullYear();
     const currentMonth = now.getMonth();
-    
+
     // Get current month data
     const monthlyIncome = await this.getMonthlyIncome(userId, currentYear, currentMonth);
     const monthlyExpenses = await this.getMonthlyExpenseTotal(userId, currentYear, currentMonth);
     const totalBalance = await this.getTotalBalance(userId);
-    
+
     // Calculate key financial metrics
     const savingsRate = monthlyIncome > 0 ? ((monthlyIncome - monthlyExpenses) / monthlyIncome * 100) : 0;
     const cashFlow = monthlyIncome - monthlyExpenses;
     const expenseRatio = monthlyIncome > 0 ? (monthlyExpenses / monthlyIncome * 100) : 100;
-    
+
     // Get recent transaction activity (last 30 days)
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     const recentTransactions = await this.getTransactionsByDateRange(userId, thirtyDaysAgo, now);
     const hasRecentActivity = recentTransactions.length > 0;
-    
+
     // Calculate financial score (0-100)
     let score = 50; // Base score
-    
+
     // Savings rate contribution (0-30 points)
     if (savingsRate >= 30) score += 30;
     else if (savingsRate >= 20) score += 25;
@@ -1048,37 +1053,37 @@ export class DatabaseStorage implements IStorage {
     else if (savingsRate >= 5) score += 10;
     else if (savingsRate >= 0) score += 5;
     else score -= 10; // Negative savings rate
-    
+
     // Cash flow contribution (0-25 points)
     if (cashFlow > monthlyIncome * 0.2) score += 25; // Saving >20% of income
     else if (cashFlow > monthlyIncome * 0.1) score += 20; // Saving >10% of income
     else if (cashFlow > 0) score += 15; // Positive cash flow
     else if (cashFlow > -monthlyIncome * 0.1) score += 5; // Small deficit
     else score -= 15; // Large deficit
-    
+
     // Net worth contribution (0-20 points)
     if (totalBalance > monthlyExpenses * 6) score += 20; // 6 months emergency fund
     else if (totalBalance > monthlyExpenses * 3) score += 15; // 3 months emergency fund
     else if (totalBalance > monthlyExpenses) score += 10; // 1 month emergency fund
     else if (totalBalance > 0) score += 5; // Positive net worth
     else score -= 10; // Negative net worth
-    
+
     // Income stability (0-15 points)
     if (monthlyIncome > 0) {
       score += 10; // Has income
       if (monthlyIncome > monthlyExpenses * 2) score += 5; // High income relative to expenses
     }
-    
+
     // Activity bonus (0-10 points)
     if (hasRecentActivity) score += 10;
-    
+
     // Expense management (0-10 points)
     if (expenseRatio <= 50) score += 10; // Very low expenses
     else if (expenseRatio <= 70) score += 7; // Low expenses
     else if (expenseRatio <= 90) score += 5; // Moderate expenses
     else if (expenseRatio <= 100) score += 2; // Breaking even
     // No penalty for high expenses as it's already reflected in savings rate
-    
+
     // Ensure score is within bounds
     return Math.max(0, Math.min(100, Math.round(score)));
   }
@@ -1152,15 +1157,15 @@ export class DatabaseStorage implements IStorage {
     const weeklyBudgetUsed = weeklyBudgetLimit > 0 ? Math.round((weeklySpending / weeklyBudgetLimit) * 100) : 0;
 
     // Calculate percentage changes
-    const incomeChange = previousMonthData.income > 0 ? 
+    const incomeChange = previousMonthData.income > 0 ?
       ((monthlyIncome - previousMonthData.income) / previousMonthData.income * 100) : 0;
-    const expenseChange = previousMonthData.expenses > 0 ? 
+    const expenseChange = previousMonthData.expenses > 0 ?
       ((monthlyExpenseTotal - previousMonthData.expenses) / previousMonthData.expenses * 100) : 0;
     const savingsRateChange = currentSavingsRate - previousMonthData.savingsRate;
-    
+
     // Calculate investment growth (simplified calculation based on savings)
     const investmentGrowth = currentSavingsRate > 15 ? 8.5 : currentSavingsRate > 10 ? 5.2 : 2.1;
-    const investmentChange = previousMonthData.savingsRate > 0 ? 
+    const investmentChange = previousMonthData.savingsRate > 0 ?
       ((currentSavingsRate - previousMonthData.savingsRate) / previousMonthData.savingsRate * 100) : 0;
 
     // Calculate transaction count
@@ -1228,30 +1233,30 @@ export class DatabaseStorage implements IStorage {
       this.getMonthlyIncome(userId, currentYear, currentMonth),
       this.getMonthlyExpenseTotal(userId, currentYear, currentMonth)
     ]);
-    
+
     const monthlyCashFlow = monthlyIncome - monthlyExpenses;
 
     // Calculate daily and weekly cash flow (last 30 days average)
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     const thirtyDaysAgoTimestamp = Math.floor(thirtyDaysAgo.getTime() / 1000); // Convert to Unix seconds
     const nowTimestamp = Math.floor(now.getTime() / 1000); // Convert to Unix seconds
-    
+
     // Use precise start/end dates with Unix seconds
     const last30DaysTransactions = await this.getTransactionsByDateRange(
       userId,
       new Date(thirtyDaysAgoTimestamp * 1000),
       new Date(nowTimestamp * 1000)
     );
-    
+
     // Calculate daily averages
     const dailyIncomeTotal = last30DaysTransactions
       .filter(t => t.type === 'income')
       .reduce((sum, t) => sum + t.amount, 0) / 30;
-    
+
     const dailyExpenseTotal = last30DaysTransactions
       .filter(t => t.type === 'expense')
       .reduce((sum, t) => sum + t.amount, 0) / 30;
-    
+
     const dailyCashFlow = dailyIncomeTotal - dailyExpenseTotal;
 
     // Calculate weekly averages (correctly based on daily amounts)
@@ -1270,55 +1275,55 @@ export class DatabaseStorage implements IStorage {
 
     // Generate cash flow trend (last 35 days, grouped by week with improved label accuracy)
     const cashFlowTrend: Array<{ date: string; amount: number; weekStart: string; weekEnd: string }> = [];
-    
+
     for (let i = 4; i >= 0; i--) {
       // Calculate week boundaries in a more calendar-accurate way
       // Start from the beginning of current day and go back in weekly increments
       const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      
+
       // Get start and end of the week (going back i+1 weeks for start, i weeks for end)
       const weekStartTime = new Date(todayStart.getTime() - (i + 1) * 7 * 24 * 60 * 60 * 1000);
       const weekEndTime = new Date(todayStart.getTime() - i * 7 * 24 * 60 * 60 * 1000 - 1); // -1ms to not include next week
-      
+
       // Convert to Unix seconds for consistent date handling
       const weekStartTimestamp = Math.floor(weekStartTime.getTime() / 1000);
       const weekEndTimestamp = Math.floor(weekEndTime.getTime() / 1000);
-      
+
       // Format dates for display
       const weekStartFormatted = weekStartTime.toISOString().split('T')[0];
       const weekEndFormatted = weekEndTime.toISOString().split('T')[0];
-      
+
       // Log for debugging
-      console.log(`Week ${5-i}: ${weekStartFormatted} to ${weekEndFormatted} [${weekStartTimestamp}-${weekEndTimestamp}]`);
-      
+      console.log(`Week ${5 - i}: ${weekStartFormatted} to ${weekEndFormatted} [${weekStartTimestamp}-${weekEndTimestamp}]`);
+
       // Get transactions for this week using precise timestamp ranges
       const weekTransactions = await this.getTransactionsByDateRange(
-        userId, 
+        userId,
         weekStartTime,
         weekEndTime
       );
-      
+
       // Calculate net cash flow for the week
       const weekIncome = weekTransactions
         .filter(t => t.type === 'income')
         .reduce((sum, t) => sum + t.amount, 0);
-        
+
       const weekExpense = weekTransactions
         .filter(t => t.type === 'expense')
         .reduce((sum, t) => sum + t.amount, 0);
-      
+
       const weekNetFlow = weekIncome - weekExpense;
-      
+
       // Use a more descriptive label format for the week
       const weekLabel = `${weekStartFormatted}`;
-      
+
       // Log transactions for debugging
-      console.log(`Week ${5-i} transactions: ${weekTransactions.length}`);
+      console.log(`Week ${5 - i} transactions: ${weekTransactions.length}`);
       weekTransactions.forEach(t => {
         const date = new Date(this.normalizeTimestamp(t.date) * 1000);
         console.log(`  - ${t.type}: ${t.amount} (${date.toISOString().split('T')[0]})`);
       });
-      
+
       // Add to trend data with better labeling
       cashFlowTrend.push({
         date: weekLabel,
@@ -1326,8 +1331,8 @@ export class DatabaseStorage implements IStorage {
         weekEnd: weekEndFormatted,
         amount: weekNetFlow
       });
-      
-      console.log(`Week ${5-i} flow: income=${weekIncome}, expense=${weekExpense}, net=${weekNetFlow}`);
+
+      console.log(`Week ${5 - i} flow: income=${weekIncome}, expense=${weekExpense}, net=${weekNetFlow}`);
     }
 
     console.log('Live Cash Flow Results:', {
@@ -1386,30 +1391,30 @@ export class DatabaseStorage implements IStorage {
   }>> {
     const now = new Date();
     const startDate = new Date(now.getFullYear(), now.getMonth() - months, 1);
-    
+
     // Get all transactions for the period
     const transactions = await this.getTransactionsByDateRange(userId, startDate, now);
     const expenseTransactions = transactions.filter(t => t.type === 'expense');
-    
+
     // Group by category and month
     const categoryMonthlySpending: Record<number, Record<string, number>> = {};
-    
+
     expenseTransactions.forEach(transaction => {
       if (!transaction.categoryId) return;
-      
+
       // Use normalized timestamp for consistent date handling
       const normalizedTimestamp = this.normalizeTimestamp(transaction.date);
       const transactionDate = new Date(normalizedTimestamp * 1000);
       const monthKey = `${transactionDate.getFullYear()}-${transactionDate.getMonth()}`;
-      
+
       if (!categoryMonthlySpending[transaction.categoryId]) {
         categoryMonthlySpending[transaction.categoryId] = {};
       }
-      
+
       if (!categoryMonthlySpending[transaction.categoryId][monthKey]) {
         categoryMonthlySpending[transaction.categoryId][monthKey] = 0;
       }
-      
+
       categoryMonthlySpending[transaction.categoryId][monthKey] += transaction.amount;
     });
 
@@ -1418,30 +1423,30 @@ export class DatabaseStorage implements IStorage {
       const categoryId = parseInt(categoryIdStr);
       const amounts = Object.values(monthlyData);
       const monthlyAverage = amounts.reduce((sum, amount) => sum + amount, 0) / Math.max(amounts.length, 1);
-      
+
       // Calculate trend (compare first half vs second half)
       const halfLength = Math.floor(amounts.length / 2);
       const firstHalf = amounts.slice(0, halfLength);
       const secondHalf = amounts.slice(-halfLength);
-      
+
       const firstHalfAvg = firstHalf.reduce((sum, amount) => sum + amount, 0) / Math.max(firstHalf.length, 1);
       const secondHalfAvg = secondHalf.reduce((sum, amount) => sum + amount, 0) / Math.max(secondHalf.length, 1);
-      
+
       let trend = 'stable';
       if (firstHalfAvg > 0) {
         const changePercentage = (secondHalfAvg - firstHalfAvg) / firstHalfAvg;
         if (changePercentage > 0.15) trend = 'increasing';
         else if (changePercentage < -0.15) trend = 'decreasing';
       }
-      
+
       // Calculate volatility (coefficient of variation)
       const variance = amounts.reduce((sum, amount) => sum + Math.pow(amount - monthlyAverage, 2), 0) / Math.max(amounts.length, 1);
       const standardDeviation = Math.sqrt(variance);
       const volatility = monthlyAverage > 0 ? standardDeviation / monthlyAverage : 0;
-      
+
       // Get category name
       const categoryName = expenseTransactions.find(t => t.categoryId === categoryId)?.category?.name || 'Unknown';
-      
+
       return {
         categoryId,
         categoryName,
@@ -1464,7 +1469,7 @@ export class DatabaseStorage implements IStorage {
         .from(users)
         .innerJoin(userPreferences, eq(users.id, userPreferences.userId))
         .where(eq(userPreferences.transactionReminders, true));
-      
+
       return usersWithReminders.map(result => result.users);
     } catch (error) {
       console.error('Error getting users with transaction reminders:', error);
@@ -1476,8 +1481,8 @@ export class DatabaseStorage implements IStorage {
    * Get user transactions within a date range (timestamp format)
    */
   async getUserTransactionsInDateRange(
-    userId: string, 
-    startTimestamp: number, 
+    userId: string,
+    startTimestamp: number,
     endTimestamp: number
   ): Promise<Transaction[]> {
     try {
@@ -1491,7 +1496,7 @@ export class DatabaseStorage implements IStorage {
             lte(transactions.date, endTimestamp)
           )
         );
-      
+
       return userTransactions;
     } catch (error) {
       console.error('Error getting user transactions in date range:', error);
@@ -1508,7 +1513,7 @@ export class DatabaseStorage implements IStorage {
         .select()
         .from(whatsappIntegrations)
         .where(eq(whatsappIntegrations.userId, userId));
-      
+
       return integrations;
     } catch (error) {
       console.error('Error getting user WhatsApp integrations:', error);
@@ -1528,7 +1533,7 @@ export class DatabaseStorage implements IStorage {
           createdAt: Date.now(),
         })
         .returning();
-      
+
       return newLog;
     } catch (error) {
       console.error('Error creating notification log:', error);
@@ -1547,7 +1552,7 @@ export class DatabaseStorage implements IStorage {
         .where(eq(notificationLogs.userId, userId))
         .orderBy(desc(notificationLogs.sentAt))
         .limit(limit);
-      
+
       return logs;
     } catch (error) {
       console.error('Error getting notification logs:', error);
