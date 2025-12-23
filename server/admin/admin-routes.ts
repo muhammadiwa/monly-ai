@@ -1,5 +1,7 @@
-import { Router, Response } from 'express';
+import { Router, Response, Request } from 'express';
 import { z } from 'zod';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import {
     generateAdminToken,
     verifyAdminPassword,
@@ -7,6 +9,7 @@ import {
     type AdminAuthRequest
 } from './admin-auth';
 import { adminStorage } from './admin-storage';
+import { midtransService, type WebhookNotification } from '../services/midtrans-service';
 
 const router = Router();
 
@@ -1792,6 +1795,871 @@ router.get('/admin/analytics/subscriptions', requireAdminAuth, async (req: Admin
             error: {
                 code: 'INTERNAL_SERVER_ERROR',
                 message: 'Failed to fetch subscription analytics'
+            }
+        });
+    }
+});
+
+// GET /api/admin/payments - Get payment list with pagination, search, and filtering
+router.get('/admin/payments', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        // Parse query parameters
+        const pageParam = req.query.page as string;
+        const limitParam = req.query.limit as string;
+        const page = pageParam ? parseInt(pageParam) : 1;
+        const limit = limitParam ? parseInt(limitParam) : 20;
+        const search = req.query.search as string;
+        const status = req.query.status as string;
+        const dateFrom = req.query.dateFrom ? parseInt(req.query.dateFrom as string) : undefined;
+        const dateTo = req.query.dateTo ? parseInt(req.query.dateTo as string) : undefined;
+
+        // Validate pagination parameters
+        if (isNaN(page) || page < 1) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Page must be greater than 0'
+                }
+            });
+        }
+
+        if (isNaN(limit) || limit < 1 || limit > 100) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Limit must be between 1 and 100'
+                }
+            });
+        }
+
+        // Validate status parameter if provided
+        if (status && !['pending', 'paid', 'failed', 'refunded'].includes(status)) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Invalid status. Must be one of: pending, paid, failed, refunded'
+                }
+            });
+        }
+
+        // Validate date range if provided
+        if (dateFrom && isNaN(dateFrom)) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Invalid dateFrom parameter'
+                }
+            });
+        }
+
+        if (dateTo && isNaN(dateTo)) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Invalid dateTo parameter'
+                }
+            });
+        }
+
+        // Fetch payment list from database
+        const result = await adminStorage.getPaymentList({
+            page,
+            limit,
+            search,
+            status,
+            dateFrom,
+            dateTo,
+        });
+
+        // Log admin activity
+        await adminStorage.logAdminActivity({
+            adminId: req.admin.id,
+            action: 'VIEW_PAYMENT_LIST',
+            resourceType: 'PAYMENT',
+            details: { page, limit, search, status, dateFrom, dateTo },
+            ipAddress: req.ip || req.socket.remoteAddress,
+        });
+
+        res.json({
+            success: true,
+            data: result,
+        });
+    } catch (error) {
+        console.error('Error fetching payment list:', error);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to fetch payment list'
+            }
+        });
+    }
+});
+
+// GET /api/admin/payments/:id - Get payment details with Midtrans transaction details, invoice, and webhook logs
+router.get('/admin/payments/:id', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        const paymentId = parseInt(req.params.id);
+
+        if (isNaN(paymentId)) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Invalid payment ID'
+                }
+            });
+        }
+
+        // Fetch payment details from database
+        const paymentDetails = await adminStorage.getPaymentDetails(paymentId);
+
+        if (!paymentDetails) {
+            return res.status(404).json({
+                success: false,
+                error: {
+                    code: 'RESOURCE_NOT_FOUND',
+                    message: 'Payment not found'
+                }
+            });
+        }
+
+        // Log admin activity
+        await adminStorage.logAdminActivity({
+            adminId: req.admin.id,
+            action: 'VIEW_PAYMENT_DETAILS',
+            resourceType: 'PAYMENT',
+            resourceId: String(paymentId),
+            ipAddress: req.ip || req.socket.remoteAddress,
+        });
+
+        res.json({
+            success: true,
+            data: paymentDetails,
+        });
+    } catch (error) {
+        console.error('Error fetching payment details:', error);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to fetch payment details'
+            }
+        });
+    }
+});
+
+// Validation schema for invoice generation
+const generateInvoiceSchema = z.object({
+    paymentId: z.number().int().min(1, 'Payment ID is required'),
+});
+
+// POST /api/admin/invoices/generate - Generate invoice for a payment
+router.post('/admin/invoices/generate', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        // Validate input
+        const validatedData = generateInvoiceSchema.parse(req.body);
+
+        // Generate invoice in database
+        const invoice = await adminStorage.generateInvoice(validatedData.paymentId);
+
+        // Log admin activity
+        await adminStorage.logAdminActivity({
+            adminId: req.admin.id,
+            action: 'GENERATE_INVOICE',
+            resourceType: 'INVOICE',
+            resourceId: String(invoice.id),
+            details: { paymentId: validatedData.paymentId, invoiceNumber: invoice.invoiceNumber },
+            ipAddress: req.ip || req.socket.remoteAddress,
+        });
+
+        // Generate PDF invoice
+        const doc = new jsPDF();
+
+        // Add company header
+        doc.setFontSize(20);
+        doc.setFont('helvetica', 'bold');
+        doc.text('INVOICE', 105, 20, { align: 'center' });
+
+        // Add invoice details
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`Invoice Number: ${invoice.invoiceNumber}`, 20, 40);
+        doc.text(`Issue Date: ${new Date(invoice.issuedAt * 1000).toLocaleDateString()}`, 20, 46);
+        doc.text(`Due Date: ${new Date(invoice.dueAt * 1000).toLocaleDateString()}`, 20, 52);
+        doc.text(`Status: ${invoice.status.toUpperCase()}`, 20, 58);
+
+        // Add customer details
+        doc.setFont('helvetica', 'bold');
+        doc.text('Bill To:', 20, 70);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`${invoice.user.firstName} ${invoice.user.lastName}`, 20, 76);
+        doc.text(invoice.user.email, 20, 82);
+
+        // Add payment details if available
+        if (invoice.payment) {
+            doc.setFont('helvetica', 'bold');
+            doc.text('Payment Details:', 120, 70);
+            doc.setFont('helvetica', 'normal');
+            doc.text(`Method: ${invoice.payment.paymentMethod}`, 120, 76);
+            doc.text(`Status: ${invoice.payment.status}`, 120, 82);
+            if (invoice.payment.midtransTransactionId) {
+                doc.text(`Transaction ID: ${invoice.payment.midtransTransactionId}`, 120, 88);
+            }
+        }
+
+        // Add items table
+        const tableData = invoice.items.map((item: any) => [
+            item.description,
+            item.quantity.toString(),
+            `${invoice.currency} ${item.unitPrice.toLocaleString()}`,
+            `${invoice.currency} ${item.total.toLocaleString()}`,
+        ]);
+
+        autoTable(doc, {
+            startY: 100,
+            head: [['Description', 'Quantity', 'Unit Price', 'Total']],
+            body: tableData,
+            theme: 'striped',
+            headStyles: { fillColor: [66, 139, 202] },
+            styles: { fontSize: 10 },
+        });
+
+        // Add total
+        const finalY = (doc as any).lastAutoTable.finalY || 100;
+        doc.setFont('helvetica', 'bold');
+        doc.text(`Total Amount: ${invoice.currency} ${invoice.amount.toLocaleString()}`, 20, finalY + 15);
+
+        // Add payment status
+        if (invoice.paidAt) {
+            doc.setFont('helvetica', 'normal');
+            doc.text(`Paid on: ${new Date(invoice.paidAt * 1000).toLocaleDateString()}`, 20, finalY + 25);
+        }
+
+        // Add footer
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'italic');
+        doc.text('Thank you for your business!', 105, 280, { align: 'center' });
+
+        // Convert PDF to base64
+        const pdfBase64 = doc.output('datauristring').split(',')[1];
+
+        res.json({
+            success: true,
+            data: {
+                invoice,
+                pdf: pdfBase64,
+            },
+            message: 'Invoice generated successfully',
+        });
+    } catch (error) {
+        console.error('Error generating invoice:', error);
+
+        if (error instanceof z.ZodError) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Invalid input data',
+                    details: error.errors
+                }
+            });
+        }
+
+        if (error instanceof Error) {
+            if (error.message === 'Payment not found') {
+                return res.status(404).json({
+                    success: false,
+                    error: {
+                        code: 'RESOURCE_NOT_FOUND',
+                        message: 'Payment not found'
+                    }
+                });
+            }
+            if (error.message === 'Invoice already exists for this payment') {
+                return res.status(409).json({
+                    success: false,
+                    error: {
+                        code: 'RESOURCE_ALREADY_EXISTS',
+                        message: 'Invoice already exists for this payment'
+                    }
+                });
+            }
+            if (error.message === 'User not found') {
+                return res.status(404).json({
+                    success: false,
+                    error: {
+                        code: 'RESOURCE_NOT_FOUND',
+                        message: 'User not found'
+                    }
+                });
+            }
+        }
+
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to generate invoice'
+            }
+        });
+    }
+});
+
+// Validation schema for payment refund
+const refundPaymentSchema = z.object({
+    reason: z.string().min(1, 'Refund reason is required'),
+    amount: z.number().positive().optional(), // Optional partial refund amount
+});
+
+// POST /api/admin/payments/:id/refund - Process payment refund via Midtrans
+router.post('/admin/payments/:id/refund', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        const paymentId = parseInt(req.params.id);
+
+        if (isNaN(paymentId)) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Invalid payment ID'
+                }
+            });
+        }
+
+        // Validate input
+        const validatedData = refundPaymentSchema.parse(req.body);
+
+        // Process refund
+        const refundResult = await adminStorage.refundPayment(
+            paymentId,
+            validatedData.reason,
+            validatedData.amount
+        );
+
+        // Log admin activity
+        await adminStorage.logAdminActivity({
+            adminId: req.admin.id,
+            action: 'REFUND_PAYMENT',
+            resourceType: 'PAYMENT',
+            resourceId: String(paymentId),
+            details: {
+                reason: validatedData.reason,
+                amount: validatedData.amount,
+                refundStatus: refundResult.refundStatus
+            },
+            ipAddress: req.ip || req.socket.remoteAddress,
+        });
+
+        res.json({
+            success: true,
+            data: refundResult,
+            message: 'Payment refunded successfully',
+        });
+    } catch (error) {
+        console.error('Error refunding payment:', error);
+
+        if (error instanceof z.ZodError) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Invalid input data',
+                    details: error.errors
+                }
+            });
+        }
+
+        if (error instanceof Error) {
+            if (error.message === 'Payment not found') {
+                return res.status(404).json({
+                    success: false,
+                    error: {
+                        code: 'RESOURCE_NOT_FOUND',
+                        message: 'Payment not found'
+                    }
+                });
+            }
+            if (error.message === 'Payment is not in paid status') {
+                return res.status(400).json({
+                    success: false,
+                    error: {
+                        code: 'INVALID_PAYMENT_STATUS',
+                        message: 'Only paid payments can be refunded'
+                    }
+                });
+            }
+            if (error.message === 'Payment has already been refunded') {
+                return res.status(409).json({
+                    success: false,
+                    error: {
+                        code: 'PAYMENT_ALREADY_REFUNDED',
+                        message: 'This payment has already been refunded'
+                    }
+                });
+            }
+            if (error.message.includes('Midtrans')) {
+                return res.status(502).json({
+                    success: false,
+                    error: {
+                        code: 'EXTERNAL_SERVICE_ERROR',
+                        message: error.message
+                    }
+                });
+            }
+        }
+
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to process refund'
+            }
+        });
+    }
+});
+
+// POST /api/webhooks/midtrans - Midtrans webhook handler
+// NOTE: This endpoint does NOT require admin authentication as it's called by Midtrans
+router.post('/webhooks/midtrans', async (req: Request, res: Response) => {
+    try {
+        console.log('=== MIDTRANS WEBHOOK RECEIVED ===');
+        console.log('Payload:', JSON.stringify(req.body, null, 2));
+
+        // Parse webhook notification
+        const notification: WebhookNotification = req.body;
+
+        // Validate required fields
+        if (!notification.order_id || !notification.transaction_status || !notification.signature_key) {
+            console.error('Invalid webhook payload: missing required fields');
+
+            // Log failed webhook
+            await adminStorage.logMidtransWebhook({
+                orderId: notification.order_id || 'unknown',
+                transactionId: notification.transaction_id,
+                eventType: notification.transaction_status || 'unknown',
+                payload: JSON.stringify(req.body),
+                signature: notification.signature_key,
+                status: 'failed',
+                errorMessage: 'Missing required fields in webhook payload',
+            });
+
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Invalid webhook payload'
+                }
+            });
+        }
+
+        // Verify webhook signature
+        const isValidSignature = midtransService.verifyWebhookSignature(notification);
+
+        if (!isValidSignature) {
+            console.error('Invalid webhook signature');
+
+            // Log failed webhook
+            await adminStorage.logMidtransWebhook({
+                orderId: notification.order_id,
+                transactionId: notification.transaction_id,
+                eventType: notification.transaction_status,
+                payload: JSON.stringify(req.body),
+                signature: notification.signature_key,
+                status: 'failed',
+                errorMessage: 'Invalid webhook signature',
+            });
+
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'INVALID_SIGNATURE',
+                    message: 'Invalid webhook signature'
+                }
+            });
+        }
+
+        console.log('Webhook signature verified successfully');
+
+        // Find payment by Midtrans order ID
+        const payment = await adminStorage.getPaymentByMidtransOrderId(notification.order_id);
+
+        if (!payment) {
+            console.error(`Payment not found for order ID: ${notification.order_id}`);
+
+            // Log webhook even if payment not found
+            await adminStorage.logMidtransWebhook({
+                orderId: notification.order_id,
+                transactionId: notification.transaction_id,
+                eventType: notification.transaction_status,
+                payload: JSON.stringify(req.body),
+                signature: notification.signature_key,
+                status: 'failed',
+                errorMessage: 'Payment not found',
+            });
+
+            return res.status(404).json({
+                success: false,
+                error: {
+                    code: 'PAYMENT_NOT_FOUND',
+                    message: 'Payment not found'
+                }
+            });
+        }
+
+        console.log(`Payment found: ID ${payment.id}, current status: ${payment.status}`);
+
+        // Determine new payment status based on transaction status
+        let newPaymentStatus: 'pending' | 'paid' | 'failed' | 'refunded' = payment.status;
+        let shouldActivateSubscription = false;
+
+        switch (notification.transaction_status) {
+            case 'capture':
+            case 'settlement':
+                // Payment successful
+                newPaymentStatus = 'paid';
+                shouldActivateSubscription = true;
+                console.log('Payment successful - will activate subscription');
+                break;
+
+            case 'pending':
+                // Payment pending
+                newPaymentStatus = 'pending';
+                console.log('Payment pending');
+                break;
+
+            case 'deny':
+            case 'expire':
+            case 'cancel':
+                // Payment failed
+                newPaymentStatus = 'failed';
+                console.log('Payment failed');
+                break;
+
+            case 'refund':
+            case 'partial_refund':
+                // Payment refunded
+                newPaymentStatus = 'refunded';
+                console.log('Payment refunded');
+                break;
+
+            default:
+                console.log(`Unknown transaction status: ${notification.transaction_status}`);
+                break;
+        }
+
+        // Update payment status in database
+        const updatedPayment = await adminStorage.updatePaymentStatus(
+            payment.id,
+            newPaymentStatus,
+            notification.transaction_id,
+            notification.settlement_time ? parseInt(notification.settlement_time) : undefined
+        );
+
+        console.log(`Payment status updated to: ${newPaymentStatus}`);
+
+        // Activate subscription if payment successful
+        if (shouldActivateSubscription && payment.subscriptionId) {
+            try {
+                await adminStorage.activateSubscriptionAfterPayment(payment.subscriptionId);
+                console.log(`Subscription ${payment.subscriptionId} activated successfully`);
+            } catch (error) {
+                console.error('Error activating subscription:', error);
+                // Don't fail the webhook if subscription activation fails
+                // Log it for manual review
+            }
+        }
+
+        // Log successful webhook processing
+        await adminStorage.logMidtransWebhook({
+            orderId: notification.order_id,
+            transactionId: notification.transaction_id,
+            eventType: notification.transaction_status,
+            payload: JSON.stringify(req.body),
+            signature: notification.signature_key,
+            status: 'processed',
+        });
+
+        console.log('=== WEBHOOK PROCESSED SUCCESSFULLY ===');
+
+        // Return success response to Midtrans
+        res.json({
+            success: true,
+            message: 'Webhook processed successfully',
+        });
+    } catch (error) {
+        console.error('=== WEBHOOK PROCESSING ERROR ===');
+        console.error('Error processing webhook:', error);
+
+        // Try to log the error
+        try {
+            const notification: WebhookNotification = req.body;
+            await adminStorage.logMidtransWebhook({
+                orderId: notification.order_id || 'unknown',
+                transactionId: notification.transaction_id,
+                eventType: notification.transaction_status || 'unknown',
+                payload: JSON.stringify(req.body),
+                signature: notification.signature_key,
+                status: 'failed',
+                errorMessage: error instanceof Error ? error.message : 'Unknown error',
+            });
+        } catch (logError) {
+            console.error('Error logging webhook failure:', logError);
+        }
+
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to process webhook'
+            }
+        });
+    }
+});
+
+// GET /api/admin/midtrans/status - Test Midtrans API connection and show credentials status
+router.get('/admin/midtrans/status', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        // Get Midtrans configuration
+        const config = midtransService.getConfig();
+
+        // Check if credentials are configured
+        const hasServerKey = !!config.serverKey && config.serverKey.length > 0;
+        const hasClientKey = !!config.clientKey && config.clientKey.length > 0;
+        const isConfigured = hasServerKey && hasClientKey;
+
+        // Test API connection if configured
+        let connectionStatus: 'connected' | 'disconnected' | 'not_configured' = 'not_configured';
+        let connectionMessage = '';
+        let apiReachable = false;
+
+        if (isConfigured) {
+            try {
+                apiReachable = await midtransService.testConnection();
+                if (apiReachable) {
+                    connectionStatus = 'connected';
+                    connectionMessage = 'Midtrans API is reachable and credentials are valid';
+                } else {
+                    connectionStatus = 'disconnected';
+                    connectionMessage = 'Midtrans API is not reachable. Please check your network connection.';
+                }
+            } catch (error) {
+                connectionStatus = 'disconnected';
+                connectionMessage = `Failed to connect to Midtrans API: ${error instanceof Error ? error.message : 'Unknown error'}`;
+            }
+        } else {
+            connectionMessage = 'Midtrans credentials are not configured. Please set MIDTRANS_SERVER_KEY and MIDTRANS_CLIENT_KEY in environment variables.';
+        }
+
+        // Mask sensitive credentials for display
+        const maskedServerKey = hasServerKey
+            ? config.serverKey.substring(0, 8) + '...' + config.serverKey.substring(config.serverKey.length - 4)
+            : 'Not configured';
+
+        const maskedClientKey = hasClientKey
+            ? config.clientKey.substring(0, 8) + '...' + config.clientKey.substring(config.clientKey.length - 4)
+            : 'Not configured';
+
+        // Log admin activity
+        await adminStorage.logAdminActivity({
+            adminId: req.admin.id,
+            action: 'VIEW_MIDTRANS_STATUS',
+            resourceType: 'MIDTRANS',
+            details: { connectionStatus, isConfigured },
+            ipAddress: req.ip || req.socket.remoteAddress,
+        });
+
+        res.json({
+            success: true,
+            data: {
+                connectionStatus,
+                connectionMessage,
+                apiReachable,
+                credentials: {
+                    serverKey: maskedServerKey,
+                    clientKey: maskedClientKey,
+                    isConfigured,
+                    hasServerKey,
+                    hasClientKey,
+                },
+                environment: {
+                    isProduction: config.isProduction,
+                    apiUrl: config.apiUrl,
+                },
+                webhookUrl: process.env.MIDTRANS_WEBHOOK_URL || 'Not configured',
+            },
+        });
+    } catch (error) {
+        console.error('Error checking Midtrans status:', error);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to check Midtrans status'
+            }
+        });
+    }
+});
+
+// GET /api/admin/midtrans/webhooks - Get webhook logs with pagination and filtering
+router.get('/admin/midtrans/webhooks', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        // Parse query parameters
+        const pageParam = req.query.page as string;
+        const limitParam = req.query.limit as string;
+        const page = pageParam ? parseInt(pageParam) : 1;
+        const limit = limitParam ? parseInt(limitParam) : 20;
+        const status = req.query.status as string;
+        const dateFrom = req.query.dateFrom ? parseInt(req.query.dateFrom as string) : undefined;
+        const dateTo = req.query.dateTo ? parseInt(req.query.dateTo as string) : undefined;
+
+        // Validate pagination parameters
+        if (isNaN(page) || page < 1) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Page must be greater than 0'
+                }
+            });
+        }
+
+        if (isNaN(limit) || limit < 1 || limit > 100) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Limit must be between 1 and 100'
+                }
+            });
+        }
+
+        // Validate status parameter if provided
+        if (status && !['processed', 'failed'].includes(status)) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Invalid status. Must be one of: processed, failed'
+                }
+            });
+        }
+
+        // Validate date parameters if provided
+        if (dateFrom && isNaN(dateFrom)) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Invalid dateFrom parameter'
+                }
+            });
+        }
+
+        if (dateTo && isNaN(dateTo)) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Invalid dateTo parameter'
+                }
+            });
+        }
+
+        // Fetch webhook logs from database
+        const result = await adminStorage.getWebhookLogs({
+            page,
+            limit,
+            status,
+            dateFrom,
+            dateTo,
+        });
+
+        // Log admin activity
+        await adminStorage.logAdminActivity({
+            adminId: req.admin.id,
+            action: 'VIEW_WEBHOOK_LOGS',
+            resourceType: 'MIDTRANS',
+            details: { page, limit, status, dateFrom, dateTo },
+            ipAddress: req.ip || req.socket.remoteAddress,
+        });
+
+        res.json({
+            success: true,
+            data: result,
+        });
+    } catch (error) {
+        console.error('Error fetching webhook logs:', error);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to fetch webhook logs'
             }
         });
     }

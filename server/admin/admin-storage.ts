@@ -1,6 +1,6 @@
 import { db } from "../db";
-import { adminUsers, adminActivityLogs, users, userSubscriptions, subscriptionPlans, payments, invoices, transactions, budgets, goals } from "@shared/schema";
-import { eq, sql, desc } from "drizzle-orm";
+import { adminUsers, adminActivityLogs, users, userSubscriptions, subscriptionPlans, payments, invoices, midtransWebhookLogs, transactions, budgets, goals } from "@shared/schema";
+import { eq, sql, desc, and } from "drizzle-orm";
 
 export interface AdminUserData {
     id: string;
@@ -1957,6 +1957,691 @@ export class AdminStorage {
             churnRate: Math.round(churnRate * 100) / 100,
             conversionRate: Math.round(conversionRate * 100) / 100,
             byPlan,
+        };
+    }
+
+    // Get payment list with pagination, search, and filtering
+    async getPaymentList(params: {
+        page: number;
+        limit: number;
+        search?: string;
+        status?: string;
+        dateFrom?: number;
+        dateTo?: number;
+    }) {
+        const { page, limit, search, status, dateFrom, dateTo } = params;
+        const offset = (page - 1) * limit;
+
+        // Build WHERE conditions
+        const conditions = [];
+
+        // Search by user name, email, transaction ID, or invoice number
+        if (search && search.trim().length > 0) {
+            const searchTerm = `%${search.trim()}%`;
+            conditions.push(
+                sql`(
+                    ${users.firstName} LIKE ${searchTerm} OR
+                    ${users.lastName} LIKE ${searchTerm} OR
+                    ${users.email} LIKE ${searchTerm} OR
+                    ${payments.midtransTransactionId} LIKE ${searchTerm} OR
+                    ${payments.midtransOrderId} LIKE ${searchTerm} OR
+                    ${invoices.invoiceNumber} LIKE ${searchTerm}
+                )`
+            );
+        }
+
+        // Filter by status
+        if (status && ['pending', 'paid', 'failed', 'refunded'].includes(status)) {
+            conditions.push(eq(payments.status, status as any));
+        }
+
+        // Filter by date range
+        if (dateFrom) {
+            conditions.push(sql`${payments.createdAt} >= ${dateFrom}`);
+        }
+        if (dateTo) {
+            conditions.push(sql`${payments.createdAt} <= ${dateTo}`);
+        }
+
+        // Combine conditions
+        const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+        // Get total count
+        const countResult = await db
+            .select({ count: sql<number>`COUNT(*)` })
+            .from(payments)
+            .leftJoin(users, eq(payments.userId, users.id))
+            .leftJoin(invoices, eq(payments.id, invoices.paymentId))
+            .where(whereClause);
+
+        const total = countResult[0]?.count || 0;
+        const totalPages = Math.ceil(total / limit);
+
+        // Get paginated payment list with user and subscription details
+        const paymentList = await db
+            .select({
+                id: payments.id,
+                userId: payments.userId,
+                subscriptionId: payments.subscriptionId,
+                amount: payments.amount,
+                currency: payments.currency,
+                paymentMethod: payments.paymentMethod,
+                status: payments.status,
+                midtransTransactionId: payments.midtransTransactionId,
+                midtransOrderId: payments.midtransOrderId,
+                paidAt: payments.paidAt,
+                createdAt: payments.createdAt,
+                updatedAt: payments.updatedAt,
+                // User details
+                userEmail: users.email,
+                userFirstName: users.firstName,
+                userLastName: users.lastName,
+                // Subscription details
+                subscriptionPlanId: userSubscriptions.planId,
+                subscriptionStatus: userSubscriptions.status,
+                // Plan details
+                planName: subscriptionPlans.name,
+                planDisplayName: subscriptionPlans.displayName,
+                // Invoice details
+                invoiceNumber: invoices.invoiceNumber,
+                invoiceStatus: invoices.status,
+            })
+            .from(payments)
+            .leftJoin(users, eq(payments.userId, users.id))
+            .leftJoin(userSubscriptions, eq(payments.subscriptionId, userSubscriptions.id))
+            .leftJoin(subscriptionPlans, eq(userSubscriptions.planId, subscriptionPlans.id))
+            .leftJoin(invoices, eq(payments.id, invoices.paymentId))
+            .where(whereClause)
+            .orderBy(desc(payments.createdAt))
+            .limit(limit)
+            .offset(offset);
+
+        // Format the results
+        const formattedPayments = paymentList.map(payment => ({
+            id: payment.id,
+            userId: payment.userId,
+            subscriptionId: payment.subscriptionId,
+            amount: payment.amount,
+            currency: payment.currency,
+            paymentMethod: payment.paymentMethod,
+            status: payment.status,
+            midtransTransactionId: payment.midtransTransactionId,
+            midtransOrderId: payment.midtransOrderId,
+            paidAt: payment.paidAt,
+            createdAt: payment.createdAt,
+            updatedAt: payment.updatedAt,
+            user: {
+                email: payment.userEmail,
+                firstName: payment.userFirstName,
+                lastName: payment.userLastName,
+                fullName: `${payment.userFirstName || ''} ${payment.userLastName || ''}`.trim() || payment.userEmail || 'Unknown',
+            },
+            subscription: payment.subscriptionId ? {
+                id: payment.subscriptionId,
+                planId: payment.subscriptionPlanId,
+                status: payment.subscriptionStatus,
+                planName: payment.planName,
+                planDisplayName: payment.planDisplayName,
+            } : null,
+            invoice: payment.invoiceNumber ? {
+                invoiceNumber: payment.invoiceNumber,
+                status: payment.invoiceStatus,
+            } : null,
+        }));
+
+        return {
+            payments: formattedPayments,
+            total,
+            page,
+            totalPages,
+            limit,
+        };
+    }
+
+    // Get payment details with Midtrans transaction details, related invoice, subscription, and webhook logs
+    async getPaymentDetails(paymentId: number) {
+        // Fetch payment with user, subscription, and invoice details
+        const paymentResult = await db
+            .select({
+                // Payment details
+                id: payments.id,
+                userId: payments.userId,
+                subscriptionId: payments.subscriptionId,
+                amount: payments.amount,
+                currency: payments.currency,
+                paymentMethod: payments.paymentMethod,
+                status: payments.status,
+                midtransTransactionId: payments.midtransTransactionId,
+                midtransOrderId: payments.midtransOrderId,
+                paidAt: payments.paidAt,
+                createdAt: payments.createdAt,
+                updatedAt: payments.updatedAt,
+                // User details
+                userEmail: users.email,
+                userFirstName: users.firstName,
+                userLastName: users.lastName,
+                userProfileImageUrl: users.profileImageUrl,
+                // Subscription details
+                subscriptionPlanId: userSubscriptions.planId,
+                subscriptionStatus: userSubscriptions.status,
+                subscriptionBillingCycle: userSubscriptions.billingCycle,
+                subscriptionStartDate: userSubscriptions.startDate,
+                subscriptionEndDate: userSubscriptions.endDate,
+                subscriptionAutoRenew: userSubscriptions.autoRenew,
+                // Plan details
+                planName: subscriptionPlans.name,
+                planDisplayName: subscriptionPlans.displayName,
+                planDescription: subscriptionPlans.description,
+                planPriceMonthly: subscriptionPlans.priceMonthly,
+                planPriceYearly: subscriptionPlans.priceYearly,
+            })
+            .from(payments)
+            .leftJoin(users, eq(payments.userId, users.id))
+            .leftJoin(userSubscriptions, eq(payments.subscriptionId, userSubscriptions.id))
+            .leftJoin(subscriptionPlans, eq(userSubscriptions.planId, subscriptionPlans.id))
+            .where(eq(payments.id, paymentId))
+            .limit(1);
+
+        if (paymentResult.length === 0) {
+            return null;
+        }
+
+        const payment = paymentResult[0];
+
+        // Fetch related invoice if exists
+        const invoiceResult = await db
+            .select()
+            .from(invoices)
+            .where(eq(invoices.paymentId, paymentId))
+            .limit(1);
+
+        const invoice = invoiceResult.length > 0 ? invoiceResult[0] : null;
+
+        // Fetch webhook logs for this payment (by order ID)
+        let webhookLogs: any[] = [];
+        if (payment.midtransOrderId) {
+            webhookLogs = await db
+                .select()
+                .from(midtransWebhookLogs)
+                .where(eq(midtransWebhookLogs.orderId, payment.midtransOrderId))
+                .orderBy(desc(midtransWebhookLogs.createdAt));
+        }
+
+        // Format the response
+        return {
+            id: payment.id,
+            userId: payment.userId,
+            subscriptionId: payment.subscriptionId,
+            amount: payment.amount,
+            currency: payment.currency,
+            paymentMethod: payment.paymentMethod,
+            status: payment.status,
+            midtransTransactionId: payment.midtransTransactionId,
+            midtransOrderId: payment.midtransOrderId,
+            paidAt: payment.paidAt,
+            createdAt: payment.createdAt,
+            updatedAt: payment.updatedAt,
+            user: {
+                id: payment.userId,
+                email: payment.userEmail,
+                firstName: payment.userFirstName,
+                lastName: payment.userLastName,
+                fullName: `${payment.userFirstName || ''} ${payment.userLastName || ''}`.trim() || payment.userEmail || 'Unknown',
+                profileImageUrl: payment.userProfileImageUrl,
+            },
+            subscription: payment.subscriptionId ? {
+                id: payment.subscriptionId,
+                planId: payment.subscriptionPlanId,
+                status: payment.subscriptionStatus,
+                billingCycle: payment.subscriptionBillingCycle,
+                startDate: payment.subscriptionStartDate,
+                endDate: payment.subscriptionEndDate,
+                autoRenew: Boolean(payment.subscriptionAutoRenew),
+                plan: {
+                    name: payment.planName,
+                    displayName: payment.planDisplayName,
+                    description: payment.planDescription,
+                    priceMonthly: payment.planPriceMonthly,
+                    priceYearly: payment.planPriceYearly,
+                },
+            } : null,
+            invoice: invoice ? {
+                id: invoice.id,
+                invoiceNumber: invoice.invoiceNumber,
+                amount: invoice.amount,
+                currency: invoice.currency,
+                items: JSON.parse(invoice.items),
+                status: invoice.status,
+                issuedAt: invoice.issuedAt,
+                dueAt: invoice.dueAt,
+                paidAt: invoice.paidAt,
+                createdAt: invoice.createdAt,
+                updatedAt: invoice.updatedAt,
+            } : null,
+            webhookLogs: webhookLogs.map(log => ({
+                id: log.id,
+                orderId: log.orderId,
+                transactionId: log.transactionId,
+                eventType: log.eventType,
+                payload: JSON.parse(log.payload),
+                signature: log.signature,
+                status: log.status,
+                errorMessage: log.errorMessage,
+                createdAt: log.createdAt,
+            })),
+        };
+    }
+
+    // Generate invoice for a payment
+    async generateInvoice(paymentId: number): Promise<any> {
+        const now = Math.floor(Date.now() / 1000);
+
+        // Check if payment exists
+        const payment = await db.select()
+            .from(payments)
+            .where(eq(payments.id, paymentId))
+            .get();
+
+        if (!payment) {
+            throw new Error('Payment not found');
+        }
+
+        // Check if invoice already exists for this payment
+        const existingInvoice = await db.select()
+            .from(invoices)
+            .where(eq(invoices.paymentId, paymentId))
+            .get();
+
+        if (existingInvoice) {
+            throw new Error('Invoice already exists for this payment');
+        }
+
+        // Get user details
+        const user = await db.select()
+            .from(users)
+            .where(eq(users.id, payment.userId))
+            .get();
+
+        if (!user) {
+            throw new Error('User not found');
+        }
+
+        // Get subscription details if payment is for a subscription
+        let subscriptionDetails = null;
+        if (payment.subscriptionId) {
+            const subscription = await db.select()
+                .from(userSubscriptions)
+                .leftJoin(subscriptionPlans, eq(userSubscriptions.planId, subscriptionPlans.id))
+                .where(eq(userSubscriptions.id, payment.subscriptionId))
+                .get();
+
+            if (subscription) {
+                subscriptionDetails = {
+                    planName: subscription.subscription_plans?.displayName || 'Unknown Plan',
+                    billingCycle: subscription.user_subscriptions.billingCycle,
+                    startDate: subscription.user_subscriptions.startDate,
+                    endDate: subscription.user_subscriptions.endDate,
+                };
+            }
+        }
+
+        // Generate invoice number (format: INV-YYYYMMDD-XXXX)
+        const date = new Date();
+        const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
+
+        // Get count of invoices created today to generate sequential number
+        const startOfDay = Math.floor(new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime() / 1000);
+        const endOfDay = startOfDay + 86400;
+
+        const todayInvoicesCount = await db.select({ count: sql<number>`count(*)` })
+            .from(invoices)
+            .where(and(
+                sql`${invoices.createdAt} >= ${startOfDay}`,
+                sql`${invoices.createdAt} < ${endOfDay}`
+            ))
+            .get();
+
+        const sequentialNumber = String((todayInvoicesCount?.count || 0) + 1).padStart(4, '0');
+        const invoiceNumber = `INV-${dateStr}-${sequentialNumber}`;
+
+        // Prepare invoice items
+        const items = [];
+        if (subscriptionDetails) {
+            items.push({
+                description: `${subscriptionDetails.planName} - ${subscriptionDetails.billingCycle === 'monthly' ? 'Monthly' : 'Yearly'} Subscription`,
+                quantity: 1,
+                unitPrice: payment.amount,
+                total: payment.amount,
+            });
+        } else {
+            items.push({
+                description: 'Payment',
+                quantity: 1,
+                unitPrice: payment.amount,
+                total: payment.amount,
+            });
+        }
+
+        // Create invoice in database
+        const newInvoice = await db.insert(invoices).values({
+            invoiceNumber,
+            userId: payment.userId,
+            paymentId: payment.id,
+            amount: payment.amount,
+            currency: payment.currency,
+            items: JSON.stringify(items),
+            status: payment.status === 'paid' ? 'paid' : 'draft',
+            issuedAt: now,
+            dueAt: now + (7 * 24 * 60 * 60), // Due in 7 days
+            paidAt: payment.paidAt || null,
+            createdAt: now,
+            updatedAt: now,
+        }).returning().get();
+
+        // Return invoice with user and payment details
+        return {
+            id: newInvoice.id,
+            invoiceNumber: newInvoice.invoiceNumber,
+            amount: newInvoice.amount,
+            currency: newInvoice.currency,
+            items: JSON.parse(newInvoice.items),
+            status: newInvoice.status,
+            issuedAt: newInvoice.issuedAt,
+            dueAt: newInvoice.dueAt,
+            paidAt: newInvoice.paidAt,
+            createdAt: newInvoice.createdAt,
+            updatedAt: newInvoice.updatedAt,
+            user: {
+                id: user.id,
+                email: user.email,
+                firstName: user.firstName,
+                lastName: user.lastName,
+            },
+            payment: {
+                id: payment.id,
+                amount: payment.amount,
+                currency: payment.currency,
+                paymentMethod: payment.paymentMethod,
+                status: payment.status,
+                midtransTransactionId: payment.midtransTransactionId,
+                midtransOrderId: payment.midtransOrderId,
+                paidAt: payment.paidAt,
+            },
+            subscription: subscriptionDetails,
+        };
+    }
+
+    // Refund a payment via Midtrans
+    async refundPayment(
+        paymentId: number,
+        reason: string,
+        amount?: number
+    ): Promise<any> {
+        const now = Math.floor(Date.now() / 1000);
+
+        // Check if payment exists
+        const payment = await db.select()
+            .from(payments)
+            .where(eq(payments.id, paymentId))
+            .get();
+
+        if (!payment) {
+            throw new Error('Payment not found');
+        }
+
+        // Check if payment has already been refunded
+        if (payment.status === 'refunded') {
+            throw new Error('Payment has already been refunded');
+        }
+
+        // Check if payment is in paid status
+        if (payment.status !== 'paid') {
+            throw new Error('Payment is not in paid status');
+        }
+
+        // Check if payment has Midtrans order ID
+        if (!payment.midtransOrderId) {
+            throw new Error('Payment does not have a Midtrans order ID');
+        }
+
+        try {
+            // Import Midtrans service
+            const { midtransService } = await import('../services/midtrans-service');
+
+            // Process refund via Midtrans API
+            const refundResponse = await midtransService.refundTransaction(
+                payment.midtransOrderId,
+                amount, // Optional partial refund amount
+                reason
+            );
+
+            // Update payment status in database
+            await db.update(payments)
+                .set({
+                    status: 'refunded',
+                    updatedAt: now,
+                })
+                .where(eq(payments.id, paymentId))
+                .run();
+
+            // Update subscription status if payment is for a subscription
+            if (payment.subscriptionId) {
+                const subscription = await db.select()
+                    .from(userSubscriptions)
+                    .where(eq(userSubscriptions.id, payment.subscriptionId))
+                    .get();
+
+                if (subscription) {
+                    // Cancel subscription if it's active
+                    if (subscription.status === 'active') {
+                        await db.update(userSubscriptions)
+                            .set({
+                                status: 'cancelled',
+                                cancelledAt: now,
+                                cancellationReason: `Payment refunded: ${reason}`,
+                                updatedAt: now,
+                            })
+                            .where(eq(userSubscriptions.id, payment.subscriptionId))
+                            .run();
+                    }
+                }
+            }
+
+            // Get updated payment details
+            const updatedPayment = await db.select()
+                .from(payments)
+                .where(eq(payments.id, paymentId))
+                .get();
+
+            // TODO: Send refund confirmation email to user
+            // This would be implemented in a separate email service
+
+            return {
+                payment: updatedPayment,
+                refundStatus: refundResponse.transaction_status,
+                refundAmount: amount || payment.amount,
+                reason,
+                midtransResponse: refundResponse,
+            };
+        } catch (error) {
+            console.error('Error processing refund via Midtrans:', error);
+            throw new Error(`Midtrans refund failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+    }
+
+    // Get payment by Midtrans order ID
+    async getPaymentByMidtransOrderId(orderId: string) {
+        const payment = await db.select()
+            .from(payments)
+            .where(eq(payments.midtransOrderId, orderId))
+            .get();
+
+        return payment;
+    }
+
+    // Update payment status
+    async updatePaymentStatus(
+        paymentId: number,
+        status: 'pending' | 'paid' | 'failed' | 'refunded',
+        transactionId?: string,
+        paidAt?: number
+    ) {
+        const now = Math.floor(Date.now() / 1000);
+
+        const updateData: any = {
+            status,
+            updatedAt: now,
+        };
+
+        if (transactionId) {
+            updateData.midtransTransactionId = transactionId;
+        }
+
+        if (paidAt) {
+            updateData.paidAt = paidAt;
+        } else if (status === 'paid' && !paidAt) {
+            // If status is paid but no paidAt provided, use current timestamp
+            updateData.paidAt = now;
+        }
+
+        await db.update(payments)
+            .set(updateData)
+            .where(eq(payments.id, paymentId))
+            .run();
+
+        // Get updated payment
+        const updatedPayment = await db.select()
+            .from(payments)
+            .where(eq(payments.id, paymentId))
+            .get();
+
+        return updatedPayment;
+    }
+
+    // Activate subscription after successful payment
+    async activateSubscriptionAfterPayment(subscriptionId: number) {
+        const now = Math.floor(Date.now() / 1000);
+
+        // Get subscription details
+        const subscription = await db.select()
+            .from(userSubscriptions)
+            .where(eq(userSubscriptions.id, subscriptionId))
+            .get();
+
+        if (!subscription) {
+            throw new Error('Subscription not found');
+        }
+
+        // Update subscription status to active
+        await db.update(userSubscriptions)
+            .set({
+                status: 'active',
+                updatedAt: now,
+            })
+            .where(eq(userSubscriptions.id, subscriptionId))
+            .run();
+
+        // Update user's subscription plan ID and status
+        await db.update(users)
+            .set({
+                subscriptionPlanId: subscription.planId,
+                subscriptionStatus: 'active',
+                updatedAt: now,
+            })
+            .where(eq(users.id, subscription.userId))
+            .run();
+
+        console.log(`Subscription ${subscriptionId} activated for user ${subscription.userId}`);
+    }
+
+    // Log Midtrans webhook
+    async logMidtransWebhook(data: {
+        orderId: string;
+        transactionId?: string;
+        eventType: string;
+        payload: string;
+        signature?: string;
+        status: 'processed' | 'failed';
+        errorMessage?: string;
+    }) {
+        const now = Math.floor(Date.now() / 1000);
+
+        await db.insert(midtransWebhookLogs).values({
+            orderId: data.orderId,
+            transactionId: data.transactionId || null,
+            eventType: data.eventType,
+            payload: data.payload,
+            signature: data.signature || null,
+            status: data.status,
+            errorMessage: data.errorMessage || null,
+            createdAt: now,
+        }).run();
+    }
+
+    // Get webhook logs with pagination and filtering
+    async getWebhookLogs(options: {
+        page: number;
+        limit: number;
+        status?: string;
+        dateFrom?: number;
+        dateTo?: number;
+    }) {
+        const { page, limit, status, dateFrom, dateTo } = options;
+        const offset = (page - 1) * limit;
+
+        // Build WHERE conditions
+        const conditions = [];
+
+        if (status && (status === 'processed' || status === 'failed')) {
+            conditions.push(eq(midtransWebhookLogs.status, status));
+        }
+
+        if (dateFrom) {
+            conditions.push(sql`${midtransWebhookLogs.createdAt} >= ${dateFrom}`);
+        }
+
+        if (dateTo) {
+            conditions.push(sql`${midtransWebhookLogs.createdAt} <= ${dateTo}`);
+        }
+
+        // Build WHERE clause
+        const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+        // Fetch total count
+        const countQuery = whereClause
+            ? db.select({ count: sql<number>`count(*)` }).from(midtransWebhookLogs).where(whereClause)
+            : db.select({ count: sql<number>`count(*)` }).from(midtransWebhookLogs);
+
+        const countResult = await countQuery;
+        const total = countResult[0]?.count || 0;
+
+        // Fetch webhook logs
+        const logsQuery = db
+            .select()
+            .from(midtransWebhookLogs)
+            .orderBy(desc(midtransWebhookLogs.createdAt))
+            .limit(limit)
+            .offset(offset);
+
+        const logs = whereClause
+            ? await logsQuery.where(whereClause)
+            : await logsQuery;
+
+        return {
+            logs: logs.map(log => ({
+                id: log.id,
+                orderId: log.orderId,
+                transactionId: log.transactionId,
+                eventType: log.eventType,
+                payload: log.payload,
+                signature: log.signature,
+                status: log.status,
+                errorMessage: log.errorMessage,
+                createdAt: log.createdAt,
+            })),
+            total,
+            page,
+            totalPages: Math.ceil(total / limit),
         };
     }
 }
