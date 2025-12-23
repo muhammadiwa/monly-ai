@@ -3825,4 +3825,585 @@ router.put('/admin/settings/:key', requireAdminAuth, async (req: AdminAuthReques
     }
 });
 
+// ============================================
+// WhatsApp Bot Configuration Endpoints
+// ============================================
+
+// GET /api/admin/whatsapp/status - Get WhatsApp Bot connection status
+router.get('/admin/whatsapp/status', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        // Import WhatsApp bot functions
+        const { getSingleBotConnectionState } = await import('../whatsapp-single-bot');
+
+        // Get current bot status
+        const botState = getSingleBotConnectionState();
+
+        // Prepare response based on bot status
+        const response: {
+            success: boolean;
+            data: {
+                connected: boolean;
+                status: string;
+                phoneNumber?: string;
+                qrCode?: string;
+                message?: string;
+            };
+        } = {
+            success: true,
+            data: {
+                connected: botState.connected,
+                status: botState.status,
+            }
+        };
+
+        // If bot is connected, try to get phone number
+        if (botState.connected && botState.status === 'ready') {
+            try {
+                // Import the bot connection to get phone number
+                const { initializeSingleWhatsAppBot } = await import('../whatsapp-single-bot');
+                const connection = initializeSingleWhatsAppBot();
+
+                // Get phone number if available
+                if (connection.client && connection.status === 'ready') {
+                    const info = await connection.client.info;
+                    if (info && info.wid && info.wid.user) {
+                        response.data.phoneNumber = info.wid.user;
+                    }
+                }
+            } catch (error) {
+                console.error('Error getting phone number:', error);
+                // Continue without phone number
+            }
+
+            response.data.message = 'WhatsApp Bot is connected and ready';
+        }
+        // If waiting for authentication, return QR code
+        else if (botState.status === 'qr_received' && botState.qrCode) {
+            response.data.qrCode = botState.qrCode;
+            response.data.message = 'QR code available for scanning';
+        }
+        // If bot is disconnected or initializing
+        else if (botState.status === 'disconnected') {
+            response.data.message = 'WhatsApp Bot is disconnected';
+        } else if (botState.status === 'initializing') {
+            response.data.message = 'WhatsApp Bot is initializing...';
+        } else if (botState.status === 'authenticated') {
+            response.data.message = 'WhatsApp Bot is authenticated, loading...';
+        } else {
+            response.data.message = `WhatsApp Bot status: ${botState.status}`;
+        }
+
+        // Log admin activity
+        await adminStorage.logAdminActivity({
+            adminId: req.admin.id,
+            action: 'VIEW_WHATSAPP_STATUS',
+            resourceType: 'WHATSAPP_BOT',
+            ipAddress: req.ip || req.socket.remoteAddress,
+        });
+
+        res.json(response);
+    } catch (error) {
+        console.error('Error getting WhatsApp Bot status:', error);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to get WhatsApp Bot status'
+            }
+        });
+    }
+});
+
+// POST /api/admin/whatsapp/connect - Initialize/Connect WhatsApp Bot
+router.post('/admin/whatsapp/connect', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        // Import WhatsApp bot functions
+        const {
+            getSingleBotConnectionState,
+            initializeSingleWhatsAppBot,
+            reconnectSingleWhatsAppBot
+        } = await import('../whatsapp-single-bot');
+
+        // Check current status
+        const currentStatus = getSingleBotConnectionState();
+        console.log('📱 Current bot status:', currentStatus);
+
+        // If bot is already connected (ready or authenticated), return success immediately
+        if (currentStatus.connected && (currentStatus.status === 'ready' || currentStatus.status === 'authenticated')) {
+            console.log('✅ Bot already connected, returning status');
+
+            // Log admin activity
+            await adminStorage.logAdminActivity({
+                adminId: req.admin.id,
+                action: 'CONNECT_WHATSAPP_BOT',
+                resourceType: 'WHATSAPP_BOT',
+                details: { result: 'already_connected', status: currentStatus.status },
+                ipAddress: req.ip || req.socket.remoteAddress,
+            });
+
+            return res.json({
+                success: true,
+                data: {
+                    status: currentStatus.status,
+                    connected: true,
+                    message: 'WhatsApp Bot is already connected and ready'
+                }
+            });
+        }
+
+        // If we have a QR code ready for scanning, return it
+        if (currentStatus.status === 'qr_received' && currentStatus.qrCode) {
+            console.log('📱 QR code available, returning it');
+
+            // Log admin activity
+            await adminStorage.logAdminActivity({
+                adminId: req.admin.id,
+                action: 'CONNECT_WHATSAPP_BOT',
+                resourceType: 'WHATSAPP_BOT',
+                details: { result: 'qr_code_available', status: currentStatus.status },
+                ipAddress: req.ip || req.socket.remoteAddress,
+            });
+
+            return res.json({
+                success: true,
+                data: {
+                    status: currentStatus.status,
+                    connected: false,
+                    qrCode: currentStatus.qrCode,
+                    message: 'QR code available for scanning'
+                }
+            });
+        }
+
+        // Bot is disconnected or not initialized, try to start/reconnect
+        if (currentStatus.status === 'disconnected') {
+            console.log('🔄 Bot disconnected, attempting reconnection...');
+
+            const result = await reconnectSingleWhatsAppBot();
+
+            // Log admin activity
+            await adminStorage.logAdminActivity({
+                adminId: req.admin.id,
+                action: 'CONNECT_WHATSAPP_BOT',
+                resourceType: 'WHATSAPP_BOT',
+                details: {
+                    result: 'reconnection_attempted',
+                    success: result.success,
+                    status: result.status
+                },
+                ipAddress: req.ip || req.socket.remoteAddress,
+            });
+
+            // Return success for both authenticated and QR code scenarios
+            if (result.success || result.qrCode) {
+                console.log('✅ Reconnection result:', result);
+                return res.json({
+                    success: true,
+                    data: {
+                        status: result.status,
+                        connected: result.status === 'ready' || result.status === 'authenticated',
+                        qrCode: result.qrCode,
+                        message: result.message
+                    }
+                });
+            } else {
+                // Even if reconnect "failed", try to generate new QR code
+                console.log('🔄 Reconnect failed, attempting fresh initialization...');
+                initializeSingleWhatsAppBot();
+
+                // Wait for QR code generation
+                await new Promise(resolve => setTimeout(resolve, 3000));
+
+                const newStatus = getSingleBotConnectionState();
+                console.log('📱 Fresh init result:', newStatus);
+
+                // Log admin activity
+                await adminStorage.logAdminActivity({
+                    adminId: req.admin.id,
+                    action: 'CONNECT_WHATSAPP_BOT',
+                    resourceType: 'WHATSAPP_BOT',
+                    details: {
+                        result: 'fresh_initialization',
+                        status: newStatus.status,
+                        qrCodeGenerated: !!newStatus.qrCode
+                    },
+                    ipAddress: req.ip || req.socket.remoteAddress,
+                });
+
+                return res.json({
+                    success: !!newStatus.qrCode,
+                    data: {
+                        status: newStatus.status,
+                        connected: newStatus.connected,
+                        qrCode: newStatus.qrCode,
+                        message: newStatus.qrCode
+                            ? 'New QR code generated after reconnection failure'
+                            : 'Failed to generate QR code'
+                    }
+                });
+            }
+        } else {
+            // Bot is in some other state (initializing, authenticating, etc.)
+            console.log('🔄 Bot in transitional state, initializing...');
+            initializeSingleWhatsAppBot();
+
+            // Wait a bit and return status
+            await new Promise(resolve => setTimeout(resolve, 2000));
+
+            const newStatus = getSingleBotConnectionState();
+            console.log('📱 Init result:', newStatus);
+
+            // Log admin activity
+            await adminStorage.logAdminActivity({
+                adminId: req.admin.id,
+                action: 'CONNECT_WHATSAPP_BOT',
+                resourceType: 'WHATSAPP_BOT',
+                details: {
+                    result: 'initialization_started',
+                    status: newStatus.status,
+                    qrCodeGenerated: !!newStatus.qrCode
+                },
+                ipAddress: req.ip || req.socket.remoteAddress,
+            });
+
+            return res.json({
+                success: !!newStatus.qrCode || (newStatus.status !== 'disconnected'),
+                data: {
+                    status: newStatus.status,
+                    connected: newStatus.connected,
+                    qrCode: newStatus.qrCode,
+                    message: newStatus.status === 'qr_received'
+                        ? 'QR code generated'
+                        : 'Bot initialization started'
+                }
+            });
+        }
+    } catch (error) {
+        console.error('Error connecting WhatsApp Bot:', error);
+
+        // Log failed admin activity
+        if (req.admin) {
+            await adminStorage.logAdminActivity({
+                adminId: req.admin.id,
+                action: 'CONNECT_WHATSAPP_BOT',
+                resourceType: 'WHATSAPP_BOT',
+                details: {
+                    result: 'error',
+                    error: error instanceof Error ? error.message : 'Unknown error'
+                },
+                ipAddress: req.ip || req.socket.remoteAddress,
+            });
+        }
+
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to connect WhatsApp Bot'
+            }
+        });
+    }
+});
+
+// POST /api/admin/whatsapp/disconnect - Disconnect WhatsApp Bot
+router.post('/admin/whatsapp/disconnect', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        // Import WhatsApp bot functions
+        const {
+            getSingleBotConnectionState,
+            disconnectSingleWhatsAppBot
+        } = await import('../whatsapp-single-bot');
+
+        // Check current status
+        const currentStatus = getSingleBotConnectionState();
+        console.log('📱 Current bot status before disconnect:', currentStatus);
+
+        // If bot is already disconnected, return success
+        if (currentStatus.status === 'disconnected' || !currentStatus.connected) {
+            console.log('✅ Bot already disconnected');
+
+            // Log admin activity
+            await adminStorage.logAdminActivity({
+                adminId: req.admin.id,
+                action: 'DISCONNECT_WHATSAPP_BOT',
+                resourceType: 'WHATSAPP_BOT',
+                details: { result: 'already_disconnected', status: currentStatus.status },
+                ipAddress: req.ip || req.socket.remoteAddress,
+            });
+
+            return res.json({
+                success: true,
+                data: {
+                    status: 'disconnected',
+                    connected: false,
+                    message: 'WhatsApp Bot is already disconnected'
+                }
+            });
+        }
+
+        // Disconnect the bot
+        console.log('🔌 Disconnecting WhatsApp Bot...');
+        const result = await disconnectSingleWhatsAppBot();
+
+        // Log admin activity
+        await adminStorage.logAdminActivity({
+            adminId: req.admin.id,
+            action: 'DISCONNECT_WHATSAPP_BOT',
+            resourceType: 'WHATSAPP_BOT',
+            details: {
+                result: 'disconnection_attempted',
+                success: result.success,
+                previousStatus: currentStatus.status
+            },
+            ipAddress: req.ip || req.socket.remoteAddress,
+        });
+
+        if (result.success) {
+            console.log('✅ Bot disconnected successfully');
+            return res.json({
+                success: true,
+                data: {
+                    status: 'disconnected',
+                    connected: false,
+                    message: result.message || 'WhatsApp Bot disconnected successfully'
+                }
+            });
+        } else {
+            console.error('❌ Failed to disconnect bot:', result.message);
+            return res.status(500).json({
+                success: false,
+                error: {
+                    code: 'DISCONNECT_FAILED',
+                    message: result.message || 'Failed to disconnect WhatsApp Bot'
+                }
+            });
+        }
+    } catch (error) {
+        console.error('Error disconnecting WhatsApp Bot:', error);
+
+        // Log failed admin activity
+        if (req.admin) {
+            await adminStorage.logAdminActivity({
+                adminId: req.admin.id,
+                action: 'DISCONNECT_WHATSAPP_BOT',
+                resourceType: 'WHATSAPP_BOT',
+                details: {
+                    result: 'error',
+                    error: error instanceof Error ? error.message : 'Unknown error'
+                },
+                ipAddress: req.ip || req.socket.remoteAddress,
+            });
+        }
+
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to disconnect WhatsApp Bot'
+            }
+        });
+    }
+});
+
+// GET /api/admin/whatsapp/statistics - Get WhatsApp Bot statistics
+router.get('/admin/whatsapp/statistics', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        // Get statistics from database
+        const statistics = await adminStorage.getWhatsAppBotStatistics();
+
+        // Log admin activity
+        await adminStorage.logAdminActivity({
+            adminId: req.admin.id,
+            action: 'VIEW_WHATSAPP_STATISTICS',
+            resourceType: 'WHATSAPP_BOT',
+            ipAddress: req.ip || req.socket.remoteAddress,
+        });
+
+        res.json({
+            success: true,
+            data: statistics,
+        });
+    } catch (error) {
+        console.error('Error fetching WhatsApp Bot statistics:', error);
+
+        // Log failed admin activity
+        if (req.admin) {
+            await adminStorage.logAdminActivity({
+                adminId: req.admin.id,
+                action: 'VIEW_WHATSAPP_STATISTICS',
+                resourceType: 'WHATSAPP_BOT',
+                details: {
+                    result: 'error',
+                    error: error instanceof Error ? error.message : 'Unknown error'
+                },
+                ipAddress: req.ip || req.socket.remoteAddress,
+            });
+        }
+
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to fetch WhatsApp Bot statistics'
+            }
+        });
+    }
+});
+
+// POST /api/admin/whatsapp/test - Send test message via WhatsApp Bot
+router.post('/admin/whatsapp/test', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        // Validate request body
+        const testMessageSchema = z.object({
+            phoneNumber: z.string().min(1, 'Phone number is required'),
+            message: z.string().min(1, 'Message is required'),
+        });
+
+        const validatedData = testMessageSchema.parse(req.body);
+
+        // Import WhatsApp bot functions
+        const { sendSingleBotMessage, getSingleBotConnectionState } = await import('../whatsapp-single-bot');
+
+        // Check if bot is connected
+        const botState = getSingleBotConnectionState();
+        if (!botState.connected) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'BOT_NOT_CONNECTED',
+                    message: 'WhatsApp Bot is not connected. Please connect the bot first.'
+                }
+            });
+        }
+
+        // Format phone number (ensure it has country code)
+        let formattedNumber = validatedData.phoneNumber.replace(/\D/g, ''); // Remove non-digits
+
+        // If number doesn't start with country code, assume Indonesian number
+        if (!formattedNumber.startsWith('62') && formattedNumber.startsWith('0')) {
+            formattedNumber = '62' + formattedNumber.substring(1);
+        }
+
+        // Send test message
+        const result = await sendSingleBotMessage(formattedNumber, validatedData.message);
+
+        // Log admin activity
+        await adminStorage.logAdminActivity({
+            adminId: req.admin.id,
+            action: 'SEND_TEST_MESSAGE',
+            resourceType: 'WHATSAPP_BOT',
+            details: {
+                phoneNumber: formattedNumber,
+                messageLength: validatedData.message.length,
+                success: result.success
+            },
+            ipAddress: req.ip || req.socket.remoteAddress,
+        });
+
+        if (result.success) {
+            res.json({
+                success: true,
+                message: 'Test message sent successfully',
+                data: {
+                    phoneNumber: formattedNumber,
+                    deliveryStatus: 'sent'
+                }
+            });
+        } else {
+            res.status(500).json({
+                success: false,
+                error: {
+                    code: 'MESSAGE_SEND_FAILED',
+                    message: result.message || 'Failed to send test message'
+                }
+            });
+        }
+    } catch (error) {
+        console.error('Error sending test message:', error);
+
+        // Log failed admin activity
+        if (req.admin) {
+            await adminStorage.logAdminActivity({
+                adminId: req.admin.id,
+                action: 'SEND_TEST_MESSAGE',
+                resourceType: 'WHATSAPP_BOT',
+                details: {
+                    result: 'error',
+                    error: error instanceof Error ? error.message : 'Unknown error'
+                },
+                ipAddress: req.ip || req.socket.remoteAddress,
+            });
+        }
+
+        if (error instanceof z.ZodError) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Invalid input data',
+                    details: error.errors
+                }
+            });
+        }
+
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to send test message'
+            }
+        });
+    }
+});
+
 export default router;

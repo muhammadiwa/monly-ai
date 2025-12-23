@@ -1,5 +1,5 @@
 import { db } from "../db";
-import { adminUsers, adminActivityLogs, users, userSubscriptions, subscriptionPlans, payments, invoices, midtransWebhookLogs, transactions, budgets, goals, systemSettings } from "@shared/schema";
+import { adminUsers, adminActivityLogs, users, userSubscriptions, subscriptionPlans, payments, invoices, midtransWebhookLogs, transactions, budgets, goals, systemSettings, notificationLogs, whatsappIntegrations } from "@shared/schema";
 import { eq, sql, desc, and } from "drizzle-orm";
 
 export interface AdminUserData {
@@ -2964,6 +2964,72 @@ export class AdminStorage {
                 updatedAt: inserted[0].updatedAt,
             };
         }
+    }
+
+    /**
+     * Get WhatsApp Bot statistics
+     * @returns Statistics about WhatsApp Bot usage
+     */
+    async getWhatsAppBotStatistics(): Promise<{
+        totalMessagesSent: number;
+        activeConnections: number;
+        successRate: number;
+        errorLogs: Array<{
+            id: number;
+            type: string;
+            message: string;
+            errorMessage: string | null;
+            sentAt: number;
+        }>;
+    }> {
+        // Count total messages sent from notification_logs table
+        const totalMessagesResult = await db
+            .select({ count: sql<number>`count(*)` })
+            .from(notificationLogs);
+
+        const totalMessagesSent = totalMessagesResult[0]?.count || 0;
+
+        // Count successful messages
+        const successfulMessagesResult = await db
+            .select({ count: sql<number>`count(*)` })
+            .from(notificationLogs)
+            .where(eq(notificationLogs.status, 'sent'));
+
+        const successfulMessages = successfulMessagesResult[0]?.count || 0;
+
+        // Calculate success rate
+        const successRate = totalMessagesSent > 0
+            ? Math.round((successfulMessages / totalMessagesSent) * 100)
+            : 0;
+
+        // Count active user connections from whatsapp_integrations table
+        const activeConnectionsResult = await db
+            .select({ count: sql<number>`count(*)` })
+            .from(whatsappIntegrations)
+            .where(eq(whatsappIntegrations.status, 'active'));
+
+        const activeConnections = activeConnectionsResult[0]?.count || 0;
+
+        // Fetch recent error logs (last 10 failed messages)
+        const errorLogsResult = await db
+            .select({
+                id: notificationLogs.id,
+                type: notificationLogs.type,
+                message: notificationLogs.message,
+                errorMessage: notificationLogs.errorMessage,
+                sentAt: notificationLogs.sentAt,
+            })
+            .from(notificationLogs)
+            .where(eq(notificationLogs.status, 'failed'))
+            .orderBy(desc(notificationLogs.sentAt))
+            .limit(10);
+
+        return {
+            totalMessagesSent,
+            activeConnections,
+            successRate,
+            errorLogs: errorLogsResult,
+        };
     }
 }
 
