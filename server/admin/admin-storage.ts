@@ -1,5 +1,5 @@
 import { db } from "../db";
-import { adminUsers, adminActivityLogs, users, userSubscriptions, subscriptionPlans, payments, transactions, budgets, goals } from "@shared/schema";
+import { adminUsers, adminActivityLogs, users, userSubscriptions, subscriptionPlans, payments, invoices, transactions, budgets, goals } from "@shared/schema";
 import { eq, sql, desc } from "drizzle-orm";
 
 export interface AdminUserData {
@@ -1252,6 +1252,711 @@ export class AdminStorage {
                 isRetained,
                 activityRate: Math.round(activityRate * 100) / 100,
             },
+        };
+    }
+
+    // Subscription Plans CRUD Operations
+
+    // Get all subscription plans
+    async getAllPlans(): Promise<any[]> {
+        const plans = await db
+            .select()
+            .from(subscriptionPlans)
+            .orderBy(subscriptionPlans.priceMonthly);
+
+        return plans.map(plan => ({
+            id: plan.id,
+            name: plan.name,
+            displayName: plan.displayName,
+            description: plan.description,
+            price: {
+                monthly: plan.priceMonthly,
+                yearly: plan.priceYearly,
+            },
+            currency: plan.currency,
+            features: JSON.parse(plan.features),
+            limits: JSON.parse(plan.limits),
+            isActive: Boolean(plan.isActive),
+            createdAt: plan.createdAt,
+            updatedAt: plan.updatedAt,
+        }));
+    }
+
+    // Get subscription plan by ID
+    async getPlanById(planId: number): Promise<any | null> {
+        const [plan] = await db
+            .select()
+            .from(subscriptionPlans)
+            .where(eq(subscriptionPlans.id, planId));
+
+        if (!plan) {
+            return null;
+        }
+
+        return {
+            id: plan.id,
+            name: plan.name,
+            displayName: plan.displayName,
+            description: plan.description,
+            price: {
+                monthly: plan.priceMonthly,
+                yearly: plan.priceYearly,
+            },
+            currency: plan.currency,
+            features: JSON.parse(plan.features),
+            limits: JSON.parse(plan.limits),
+            isActive: Boolean(plan.isActive),
+            createdAt: plan.createdAt,
+            updatedAt: plan.updatedAt,
+        };
+    }
+
+    // Create subscription plan
+    async createPlan(data: {
+        name: string;
+        displayName: string;
+        description?: string;
+        priceMonthly: number;
+        priceYearly: number;
+        currency: string;
+        features: any[];
+        limits: any;
+        isActive?: boolean;
+    }): Promise<any> {
+        const now = Math.floor(Date.now() / 1000);
+
+        const planData = {
+            name: data.name,
+            displayName: data.displayName,
+            description: data.description || null,
+            priceMonthly: data.priceMonthly,
+            priceYearly: data.priceYearly,
+            currency: data.currency,
+            features: JSON.stringify(data.features),
+            limits: JSON.stringify(data.limits),
+            isActive: data.isActive !== undefined ? data.isActive : true,
+            createdAt: now,
+            updatedAt: now,
+        };
+
+        const result = await db.insert(subscriptionPlans).values(planData).returning();
+
+        const createdPlan = result[0];
+
+        return {
+            id: createdPlan.id,
+            name: createdPlan.name,
+            displayName: createdPlan.displayName,
+            description: createdPlan.description,
+            price: {
+                monthly: createdPlan.priceMonthly,
+                yearly: createdPlan.priceYearly,
+            },
+            currency: createdPlan.currency,
+            features: JSON.parse(createdPlan.features),
+            limits: JSON.parse(createdPlan.limits),
+            isActive: Boolean(createdPlan.isActive),
+            createdAt: createdPlan.createdAt,
+            updatedAt: createdPlan.updatedAt,
+        };
+    }
+
+    // Update subscription plan
+    async updatePlan(planId: number, updates: {
+        name?: string;
+        displayName?: string;
+        description?: string;
+        priceMonthly?: number;
+        priceYearly?: number;
+        currency?: string;
+        features?: any[];
+        limits?: any;
+        isActive?: boolean;
+    }): Promise<any> {
+        const now = Math.floor(Date.now() / 1000);
+
+        // Build update object
+        const updateData: any = {
+            updatedAt: now,
+        };
+
+        if (updates.name !== undefined) updateData.name = updates.name;
+        if (updates.displayName !== undefined) updateData.displayName = updates.displayName;
+        if (updates.description !== undefined) updateData.description = updates.description;
+        if (updates.priceMonthly !== undefined) updateData.priceMonthly = updates.priceMonthly;
+        if (updates.priceYearly !== undefined) updateData.priceYearly = updates.priceYearly;
+        if (updates.currency !== undefined) updateData.currency = updates.currency;
+        if (updates.features !== undefined) updateData.features = JSON.stringify(updates.features);
+        if (updates.limits !== undefined) updateData.limits = JSON.stringify(updates.limits);
+        if (updates.isActive !== undefined) updateData.isActive = updates.isActive;
+
+        await db
+            .update(subscriptionPlans)
+            .set(updateData)
+            .where(eq(subscriptionPlans.id, planId));
+
+        // Fetch and return updated plan
+        const updatedPlan = await this.getPlanById(planId);
+        if (!updatedPlan) {
+            throw new Error('Plan not found after update');
+        }
+
+        return updatedPlan;
+    }
+
+    // Delete subscription plan (soft delete by setting isActive to false)
+    async deletePlan(planId: number): Promise<void> {
+        const now = Math.floor(Date.now() / 1000);
+
+        // Check if plan has active subscriptions
+        const activeSubscriptionsResult = await db
+            .select({ count: sql<number>`COUNT(*)` })
+            .from(userSubscriptions)
+            .where(sql`${userSubscriptions.planId} = ${planId} AND ${userSubscriptions.status} = 'active'`);
+
+        const activeSubscriptions = activeSubscriptionsResult[0]?.count || 0;
+
+        if (activeSubscriptions > 0) {
+            throw new Error(`Cannot delete plan with ${activeSubscriptions} active subscriptions. Deactivate the plan instead.`);
+        }
+
+        // Soft delete by setting isActive to false
+        await db
+            .update(subscriptionPlans)
+            .set({
+                isActive: false,
+                updatedAt: now,
+            })
+            .where(eq(subscriptionPlans.id, planId));
+    }
+
+    // Get subscription list with pagination, search, and filtering
+    async getSubscriptionList(params: {
+        page?: number;
+        limit?: number;
+        search?: string;
+        plan?: string;
+        status?: string;
+    }): Promise<{
+        subscriptions: any[];
+        total: number;
+        page: number;
+        totalPages: number;
+    }> {
+        const page = params.page || 1;
+        const limit = params.limit || 20;
+        const offset = (page - 1) * limit;
+
+        // Build WHERE conditions
+        const conditions: any[] = [];
+
+        // Search by user name, email, or subscription ID
+        if (params.search) {
+            const searchTerm = `%${params.search}%`;
+            conditions.push(
+                sql`(
+                    ${users.email} LIKE ${searchTerm} OR
+                    ${users.firstName} LIKE ${searchTerm} OR
+                    ${users.lastName} LIKE ${searchTerm} OR
+                    ${userSubscriptions.id} = ${params.search}
+                )`
+            );
+        }
+
+        // Filter by subscription status
+        if (params.status) {
+            conditions.push(eq(userSubscriptions.status, params.status as 'active' | 'expired' | 'cancelled' | 'pending'));
+        }
+
+        // Build WHERE clause
+        const whereClause = conditions.length > 0
+            ? sql`WHERE ${sql.join(conditions, sql` AND `)}`
+            : sql``;
+
+        // Get total count using raw SQL
+        const countQuery = sql`
+            SELECT COUNT(*) as count
+            FROM ${userSubscriptions}
+            INNER JOIN ${users} ON ${userSubscriptions.userId} = ${users.id}
+            INNER JOIN ${subscriptionPlans} ON ${userSubscriptions.planId} = ${subscriptionPlans.id}
+            ${whereClause}
+            ${params.plan ? sql`AND ${subscriptionPlans.name} = ${params.plan}` : sql``}
+        `;
+        const countResult = await db.all(countQuery);
+        const total = (countResult[0] as any)?.count || 0;
+
+        // Build main query with joins
+        const mainQuery = sql`
+            SELECT 
+                ${userSubscriptions.id} as id,
+                ${userSubscriptions.userId} as userId,
+                ${userSubscriptions.planId} as planId,
+                ${userSubscriptions.status} as status,
+                ${userSubscriptions.billingCycle} as billingCycle,
+                ${userSubscriptions.startDate} as startDate,
+                ${userSubscriptions.endDate} as endDate,
+                ${userSubscriptions.autoRenew} as autoRenew,
+                ${userSubscriptions.createdAt} as createdAt,
+                ${userSubscriptions.updatedAt} as updatedAt,
+                ${users.email} as userEmail,
+                ${users.firstName} as userFirstName,
+                ${users.lastName} as userLastName,
+                ${subscriptionPlans.name} as planName,
+                ${subscriptionPlans.displayName} as planDisplayName,
+                ${subscriptionPlans.priceMonthly} as planPriceMonthly,
+                ${subscriptionPlans.priceYearly} as planPriceYearly
+            FROM ${userSubscriptions}
+            INNER JOIN ${users} ON ${userSubscriptions.userId} = ${users.id}
+            INNER JOIN ${subscriptionPlans} ON ${userSubscriptions.planId} = ${subscriptionPlans.id}
+            ${whereClause}
+            ${params.plan ? sql`AND ${subscriptionPlans.name} = ${params.plan}` : sql``}
+            ORDER BY ${userSubscriptions.createdAt} DESC
+            LIMIT ${limit} OFFSET ${offset}
+        `;
+
+        const result = await db.all(mainQuery);
+        const subscriptionList = result.map((row: any) => ({
+            id: row.id,
+            userId: row.userId,
+            user: {
+                id: row.userId,
+                email: row.userEmail || 'N/A',
+                name: `${row.userFirstName || ''} ${row.userLastName || ''}`.trim() || 'N/A',
+                firstName: row.userFirstName || '',
+                lastName: row.userLastName || '',
+            },
+            plan: {
+                id: row.planId,
+                name: row.planName,
+                displayName: row.planDisplayName,
+                priceMonthly: row.planPriceMonthly,
+                priceYearly: row.planPriceYearly,
+            },
+            status: row.status,
+            billingCycle: row.billingCycle,
+            startDate: row.startDate,
+            endDate: row.endDate,
+            autoRenew: Boolean(row.autoRenew),
+            createdAt: row.createdAt,
+            updatedAt: row.updatedAt,
+            // Calculate next billing date (if active and auto-renew)
+            nextBilling: row.status === 'active' && row.autoRenew ? row.endDate : null,
+        }));
+
+        const totalPages = Math.ceil(total / limit);
+
+        return {
+            subscriptions: subscriptionList,
+            total,
+            page,
+            totalPages,
+        };
+    }
+
+    // Get subscription details by ID with payment history and invoices
+    async getSubscriptionDetails(subscriptionId: number): Promise<any | null> {
+        const now = Math.floor(Date.now() / 1000);
+
+        // Fetch subscription with user and plan details
+        const subscriptionQuery = sql`
+            SELECT 
+                ${userSubscriptions.id} as id,
+                ${userSubscriptions.userId} as userId,
+                ${userSubscriptions.planId} as planId,
+                ${userSubscriptions.status} as status,
+                ${userSubscriptions.billingCycle} as billingCycle,
+                ${userSubscriptions.startDate} as startDate,
+                ${userSubscriptions.endDate} as endDate,
+                ${userSubscriptions.autoRenew} as autoRenew,
+                ${userSubscriptions.cancelledAt} as cancelledAt,
+                ${userSubscriptions.cancellationReason} as cancellationReason,
+                ${userSubscriptions.createdAt} as createdAt,
+                ${userSubscriptions.updatedAt} as updatedAt,
+                ${users.id} as userId,
+                ${users.email} as userEmail,
+                ${users.firstName} as userFirstName,
+                ${users.lastName} as userLastName,
+                ${subscriptionPlans.id} as planId,
+                ${subscriptionPlans.name} as planName,
+                ${subscriptionPlans.displayName} as planDisplayName,
+                ${subscriptionPlans.description} as planDescription,
+                ${subscriptionPlans.priceMonthly} as planPriceMonthly,
+                ${subscriptionPlans.priceYearly} as planPriceYearly,
+                ${subscriptionPlans.currency} as planCurrency,
+                ${subscriptionPlans.features} as planFeatures,
+                ${subscriptionPlans.limits} as planLimits
+            FROM ${userSubscriptions}
+            INNER JOIN ${users} ON ${userSubscriptions.userId} = ${users.id}
+            INNER JOIN ${subscriptionPlans} ON ${userSubscriptions.planId} = ${subscriptionPlans.id}
+            WHERE ${userSubscriptions.id} = ${subscriptionId}
+        `;
+
+        const subscriptionResult = await db.all(subscriptionQuery);
+
+        if (subscriptionResult.length === 0) {
+            return null;
+        }
+
+        const row: any = subscriptionResult[0];
+
+        // Fetch payment history for this subscription
+        const paymentHistoryQuery = sql`
+            SELECT 
+                ${payments.id} as id,
+                ${payments.amount} as amount,
+                ${payments.currency} as currency,
+                ${payments.paymentMethod} as paymentMethod,
+                ${payments.status} as status,
+                ${payments.midtransTransactionId} as midtransTransactionId,
+                ${payments.midtransOrderId} as midtransOrderId,
+                ${payments.paidAt} as paidAt,
+                ${payments.createdAt} as createdAt
+            FROM ${payments}
+            WHERE ${payments.subscriptionId} = ${subscriptionId}
+            ORDER BY ${payments.createdAt} DESC
+        `;
+
+        const paymentHistory = await db.all(paymentHistoryQuery);
+
+        // Fetch invoices related to this subscription
+        const invoicesQuery = sql`
+            SELECT 
+                ${invoices.id} as id,
+                ${invoices.invoiceNumber} as invoiceNumber,
+                ${invoices.amount} as amount,
+                ${invoices.currency} as currency,
+                ${invoices.status} as status,
+                ${invoices.issuedAt} as issuedAt,
+                ${invoices.dueAt} as dueAt,
+                ${invoices.paidAt} as paidAt,
+                ${invoices.items} as items
+            FROM ${invoices}
+            WHERE ${invoices.paymentId} IN (
+                SELECT ${payments.id}
+                FROM ${payments}
+                WHERE ${payments.subscriptionId} = ${subscriptionId}
+            )
+            ORDER BY ${invoices.issuedAt} DESC
+        `;
+
+        const invoicesList = await db.all(invoicesQuery);
+
+        // Calculate renewal status and next billing date
+        const isActive = row.status === 'active';
+        const willRenew = isActive && Boolean(row.autoRenew);
+        const nextBillingDate = willRenew ? row.endDate : null;
+        const daysUntilRenewal = nextBillingDate ? Math.floor((nextBillingDate - now) / (24 * 60 * 60)) : null;
+
+        // Determine renewal status message
+        let renewalStatus = 'N/A';
+        if (row.status === 'cancelled') {
+            renewalStatus = 'Cancelled';
+        } else if (row.status === 'expired') {
+            renewalStatus = 'Expired';
+        } else if (row.status === 'pending') {
+            renewalStatus = 'Pending Payment';
+        } else if (isActive && willRenew) {
+            renewalStatus = `Will renew on ${new Date(nextBillingDate! * 1000).toLocaleDateString()}`;
+        } else if (isActive && !willRenew) {
+            renewalStatus = `Will expire on ${new Date(row.endDate * 1000).toLocaleDateString()}`;
+        }
+
+        return {
+            id: row.id,
+            user: {
+                id: row.userId,
+                email: row.userEmail || 'N/A',
+                name: `${row.userFirstName || ''} ${row.userLastName || ''}`.trim() || 'N/A',
+                firstName: row.userFirstName || '',
+                lastName: row.userLastName || '',
+            },
+            plan: {
+                id: row.planId,
+                name: row.planName,
+                displayName: row.planDisplayName,
+                description: row.planDescription,
+                priceMonthly: row.planPriceMonthly,
+                priceYearly: row.planPriceYearly,
+                currency: row.planCurrency,
+                features: JSON.parse(row.planFeatures || '[]'),
+                limits: JSON.parse(row.planLimits || '{}'),
+            },
+            status: row.status,
+            billingCycle: row.billingCycle,
+            startDate: row.startDate,
+            endDate: row.endDate,
+            autoRenew: Boolean(row.autoRenew),
+            cancelledAt: row.cancelledAt,
+            cancellationReason: row.cancellationReason,
+            createdAt: row.createdAt,
+            updatedAt: row.updatedAt,
+            renewalStatus: {
+                status: renewalStatus,
+                nextBillingDate,
+                daysUntilRenewal,
+                willRenew,
+            },
+            paymentHistory: paymentHistory.map((payment: any) => ({
+                id: payment.id,
+                amount: payment.amount,
+                currency: payment.currency,
+                paymentMethod: payment.paymentMethod,
+                status: payment.status,
+                midtransTransactionId: payment.midtransTransactionId,
+                midtransOrderId: payment.midtransOrderId,
+                paidAt: payment.paidAt,
+                createdAt: payment.createdAt,
+            })),
+            invoices: invoicesList.map((invoice: any) => ({
+                id: invoice.id,
+                invoiceNumber: invoice.invoiceNumber,
+                amount: invoice.amount,
+                currency: invoice.currency,
+                status: invoice.status,
+                issuedAt: invoice.issuedAt,
+                dueAt: invoice.dueAt,
+                paidAt: invoice.paidAt,
+                items: JSON.parse(invoice.items || '[]'),
+            })),
+        };
+    }
+
+    // Extend subscription by adding days to end date
+    async extendSubscription(subscriptionId: number, days: number, reason: string): Promise<any> {
+        const now = Math.floor(Date.now() / 1000);
+
+        // Fetch current subscription
+        const [subscription] = await db
+            .select()
+            .from(userSubscriptions)
+            .where(eq(userSubscriptions.id, subscriptionId));
+
+        if (!subscription) {
+            throw new Error('Subscription not found');
+        }
+
+        // Calculate new end date
+        const daysInSeconds = days * 24 * 60 * 60;
+        const newEndDate = subscription.endDate + daysInSeconds;
+
+        // Update subscription
+        await db
+            .update(userSubscriptions)
+            .set({
+                endDate: newEndDate,
+                updatedAt: now,
+            })
+            .where(eq(userSubscriptions.id, subscriptionId));
+
+        // Fetch and return updated subscription
+        return await this.getSubscriptionDetails(subscriptionId);
+    }
+
+    // Upgrade subscription to a higher plan
+    async upgradeSubscription(subscriptionId: number, newPlanId: number): Promise<any> {
+        const now = Math.floor(Date.now() / 1000);
+
+        // Fetch current subscription
+        const [subscription] = await db
+            .select()
+            .from(userSubscriptions)
+            .where(eq(userSubscriptions.id, subscriptionId));
+
+        if (!subscription) {
+            throw new Error('Subscription not found');
+        }
+
+        // Fetch new plan
+        const [newPlan] = await db
+            .select()
+            .from(subscriptionPlans)
+            .where(eq(subscriptionPlans.id, newPlanId));
+
+        if (!newPlan) {
+            throw new Error('New plan not found');
+        }
+
+        // Update subscription with new plan
+        await db
+            .update(userSubscriptions)
+            .set({
+                planId: newPlanId,
+                updatedAt: now,
+            })
+            .where(eq(userSubscriptions.id, subscriptionId));
+
+        // Update user's subscription plan ID
+        await db
+            .update(users)
+            .set({
+                subscriptionPlanId: newPlanId,
+                updatedAt: now,
+            })
+            .where(eq(users.id, subscription.userId));
+
+        // Fetch and return updated subscription
+        return await this.getSubscriptionDetails(subscriptionId);
+    }
+
+    // Downgrade subscription to a lower plan
+    async downgradeSubscription(subscriptionId: number, newPlanId: number): Promise<any> {
+        const now = Math.floor(Date.now() / 1000);
+
+        // Fetch current subscription
+        const [subscription] = await db
+            .select()
+            .from(userSubscriptions)
+            .where(eq(userSubscriptions.id, subscriptionId));
+
+        if (!subscription) {
+            throw new Error('Subscription not found');
+        }
+
+        // Fetch new plan
+        const [newPlan] = await db
+            .select()
+            .from(subscriptionPlans)
+            .where(eq(subscriptionPlans.id, newPlanId));
+
+        if (!newPlan) {
+            throw new Error('New plan not found');
+        }
+
+        // Update subscription with new plan
+        await db
+            .update(userSubscriptions)
+            .set({
+                planId: newPlanId,
+                updatedAt: now,
+            })
+            .where(eq(userSubscriptions.id, subscriptionId));
+
+        // Update user's subscription plan ID
+        await db
+            .update(users)
+            .set({
+                subscriptionPlanId: newPlanId,
+                updatedAt: now,
+            })
+            .where(eq(users.id, subscription.userId));
+
+        // Fetch and return updated subscription
+        return await this.getSubscriptionDetails(subscriptionId);
+    }
+
+    // Cancel subscription
+    async cancelSubscription(subscriptionId: number, reason: string): Promise<void> {
+        const now = Math.floor(Date.now() / 1000);
+
+        // Fetch current subscription
+        const [subscription] = await db
+            .select()
+            .from(userSubscriptions)
+            .where(eq(userSubscriptions.id, subscriptionId));
+
+        if (!subscription) {
+            throw new Error('Subscription not found');
+        }
+
+        // Update subscription status to cancelled
+        await db
+            .update(userSubscriptions)
+            .set({
+                status: 'cancelled',
+                autoRenew: false,
+                cancelledAt: now,
+                cancellationReason: reason,
+                updatedAt: now,
+            })
+            .where(eq(userSubscriptions.id, subscriptionId));
+
+        // Update user's subscription status
+        await db
+            .update(users)
+            .set({
+                subscriptionStatus: 'cancelled',
+                updatedAt: now,
+            })
+            .where(eq(users.id, subscription.userId));
+    }
+
+    // Get subscription analytics
+    async getSubscriptionAnalytics(): Promise<{
+        total: number;
+        active: number;
+        cancelled: number;
+        churnRate: number;
+        conversionRate: number;
+        byPlan: Record<string, number>;
+    }> {
+        const now = Math.floor(Date.now() / 1000);
+        const thirtyDaysAgo = now - (30 * 24 * 60 * 60);
+
+        // Total subscriptions (all time)
+        const totalResult = await db
+            .select({ count: sql<number>`COUNT(*)` })
+            .from(userSubscriptions);
+        const total = totalResult[0]?.count || 0;
+
+        // Active subscriptions
+        const activeResult = await db
+            .select({ count: sql<number>`COUNT(*)` })
+            .from(userSubscriptions)
+            .where(eq(userSubscriptions.status, 'active'));
+        const active = activeResult[0]?.count || 0;
+
+        // Cancelled subscriptions
+        const cancelledResult = await db
+            .select({ count: sql<number>`COUNT(*)` })
+            .from(userSubscriptions)
+            .where(eq(userSubscriptions.status, 'cancelled'));
+        const cancelled = cancelledResult[0]?.count || 0;
+
+        // Churn rate (cancelled in last 30 days / total active at start of period)
+        const cancelledLast30DaysResult = await db
+            .select({ count: sql<number>`COUNT(*)` })
+            .from(userSubscriptions)
+            .where(sql`${userSubscriptions.cancelledAt} >= ${thirtyDaysAgo}`);
+        const cancelledLast30Days = cancelledLast30DaysResult[0]?.count || 0;
+
+        const churnRate = active > 0 ? (cancelledLast30Days / (active + cancelledLast30Days)) * 100 : 0;
+
+        // Conversion rate (paid subscriptions / total users)
+        const totalUsersResult = await db.select({ count: sql<number>`COUNT(*)` }).from(users);
+        const totalUsers = totalUsersResult[0]?.count || 0;
+
+        const paidSubscriptionsResult = await db
+            .select({ count: sql<number>`COUNT(*)` })
+            .from(userSubscriptions)
+            .innerJoin(subscriptionPlans, eq(userSubscriptions.planId, subscriptionPlans.id))
+            .where(sql`${userSubscriptions.status} = 'active' AND ${subscriptionPlans.name} != 'free'`);
+        const paidSubscriptions = paidSubscriptionsResult[0]?.count || 0;
+
+        const conversionRate = totalUsers > 0 ? (paidSubscriptions / totalUsers) * 100 : 0;
+
+        // Subscriptions by plan (active only)
+        const byPlanResult = await db
+            .select({
+                planName: subscriptionPlans.name,
+                count: sql<number>`COUNT(*)`,
+            })
+            .from(userSubscriptions)
+            .innerJoin(subscriptionPlans, eq(userSubscriptions.planId, subscriptionPlans.id))
+            .where(eq(userSubscriptions.status, 'active'))
+            .groupBy(subscriptionPlans.name);
+
+        const byPlan: Record<string, number> = {};
+        byPlanResult.forEach(row => {
+            byPlan[row.planName] = row.count;
+        });
+
+        return {
+            total,
+            active,
+            cancelled,
+            churnRate: Math.round(churnRate * 100) / 100,
+            conversionRate: Math.round(conversionRate * 100) / 100,
+            byPlan,
         };
     }
 }

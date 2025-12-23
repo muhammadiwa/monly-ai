@@ -937,4 +937,864 @@ router.get('/admin/users/:id/activity', requireAdminAuth, async (req: AdminAuthR
     }
 });
 
+// Subscription Plans CRUD API
+
+// Validation schemas for subscription plans
+const createPlanSchema = z.object({
+    name: z.string().min(1, 'Plan name is required'),
+    displayName: z.string().min(1, 'Display name is required'),
+    description: z.string().optional(),
+    priceMonthly: z.number().min(0, 'Monthly price must be non-negative'),
+    priceYearly: z.number().min(0, 'Yearly price must be non-negative'),
+    currency: z.string().default('IDR'),
+    features: z.array(z.string()).min(1, 'At least one feature is required'),
+    limits: z.object({
+        transactionLimit: z.number().int(),
+        accountLimit: z.number().int(),
+        budgetLimit: z.number().int(),
+        goalLimit: z.number().int(),
+        aiInsights: z.boolean(),
+        advancedReports: z.boolean(),
+        prioritySupport: z.boolean(),
+        apiAccess: z.boolean(),
+    }),
+    isActive: z.boolean().optional(),
+});
+
+const updatePlanSchema = createPlanSchema.partial();
+
+// GET /api/admin/plans - Get all subscription plans
+router.get('/admin/plans', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        // Fetch all plans from database
+        const plans = await adminStorage.getAllPlans();
+
+        // Log admin activity
+        await adminStorage.logAdminActivity({
+            adminId: req.admin.id,
+            action: 'VIEW_PLANS',
+            resourceType: 'SUBSCRIPTION_PLAN',
+            ipAddress: req.ip || req.socket.remoteAddress,
+        });
+
+        res.json({
+            success: true,
+            data: plans,
+        });
+    } catch (error) {
+        console.error('Error fetching subscription plans:', error);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to fetch subscription plans'
+            }
+        });
+    }
+});
+
+// POST /api/admin/plans - Create new subscription plan
+router.post('/admin/plans', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        // Validate input
+        const validatedData = createPlanSchema.parse(req.body);
+
+        // Create plan in database
+        const newPlan = await adminStorage.createPlan(validatedData);
+
+        // Log admin activity
+        await adminStorage.logAdminActivity({
+            adminId: req.admin.id,
+            action: 'CREATE_PLAN',
+            resourceType: 'SUBSCRIPTION_PLAN',
+            resourceId: String(newPlan.id),
+            details: { planName: newPlan.name },
+            ipAddress: req.ip || req.socket.remoteAddress,
+        });
+
+        res.status(201).json({
+            success: true,
+            data: newPlan,
+            message: 'Subscription plan created successfully',
+        });
+    } catch (error) {
+        console.error('Error creating subscription plan:', error);
+
+        if (error instanceof z.ZodError) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Invalid input data',
+                    details: error.errors
+                }
+            });
+        }
+
+        // Check for unique constraint violation (duplicate plan name)
+        if (error instanceof Error && error.message.includes('UNIQUE constraint failed')) {
+            return res.status(409).json({
+                success: false,
+                error: {
+                    code: 'RESOURCE_ALREADY_EXISTS',
+                    message: 'A plan with this name already exists'
+                }
+            });
+        }
+
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to create subscription plan'
+            }
+        });
+    }
+});
+
+// PUT /api/admin/plans/:id - Update subscription plan
+router.put('/admin/plans/:id', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        const planId = parseInt(req.params.id);
+
+        if (isNaN(planId)) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Invalid plan ID'
+                }
+            });
+        }
+
+        // Check if plan exists
+        const existingPlan = await adminStorage.getPlanById(planId);
+        if (!existingPlan) {
+            return res.status(404).json({
+                success: false,
+                error: {
+                    code: 'RESOURCE_NOT_FOUND',
+                    message: 'Subscription plan not found'
+                }
+            });
+        }
+
+        // Validate input
+        const validatedData = updatePlanSchema.parse(req.body);
+
+        // Update plan in database
+        const updatedPlan = await adminStorage.updatePlan(planId, validatedData);
+
+        // Log admin activity
+        await adminStorage.logAdminActivity({
+            adminId: req.admin.id,
+            action: 'UPDATE_PLAN',
+            resourceType: 'SUBSCRIPTION_PLAN',
+            resourceId: String(planId),
+            details: { updates: validatedData },
+            ipAddress: req.ip || req.socket.remoteAddress,
+        });
+
+        res.json({
+            success: true,
+            data: updatedPlan,
+            message: 'Subscription plan updated successfully',
+        });
+    } catch (error) {
+        console.error('Error updating subscription plan:', error);
+
+        if (error instanceof z.ZodError) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Invalid input data',
+                    details: error.errors
+                }
+            });
+        }
+
+        // Check for unique constraint violation (duplicate plan name)
+        if (error instanceof Error && error.message.includes('UNIQUE constraint failed')) {
+            return res.status(409).json({
+                success: false,
+                error: {
+                    code: 'RESOURCE_CONFLICT',
+                    message: 'A plan with this name already exists'
+                }
+            });
+        }
+
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to update subscription plan'
+            }
+        });
+    }
+});
+
+// DELETE /api/admin/plans/:id - Delete subscription plan
+router.delete('/admin/plans/:id', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        const planId = parseInt(req.params.id);
+
+        if (isNaN(planId)) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Invalid plan ID'
+                }
+            });
+        }
+
+        // Check if plan exists
+        const existingPlan = await adminStorage.getPlanById(planId);
+        if (!existingPlan) {
+            return res.status(404).json({
+                success: false,
+                error: {
+                    code: 'RESOURCE_NOT_FOUND',
+                    message: 'Subscription plan not found'
+                }
+            });
+        }
+
+        // Delete plan (soft delete)
+        await adminStorage.deletePlan(planId);
+
+        // Log admin activity
+        await adminStorage.logAdminActivity({
+            adminId: req.admin.id,
+            action: 'DELETE_PLAN',
+            resourceType: 'SUBSCRIPTION_PLAN',
+            resourceId: String(planId),
+            details: { planName: existingPlan.name },
+            ipAddress: req.ip || req.socket.remoteAddress,
+        });
+
+        res.json({
+            success: true,
+            message: 'Subscription plan deleted successfully',
+        });
+    } catch (error) {
+        console.error('Error deleting subscription plan:', error);
+
+        // Check for active subscriptions error
+        if (error instanceof Error && error.message.includes('Cannot delete plan with')) {
+            return res.status(409).json({
+                success: false,
+                error: {
+                    code: 'RESOURCE_CONFLICT',
+                    message: error.message
+                }
+            });
+        }
+
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to delete subscription plan'
+            }
+        });
+    }
+});
+
+// GET /api/admin/subscriptions - Get subscription list with pagination, search, and filtering
+router.get('/admin/subscriptions', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        // Parse query parameters
+        const page = parseInt(req.query.page as string) || 1;
+        const limit = parseInt(req.query.limit as string) || 20;
+        const search = req.query.search as string;
+        const plan = req.query.plan as string;
+        const status = req.query.status as string;
+
+        // Validate pagination parameters
+        if (page < 1) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Page must be greater than 0'
+                }
+            });
+        }
+
+        if (limit < 1 || limit > 100) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Limit must be between 1 and 100'
+                }
+            });
+        }
+
+        // Validate status parameter if provided
+        if (status && !['active', 'expired', 'cancelled', 'pending'].includes(status)) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Invalid status. Must be one of: active, expired, cancelled, pending'
+                }
+            });
+        }
+
+        // Fetch subscription list from database
+        const result = await adminStorage.getSubscriptionList({
+            page,
+            limit,
+            search,
+            plan,
+            status,
+        });
+
+        // Log admin activity
+        await adminStorage.logAdminActivity({
+            adminId: req.admin.id,
+            action: 'VIEW_SUBSCRIPTION_LIST',
+            resourceType: 'SUBSCRIPTION',
+            details: { page, limit, search, plan, status },
+            ipAddress: req.ip || req.socket.remoteAddress,
+        });
+
+        res.json({
+            success: true,
+            data: result,
+        });
+    } catch (error) {
+        console.error('Error fetching subscription list:', error);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to fetch subscription list'
+            }
+        });
+    }
+});
+
+// GET /api/admin/subscriptions/:id - Get subscription details with payment history and invoices
+router.get('/admin/subscriptions/:id', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        const subscriptionId = parseInt(req.params.id);
+
+        if (isNaN(subscriptionId)) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Invalid subscription ID'
+                }
+            });
+        }
+
+        // Fetch subscription details from database
+        const subscriptionDetails = await adminStorage.getSubscriptionDetails(subscriptionId);
+
+        if (!subscriptionDetails) {
+            return res.status(404).json({
+                success: false,
+                error: {
+                    code: 'RESOURCE_NOT_FOUND',
+                    message: 'Subscription not found'
+                }
+            });
+        }
+
+        // Log admin activity
+        await adminStorage.logAdminActivity({
+            adminId: req.admin.id,
+            action: 'VIEW_SUBSCRIPTION_DETAILS',
+            resourceType: 'SUBSCRIPTION',
+            resourceId: String(subscriptionId),
+            ipAddress: req.ip || req.socket.remoteAddress,
+        });
+
+        res.json({
+            success: true,
+            data: subscriptionDetails,
+        });
+    } catch (error) {
+        console.error('Error fetching subscription details:', error);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to fetch subscription details'
+            }
+        });
+    }
+});
+
+// Validation schemas for subscription management actions
+const extendSubscriptionSchema = z.object({
+    days: z.number().int().min(1, 'Days must be at least 1').max(365, 'Days cannot exceed 365'),
+    reason: z.string().min(1, 'Reason is required'),
+});
+
+const upgradeDowngradeSubscriptionSchema = z.object({
+    newPlanId: z.number().int().min(1, 'New plan ID is required'),
+});
+
+const cancelSubscriptionSchema = z.object({
+    reason: z.string().min(1, 'Cancellation reason is required'),
+});
+
+// PUT /api/admin/subscriptions/:id/extend - Extend subscription by adding days
+router.put('/admin/subscriptions/:id/extend', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        const subscriptionId = parseInt(req.params.id);
+
+        if (isNaN(subscriptionId)) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Invalid subscription ID'
+                }
+            });
+        }
+
+        // Validate input
+        const validatedData = extendSubscriptionSchema.parse(req.body);
+
+        // Extend subscription
+        const updatedSubscription = await adminStorage.extendSubscription(
+            subscriptionId,
+            validatedData.days,
+            validatedData.reason
+        );
+
+        // Log admin activity
+        await adminStorage.logAdminActivity({
+            adminId: req.admin.id,
+            action: 'EXTEND_SUBSCRIPTION',
+            resourceType: 'SUBSCRIPTION',
+            resourceId: String(subscriptionId),
+            details: { days: validatedData.days, reason: validatedData.reason },
+            ipAddress: req.ip || req.socket.remoteAddress,
+        });
+
+        res.json({
+            success: true,
+            data: updatedSubscription,
+            message: `Subscription extended by ${validatedData.days} days successfully`,
+        });
+    } catch (error) {
+        console.error('Error extending subscription:', error);
+
+        if (error instanceof z.ZodError) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Invalid input data',
+                    details: error.errors
+                }
+            });
+        }
+
+        if (error instanceof Error && error.message === 'Subscription not found') {
+            return res.status(404).json({
+                success: false,
+                error: {
+                    code: 'RESOURCE_NOT_FOUND',
+                    message: 'Subscription not found'
+                }
+            });
+        }
+
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to extend subscription'
+            }
+        });
+    }
+});
+
+// PUT /api/admin/subscriptions/:id/upgrade - Upgrade subscription to a higher plan
+router.put('/admin/subscriptions/:id/upgrade', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        const subscriptionId = parseInt(req.params.id);
+
+        if (isNaN(subscriptionId)) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Invalid subscription ID'
+                }
+            });
+        }
+
+        // Validate input
+        const validatedData = upgradeDowngradeSubscriptionSchema.parse(req.body);
+
+        // Upgrade subscription
+        const updatedSubscription = await adminStorage.upgradeSubscription(
+            subscriptionId,
+            validatedData.newPlanId
+        );
+
+        // Log admin activity
+        await adminStorage.logAdminActivity({
+            adminId: req.admin.id,
+            action: 'UPGRADE_SUBSCRIPTION',
+            resourceType: 'SUBSCRIPTION',
+            resourceId: String(subscriptionId),
+            details: { newPlanId: validatedData.newPlanId },
+            ipAddress: req.ip || req.socket.remoteAddress,
+        });
+
+        res.json({
+            success: true,
+            data: updatedSubscription,
+            message: 'Subscription upgraded successfully',
+        });
+    } catch (error) {
+        console.error('Error upgrading subscription:', error);
+
+        if (error instanceof z.ZodError) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Invalid input data',
+                    details: error.errors
+                }
+            });
+        }
+
+        if (error instanceof Error) {
+            if (error.message === 'Subscription not found') {
+                return res.status(404).json({
+                    success: false,
+                    error: {
+                        code: 'RESOURCE_NOT_FOUND',
+                        message: 'Subscription not found'
+                    }
+                });
+            }
+            if (error.message === 'New plan not found') {
+                return res.status(404).json({
+                    success: false,
+                    error: {
+                        code: 'RESOURCE_NOT_FOUND',
+                        message: 'New plan not found'
+                    }
+                });
+            }
+        }
+
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to upgrade subscription'
+            }
+        });
+    }
+});
+
+// PUT /api/admin/subscriptions/:id/downgrade - Downgrade subscription to a lower plan
+router.put('/admin/subscriptions/:id/downgrade', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        const subscriptionId = parseInt(req.params.id);
+
+        if (isNaN(subscriptionId)) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Invalid subscription ID'
+                }
+            });
+        }
+
+        // Validate input
+        const validatedData = upgradeDowngradeSubscriptionSchema.parse(req.body);
+
+        // Downgrade subscription
+        const updatedSubscription = await adminStorage.downgradeSubscription(
+            subscriptionId,
+            validatedData.newPlanId
+        );
+
+        // Log admin activity
+        await adminStorage.logAdminActivity({
+            adminId: req.admin.id,
+            action: 'DOWNGRADE_SUBSCRIPTION',
+            resourceType: 'SUBSCRIPTION',
+            resourceId: String(subscriptionId),
+            details: { newPlanId: validatedData.newPlanId },
+            ipAddress: req.ip || req.socket.remoteAddress,
+        });
+
+        res.json({
+            success: true,
+            data: updatedSubscription,
+            message: 'Subscription downgraded successfully',
+        });
+    } catch (error) {
+        console.error('Error downgrading subscription:', error);
+
+        if (error instanceof z.ZodError) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Invalid input data',
+                    details: error.errors
+                }
+            });
+        }
+
+        if (error instanceof Error) {
+            if (error.message === 'Subscription not found') {
+                return res.status(404).json({
+                    success: false,
+                    error: {
+                        code: 'RESOURCE_NOT_FOUND',
+                        message: 'Subscription not found'
+                    }
+                });
+            }
+            if (error.message === 'New plan not found') {
+                return res.status(404).json({
+                    success: false,
+                    error: {
+                        code: 'RESOURCE_NOT_FOUND',
+                        message: 'New plan not found'
+                    }
+                });
+            }
+        }
+
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to downgrade subscription'
+            }
+        });
+    }
+});
+
+// PUT /api/admin/subscriptions/:id/cancel - Cancel subscription
+router.put('/admin/subscriptions/:id/cancel', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        const subscriptionId = parseInt(req.params.id);
+
+        if (isNaN(subscriptionId)) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Invalid subscription ID'
+                }
+            });
+        }
+
+        // Validate input
+        const validatedData = cancelSubscriptionSchema.parse(req.body);
+
+        // Cancel subscription
+        await adminStorage.cancelSubscription(subscriptionId, validatedData.reason);
+
+        // Log admin activity
+        await adminStorage.logAdminActivity({
+            adminId: req.admin.id,
+            action: 'CANCEL_SUBSCRIPTION',
+            resourceType: 'SUBSCRIPTION',
+            resourceId: String(subscriptionId),
+            details: { reason: validatedData.reason },
+            ipAddress: req.ip || req.socket.remoteAddress,
+        });
+
+        res.json({
+            success: true,
+            message: 'Subscription cancelled successfully',
+        });
+    } catch (error) {
+        console.error('Error cancelling subscription:', error);
+
+        if (error instanceof z.ZodError) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Invalid input data',
+                    details: error.errors
+                }
+            });
+        }
+
+        if (error instanceof Error && error.message === 'Subscription not found') {
+            return res.status(404).json({
+                success: false,
+                error: {
+                    code: 'RESOURCE_NOT_FOUND',
+                    message: 'Subscription not found'
+                }
+            });
+        }
+
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to cancel subscription'
+            }
+        });
+    }
+});
+
+// GET /api/admin/analytics/subscriptions - Get subscription analytics
+router.get('/admin/analytics/subscriptions', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        // Fetch subscription analytics from database
+        const subscriptionAnalytics = await adminStorage.getSubscriptionAnalytics();
+
+        // Log admin activity
+        await adminStorage.logAdminActivity({
+            adminId: req.admin.id,
+            action: 'VIEW_SUBSCRIPTION_ANALYTICS',
+            resourceType: 'ANALYTICS',
+            ipAddress: req.ip || req.socket.remoteAddress,
+        });
+
+        res.json({
+            success: true,
+            data: subscriptionAnalytics,
+        });
+    } catch (error) {
+        console.error('Error fetching subscription analytics:', error);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to fetch subscription analytics'
+            }
+        });
+    }
+});
+
 export default router;
