@@ -7,3 +7,5 @@ export { default as UserGrowthChart } from './UserGrowthChart';
 export type { UserGrowthChartProps } from './UserGrowthChart';
 export { default as RecentActivity } from './RecentActivity';
 export type { RecentActivityProps } from './RecentActivity';
+export { default as UserTable } from './UserTable';
+export type { UserTableProps, UserListItem } from './UserTable';
