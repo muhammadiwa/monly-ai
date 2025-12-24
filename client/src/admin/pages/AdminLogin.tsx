@@ -15,13 +15,15 @@ export default function AdminLogin() {
     const [formData, setFormData] = useState({
         email: "",
         password: "",
+        rememberMe: false,
     });
 
     // Check if admin is already authenticated
     useEffect(() => {
         const checkAuth = async () => {
             try {
-                const token = localStorage.getItem('admin-token');
+                // Check both localStorage and sessionStorage
+                const token = localStorage.getItem('admin-token') || sessionStorage.getItem('admin-token');
                 if (token) {
                     // Verify token is still valid
                     const response = await fetch('/api/admin/auth/me', {
@@ -35,16 +37,20 @@ export default function AdminLogin() {
                         window.location.href = '/admin/dashboard';
                         return;
                     } else {
-                        // Token is invalid, clear it
+                        // Token is invalid, clear it from both storages
                         localStorage.removeItem('admin-token');
                         localStorage.removeItem('admin-user');
+                        sessionStorage.removeItem('admin-token');
+                        sessionStorage.removeItem('admin-user');
                     }
                 }
             } catch (error) {
                 console.error('Error checking auth:', error);
-                // Clear invalid tokens
+                // Clear invalid tokens from both storages
                 localStorage.removeItem('admin-token');
                 localStorage.removeItem('admin-user');
+                sessionStorage.removeItem('admin-token');
+                sessionStorage.removeItem('admin-user');
             } finally {
                 setIsCheckingAuth(false);
             }
@@ -108,14 +114,24 @@ export default function AdminLogin() {
                 throw new Error(data.error?.message || 'Authentication failed');
             }
 
-            // Store JWT token in localStorage
+            // Store JWT token in localStorage or sessionStorage based on rememberMe
             if (data.token) {
-                localStorage.setItem('admin-token', data.token);
+                if (formData.rememberMe) {
+                    // Store in localStorage for persistent login
+                    localStorage.setItem('admin-token', data.token);
+                } else {
+                    // Store in sessionStorage for session-only login
+                    sessionStorage.setItem('admin-token', data.token);
+                }
             }
 
             // Store admin user data
             if (data.admin) {
-                localStorage.setItem('admin-user', JSON.stringify(data.admin));
+                if (formData.rememberMe) {
+                    localStorage.setItem('admin-user', JSON.stringify(data.admin));
+                } else {
+                    sessionStorage.setItem('admin-user', JSON.stringify(data.admin));
+                }
             }
 
             // Show success toast
@@ -239,8 +255,13 @@ export default function AdminLogin() {
                             </div>
 
                             <div className="flex items-center justify-between">
-                                <label className="flex items-center">
-                                    <input type="checkbox" className="mr-2" />
+                                <label className="flex items-center cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={formData.rememberMe}
+                                        onChange={(e) => setFormData({ ...formData, rememberMe: e.target.checked })}
+                                        className="mr-2 cursor-pointer"
+                                    />
                                     <span className="text-sm text-gray-300">Remember me</span>
                                 </label>
                             </div>

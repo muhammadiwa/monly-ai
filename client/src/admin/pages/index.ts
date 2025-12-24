@@ -6,3 +6,4 @@ export { default as SubscriptionPlans } from './SubscriptionPlans';
 export { default as SubscriptionList } from './SubscriptionList';
 export { default as PaymentList } from './PaymentList';
 export { default as RevenueAnalytics } from './RevenueAnalytics';
+export { default as SystemSettings } from './SystemSettings';

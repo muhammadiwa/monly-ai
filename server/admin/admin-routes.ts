@@ -11,6 +11,7 @@ import {
 } from './admin-auth';
 import { adminStorage } from './admin-storage';
 import { midtransService, type WebhookNotification } from '../services/midtrans-service';
+import { updateEnvVariables, getEnvVariable } from '../utils/env-manager';
 
 const router = Router();
 
@@ -3371,70 +3372,26 @@ router.get('/admin/settings/payment', requireAdminAuth, async (req: AdminAuthReq
             });
         }
 
-        // Fetch payment gateway settings from database
-        const settings = await adminStorage.getSystemSettings('payment');
+        // Always read from environment variables (.env file)
+        const envServerKey = getEnvVariable('MIDTRANS_SERVER_KEY') || '';
+        const envClientKey = getEnvVariable('MIDTRANS_CLIENT_KEY') || '';
+        const envIsProduction = getEnvVariable('MIDTRANS_IS_PRODUCTION') === 'true';
+        const envWebhookUrl = getEnvVariable('MIDTRANS_WEBHOOK_URL') || '';
 
-        // Decrypt sensitive credentials for display (masked)
+        // Mask credentials for security (show first 8 and last 4 chars)
         const config: any = {
-            serverKey: '',
-            clientKey: '',
-            isProduction: false,
-            webhookUrl: '',
-        };
-
-        for (const setting of settings) {
-            if (setting.key === 'payment.midtrans.server_key' && setting.value) {
-                try {
-                    const decrypted = decryptData(setting.value as string);
-                    // Mask the key for security (show first 8 and last 4 chars)
-                    config.serverKey = decrypted.length > 12
-                        ? decrypted.substring(0, 8) + '...' + decrypted.substring(decrypted.length - 4)
-                        : '***';
-                    config.hasServerKey = true;
-                } catch (error) {
-                    console.error('Error decrypting server key:', error);
-                    config.serverKey = 'Error decrypting';
-                    config.hasServerKey = false;
-                }
-            } else if (setting.key === 'payment.midtrans.client_key' && setting.value) {
-                try {
-                    const decrypted = decryptData(setting.value as string);
-                    // Mask the key for security
-                    config.clientKey = decrypted.length > 12
-                        ? decrypted.substring(0, 8) + '...' + decrypted.substring(decrypted.length - 4)
-                        : '***';
-                    config.hasClientKey = true;
-                } catch (error) {
-                    console.error('Error decrypting client key:', error);
-                    config.clientKey = 'Error decrypting';
-                    config.hasClientKey = false;
-                }
-            } else if (setting.key === 'payment.midtrans.is_production') {
-                config.isProduction = setting.value === true || setting.value === 'true';
-            } else if (setting.key === 'payment.midtrans.webhook_url') {
-                config.webhookUrl = setting.value as string;
-            }
-        }
-
-        // If no settings found, return current environment variables (masked)
-        if (settings.length === 0) {
-            const envServerKey = process.env.MIDTRANS_SERVER_KEY || '';
-            const envClientKey = process.env.MIDTRANS_CLIENT_KEY || '';
-
-            config.serverKey = envServerKey.length > 12
+            serverKey: envServerKey.length > 12
                 ? envServerKey.substring(0, 8) + '...' + envServerKey.substring(envServerKey.length - 4)
-                : envServerKey ? '***' : 'Not configured';
-            config.clientKey = envClientKey.length > 12
+                : envServerKey ? '***' : 'Not configured',
+            clientKey: envClientKey.length > 12
                 ? envClientKey.substring(0, 8) + '...' + envClientKey.substring(envClientKey.length - 4)
-                : envClientKey ? '***' : 'Not configured';
-            config.isProduction = process.env.MIDTRANS_IS_PRODUCTION === 'true';
-            config.webhookUrl = process.env.MIDTRANS_WEBHOOK_URL || '';
-            config.hasServerKey = !!envServerKey;
-            config.hasClientKey = !!envClientKey;
-            config.source = 'environment';
-        } else {
-            config.source = 'database';
-        }
+                : envClientKey ? '***' : 'Not configured',
+            isProduction: envIsProduction,
+            webhookUrl: envWebhookUrl,
+            hasServerKey: !!envServerKey,
+            hasClientKey: !!envClientKey,
+            source: 'environment',
+        };
 
         // Log admin activity
         await adminStorage.logAdminActivity({
@@ -3477,28 +3434,48 @@ router.put('/admin/settings/payment', requireAdminAuth, async (req: AdminAuthReq
         // Validate input
         const validatedData = paymentGatewayConfigSchema.parse(req.body);
 
-        // Encrypt sensitive credentials before storing
+        // Get old settings for audit log
+        const oldConfig: any = {
+            serverKey: getEnvVariable('MIDTRANS_SERVER_KEY') || '',
+            clientKey: getEnvVariable('MIDTRANS_CLIENT_KEY') || '',
+            isProduction: getEnvVariable('MIDTRANS_IS_PRODUCTION') === 'true',
+            webhookUrl: getEnvVariable('MIDTRANS_WEBHOOK_URL') || '',
+        };
+
+        // Update .env file with new values
+        const envUpdates: Record<string, string> = {
+            MIDTRANS_SERVER_KEY: validatedData.serverKey,
+            MIDTRANS_CLIENT_KEY: validatedData.clientKey,
+            MIDTRANS_IS_PRODUCTION: validatedData.isProduction ? 'true' : 'false',
+        };
+
+        if (validatedData.webhookUrl) {
+            envUpdates.MIDTRANS_WEBHOOK_URL = validatedData.webhookUrl;
+        }
+
+        // Write to .env file
+        const envUpdateSuccess = updateEnvVariables(envUpdates);
+
+        if (!envUpdateSuccess) {
+            return res.status(500).json({
+                success: false,
+                error: {
+                    code: 'ENV_UPDATE_FAILED',
+                    message: 'Failed to update .env file. Please check file permissions.'
+                }
+            });
+        }
+
+        // Also save to database for backup (encrypted)
         const encryptedServerKey = encryptData(validatedData.serverKey);
         const encryptedClientKey = encryptData(validatedData.clientKey);
 
-        // Get old settings for audit log
-        const oldSettings = await adminStorage.getSystemSettings('payment');
-        const oldConfig: any = {};
-        for (const setting of oldSettings) {
-            if (setting.key === 'payment.midtrans.is_production') {
-                oldConfig.isProduction = setting.value;
-            } else if (setting.key === 'payment.midtrans.webhook_url') {
-                oldConfig.webhookUrl = setting.value;
-            }
-        }
-
-        // Update or create settings in database
         await adminStorage.upsertSystemSetting({
             category: 'payment',
             key: 'payment.midtrans.server_key',
             value: encryptedServerKey,
             dataType: 'string',
-            description: 'Midtrans Server Key (encrypted)',
+            description: 'Midtrans Server Key (encrypted backup)',
             updatedBy: req.admin.id,
         });
 
@@ -3507,7 +3484,7 @@ router.put('/admin/settings/payment', requireAdminAuth, async (req: AdminAuthReq
             key: 'payment.midtrans.client_key',
             value: encryptedClientKey,
             dataType: 'string',
-            description: 'Midtrans Client Key (encrypted)',
+            description: 'Midtrans Client Key (encrypted backup)',
             updatedBy: req.admin.id,
         });
 
@@ -3541,7 +3518,11 @@ router.put('/admin/settings/payment', requireAdminAuth, async (req: AdminAuthReq
                 webhookUrl: validatedData.webhookUrl,
                 serverKeyUpdated: true,
                 clientKeyUpdated: true,
-                oldConfig,
+                savedToEnv: true,
+                oldConfig: {
+                    isProduction: oldConfig.isProduction,
+                    webhookUrl: oldConfig.webhookUrl,
+                },
             },
             ipAddress: req.ip || req.socket.remoteAddress,
         });
@@ -3575,34 +3556,35 @@ router.put('/admin/settings/payment', requireAdminAuth, async (req: AdminAuthReq
             if (response.status === 404 || response.status === 200) {
                 connectionTestResult = {
                     success: true,
-                    message: 'Midtrans API connection successful. Credentials are valid.',
+                    message: 'Midtrans API connection successful. Credentials are valid and saved to .env file.',
                 };
             } else if (response.status === 401) {
                 connectionTestResult = {
                     success: false,
-                    message: 'Invalid Midtrans credentials. Please check your Server Key.',
+                    message: 'Invalid Midtrans credentials. Please check your Server Key. Settings were saved to .env file.',
                 };
             } else {
                 const errorData = await response.json().catch(() => ({}));
                 connectionTestResult = {
                     success: false,
-                    message: `Midtrans API returned status ${response.status}: ${errorData.status_message || 'Unknown error'}`,
+                    message: `Midtrans API returned status ${response.status}: ${errorData.status_message || 'Unknown error'}. Settings were saved to .env file.`,
                 };
             }
         } catch (error) {
             console.error('Error testing Midtrans connection:', error);
             connectionTestResult = {
                 success: false,
-                message: `Failed to test connection: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                message: `Failed to test connection: ${error instanceof Error ? error.message : 'Unknown error'}. Settings were saved to .env file.`,
             };
         }
 
         res.json({
             success: true,
-            message: 'Payment gateway settings updated successfully',
+            message: 'Payment gateway settings updated successfully in .env file',
             data: {
                 isProduction: validatedData.isProduction,
                 webhookUrl: validatedData.webhookUrl,
+                savedToEnv: envUpdateSuccess,
                 connectionTest: connectionTestResult,
             },
         });

@@ -16,12 +16,14 @@ interface AdminAuthResponse {
 
 // Helper functions for admin auth
 const getAdminToken = (): string | null => {
-    return localStorage.getItem('admin-token');
+    // Check both localStorage (remember me) and sessionStorage (session only)
+    return localStorage.getItem('admin-token') || sessionStorage.getItem('admin-token');
 };
 
 const getStoredAdminUser = (): AdminUser | null => {
     try {
-        const storedUser = localStorage.getItem('admin-user');
+        // Check both localStorage and sessionStorage
+        const storedUser = localStorage.getItem('admin-user') || sessionStorage.getItem('admin-user');
         return storedUser ? JSON.parse(storedUser) : null;
     } catch (error) {
         console.error('Error parsing stored admin user:', error);
@@ -30,8 +32,11 @@ const getStoredAdminUser = (): AdminUser | null => {
 };
 
 const clearAdminAuthData = () => {
+    // Clear from both storages
     localStorage.removeItem('admin-token');
     localStorage.removeItem('admin-user');
+    sessionStorage.removeItem('admin-token');
+    sessionStorage.removeItem('admin-user');
 };
 
 const redirectToAdminLogin = () => {
@@ -87,9 +92,13 @@ export function useAdminAuth() {
             const data = await res.json();
             console.log('[useAdminAuth] API response data:', data);
 
-            // Update stored admin user with fresh data
+            // Update stored admin user with fresh data in the same storage that has the token
             if (data.success && data.admin) {
-                localStorage.setItem('admin-user', JSON.stringify(data.admin));
+                if (localStorage.getItem('admin-token')) {
+                    localStorage.setItem('admin-user', JSON.stringify(data.admin));
+                } else if (sessionStorage.getItem('admin-token')) {
+                    sessionStorage.setItem('admin-user', JSON.stringify(data.admin));
+                }
             }
 
             return data;
