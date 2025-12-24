@@ -19,7 +19,7 @@ const navigation = [
     { name: "Subscriptions", href: "/admin/subscriptions", icon: CreditCard },
     { name: "Payments", href: "/admin/payments", icon: DollarSign },
     { name: "Midtrans Monitoring", href: "/admin/midtrans", icon: Activity },
-    { name: "Revenue Analytics", href: "/admin/analytics", icon: BarChart3 },
+    { name: "Revenue Analytics", href: "/admin/revenue", icon: BarChart3 },
     { name: "WhatsApp Bot", href: "/admin/whatsapp", icon: MessageSquare },
     { name: "System Settings", href: "/admin/settings", icon: Settings },
 ];

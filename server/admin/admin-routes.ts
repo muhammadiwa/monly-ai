@@ -1801,6 +1801,314 @@ router.get('/admin/analytics/subscriptions', requireAdminAuth, async (req: Admin
     }
 });
 
+// GET /api/admin/analytics/export - Export analytics data as CSV or Excel
+router.get('/admin/analytics/export', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        // Parse query parameters
+        const type = req.query.type as string;
+        const format = req.query.format as string;
+        const dateFrom = req.query.dateFrom ? parseInt(req.query.dateFrom as string) : undefined;
+        const dateTo = req.query.dateTo ? parseInt(req.query.dateTo as string) : undefined;
+
+        // Validate type parameter
+        if (!type || !['revenue', 'subscriptions', 'users'].includes(type)) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Invalid type parameter. Must be one of: revenue, subscriptions, users'
+                }
+            });
+        }
+
+        // Validate format parameter
+        if (!format || !['csv', 'excel'].includes(format)) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Invalid format parameter. Must be one of: csv, excel'
+                }
+            });
+        }
+
+        // Validate date range if provided
+        if (dateFrom && isNaN(dateFrom)) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Invalid dateFrom parameter'
+                }
+            });
+        }
+
+        if (dateTo && isNaN(dateTo)) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Invalid dateTo parameter'
+                }
+            });
+        }
+
+        // Fetch data based on type
+        let exportData: any[] = [];
+        let headers: string[] = [];
+        let filename: string = '';
+
+        if (type === 'revenue') {
+            // Fetch revenue data with date range filter
+            const revenueData = await adminStorage.getRevenueExportData({ dateFrom, dateTo });
+            exportData = revenueData;
+            headers = [
+                'Payment ID',
+                'User Email',
+                'Plan',
+                'Amount',
+                'Currency',
+                'Payment Method',
+                'Status',
+                'Paid At',
+                'Created At'
+            ];
+            filename = `revenue-export-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5)}`;
+        } else if (type === 'subscriptions') {
+            // Fetch subscription data with date range filter
+            const subscriptionData = await adminStorage.getSubscriptionExportData({ dateFrom, dateTo });
+            exportData = subscriptionData;
+            headers = [
+                'Subscription ID',
+                'User Email',
+                'Plan',
+                'Status',
+                'Billing Cycle',
+                'Start Date',
+                'End Date',
+                'Auto Renew',
+                'Created At'
+            ];
+            filename = `subscriptions-export-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5)}`;
+        } else if (type === 'users') {
+            // Fetch user data with date range filter
+            const userData = await adminStorage.getUserDataForExport({
+                dateFrom,
+                dateTo,
+            });
+            exportData = userData;
+            headers = [
+                'User ID',
+                'Email',
+                'First Name',
+                'Last Name',
+                'Full Name',
+                'Subscription Plan',
+                'Status',
+                'Registration Date',
+                'Last Login',
+                'Transaction Count',
+                'Budget Count',
+                'Goal Count'
+            ];
+            filename = `users-export-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5)}`;
+        }
+
+        // Log admin activity
+        await adminStorage.logAdminActivity({
+            adminId: req.admin.id,
+            action: 'EXPORT_ANALYTICS_DATA',
+            resourceType: 'ANALYTICS',
+            details: { type, format, dateFrom, dateTo, count: exportData.length },
+            ipAddress: req.ip || req.socket.remoteAddress,
+        });
+
+        // Generate export based on format
+        if (format === 'csv') {
+            // Escape CSV values (handle commas, quotes, newlines)
+            const escapeCSV = (value: any): string => {
+                if (value === null || value === undefined) {
+                    return '';
+                }
+                const stringValue = String(value);
+                if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
+                    return `"${stringValue.replace(/"/g, '""')}"`;
+                }
+                return stringValue;
+            };
+
+            // Build CSV content
+            const csvRows = exportData.map(row => {
+                if (type === 'revenue') {
+                    return [
+                        row.id,
+                        row.userEmail,
+                        row.planName,
+                        row.amount,
+                        row.currency,
+                        row.paymentMethod,
+                        row.status,
+                        row.paidAt && !isNaN(row.paidAt) ? new Date(row.paidAt * 1000).toISOString() : '',
+                        row.createdAt && !isNaN(row.createdAt) ? new Date(row.createdAt * 1000).toISOString() : ''
+                    ];
+                } else if (type === 'subscriptions') {
+                    return [
+                        row.id,
+                        row.userEmail,
+                        row.planName,
+                        row.status,
+                        row.billingCycle,
+                        row.startDate && !isNaN(row.startDate) ? new Date(row.startDate * 1000).toISOString() : '',
+                        row.endDate && !isNaN(row.endDate) ? new Date(row.endDate * 1000).toISOString() : '',
+                        row.autoRenew ? 'Yes' : 'No',
+                        row.createdAt && !isNaN(row.createdAt) ? new Date(row.createdAt * 1000).toISOString() : ''
+                    ];
+                } else {
+                    return [
+                        row.id,
+                        row.email,
+                        row.firstName,
+                        row.lastName,
+                        row.fullName,
+                        row.subscriptionPlanDisplay,
+                        row.status,
+                        row.registrationDate && !isNaN(row.registrationDate) ? new Date(row.registrationDate * 1000).toISOString() : '',
+                        row.lastLogin && !isNaN(row.lastLogin) ? new Date(row.lastLogin * 1000).toISOString() : '',
+                        row.transactionCount,
+                        row.budgetCount,
+                        row.goalCount
+                    ];
+                }
+            });
+
+            const csvContent = [
+                headers.map(escapeCSV).join(','),
+                ...csvRows.map(row => row.map(escapeCSV).join(','))
+            ].join('\n');
+
+            // Set response headers for CSV download
+            res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+            res.setHeader('Content-Disposition', `attachment; filename="${filename}.csv"`);
+            res.setHeader('Cache-Control', 'no-cache');
+            res.setHeader('Pragma', 'no-cache');
+
+            // Send CSV content
+            res.send(csvContent);
+        } else if (format === 'excel') {
+            // Generate Excel file using jsPDF with autoTable
+            const doc = new jsPDF({
+                orientation: 'landscape',
+                unit: 'mm',
+                format: 'a4'
+            });
+
+            // Add title
+            doc.setFontSize(16);
+            doc.text(`${type.charAt(0).toUpperCase() + type.slice(1)} Export Report`, 14, 15);
+
+            // Add date range if provided
+            if (dateFrom || dateTo) {
+                doc.setFontSize(10);
+                let dateRangeText = 'Date Range: ';
+                if (dateFrom) {
+                    dateRangeText += `From ${new Date(dateFrom * 1000).toLocaleDateString()}`;
+                }
+                if (dateTo) {
+                    dateRangeText += ` To ${new Date(dateTo * 1000).toLocaleDateString()}`;
+                }
+                doc.text(dateRangeText, 14, 22);
+            }
+
+            // Prepare table data
+            const tableData = exportData.map(row => {
+                if (type === 'revenue') {
+                    return [
+                        row.id,
+                        row.userEmail,
+                        row.planName,
+                        row.amount,
+                        row.currency,
+                        row.paymentMethod,
+                        row.status,
+                        row.paidAt && !isNaN(row.paidAt) ? new Date(row.paidAt * 1000).toLocaleDateString() : '',
+                        row.createdAt && !isNaN(row.createdAt) ? new Date(row.createdAt * 1000).toLocaleDateString() : ''
+                    ];
+                } else if (type === 'subscriptions') {
+                    return [
+                        row.id,
+                        row.userEmail,
+                        row.planName,
+                        row.status,
+                        row.billingCycle,
+                        row.startDate && !isNaN(row.startDate) ? new Date(row.startDate * 1000).toLocaleDateString() : '',
+                        row.endDate && !isNaN(row.endDate) ? new Date(row.endDate * 1000).toLocaleDateString() : '',
+                        row.autoRenew ? 'Yes' : 'No',
+                        row.createdAt && !isNaN(row.createdAt) ? new Date(row.createdAt * 1000).toLocaleDateString() : ''
+                    ];
+                } else {
+                    return [
+                        row.id,
+                        row.email,
+                        row.firstName,
+                        row.lastName,
+                        row.fullName,
+                        row.subscriptionPlanDisplay,
+                        row.status,
+                        row.registrationDate && !isNaN(row.registrationDate) ? new Date(row.registrationDate * 1000).toLocaleDateString() : '',
+                        row.lastLogin && !isNaN(row.lastLogin) ? new Date(row.lastLogin * 1000).toLocaleDateString() : '',
+                        row.transactionCount,
+                        row.budgetCount,
+                        row.goalCount
+                    ];
+                }
+            });
+
+            // Add table
+            autoTable(doc, {
+                head: [headers],
+                body: tableData,
+                startY: dateFrom || dateTo ? 28 : 22,
+                styles: { fontSize: 8, cellPadding: 2 },
+                headStyles: { fillColor: [99, 102, 241], textColor: 255 },
+                alternateRowStyles: { fillColor: [245, 247, 250] },
+                margin: { top: 10 },
+            });
+
+            // Generate PDF buffer
+            const pdfBuffer = Buffer.from(doc.output('arraybuffer'));
+
+            // Set response headers for PDF download
+            res.setHeader('Content-Type', 'application/pdf');
+            res.setHeader('Content-Disposition', `attachment; filename="${filename}.pdf"`);
+            res.setHeader('Cache-Control', 'no-cache');
+            res.setHeader('Pragma', 'no-cache');
+            res.setHeader('Content-Length', pdfBuffer.length.toString());
+
+            // Send PDF content
+            res.send(pdfBuffer);
+        }
+    } catch (error) {
+        console.error('Error exporting analytics data:', error);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to export analytics data'
+            }
+        });
+    }
+});
+
 // GET /api/admin/payments - Get payment list with pagination, search, and filtering
 router.get('/admin/payments', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
     try {

@@ -3031,6 +3031,147 @@ export class AdminStorage {
             errorLogs: errorLogsResult,
         };
     }
+
+    // Get revenue data for export
+    async getRevenueExportData(filters: {
+        dateFrom?: number;
+        dateTo?: number;
+    }): Promise<any[]> {
+        let query = db
+            .select({
+                id: payments.id,
+                userId: payments.userId,
+                userEmail: users.email,
+                planName: subscriptionPlans.name,
+                amount: payments.amount,
+                currency: payments.currency,
+                paymentMethod: payments.paymentMethod,
+                status: payments.status,
+                paidAt: payments.paidAt,
+                createdAt: payments.createdAt,
+            })
+            .from(payments)
+            .leftJoin(users, eq(payments.userId, users.id))
+            .leftJoin(userSubscriptions, eq(payments.subscriptionId, userSubscriptions.id))
+            .leftJoin(subscriptionPlans, eq(userSubscriptions.planId, subscriptionPlans.id))
+            .where(eq(payments.status, 'paid'));
+
+        // Apply date filters if provided
+        const conditions = [eq(payments.status, 'paid')];
+
+        if (filters.dateFrom) {
+            conditions.push(sql`${payments.paidAt} >= ${filters.dateFrom}`);
+        }
+
+        if (filters.dateTo) {
+            conditions.push(sql`${payments.paidAt} <= ${filters.dateTo}`);
+        }
+
+        if (conditions.length > 1) {
+            query = db
+                .select({
+                    id: payments.id,
+                    userId: payments.userId,
+                    userEmail: users.email,
+                    planName: subscriptionPlans.name,
+                    amount: payments.amount,
+                    currency: payments.currency,
+                    paymentMethod: payments.paymentMethod,
+                    status: payments.status,
+                    paidAt: payments.paidAt,
+                    createdAt: payments.createdAt,
+                })
+                .from(payments)
+                .leftJoin(users, eq(payments.userId, users.id))
+                .leftJoin(userSubscriptions, eq(payments.subscriptionId, userSubscriptions.id))
+                .leftJoin(subscriptionPlans, eq(userSubscriptions.planId, subscriptionPlans.id))
+                .where(and(...conditions));
+        }
+
+        const result = await query.orderBy(desc(payments.paidAt));
+
+        return result.map(row => ({
+            id: row.id,
+            userId: row.userId,
+            userEmail: row.userEmail || 'N/A',
+            planName: row.planName || 'N/A',
+            amount: row.amount,
+            currency: row.currency,
+            paymentMethod: row.paymentMethod,
+            status: row.status,
+            paidAt: row.paidAt,
+            createdAt: row.createdAt,
+        }));
+    }
+
+    // Get subscription data for export
+    async getSubscriptionExportData(filters: {
+        dateFrom?: number;
+        dateTo?: number;
+    }): Promise<any[]> {
+        let query = db
+            .select({
+                id: userSubscriptions.id,
+                userId: userSubscriptions.userId,
+                userEmail: users.email,
+                planName: subscriptionPlans.name,
+                status: userSubscriptions.status,
+                billingCycle: userSubscriptions.billingCycle,
+                startDate: userSubscriptions.startDate,
+                endDate: userSubscriptions.endDate,
+                autoRenew: userSubscriptions.autoRenew,
+                createdAt: userSubscriptions.createdAt,
+            })
+            .from(userSubscriptions)
+            .leftJoin(users, eq(userSubscriptions.userId, users.id))
+            .leftJoin(subscriptionPlans, eq(userSubscriptions.planId, subscriptionPlans.id));
+
+        // Apply date filters if provided
+        const conditions = [];
+
+        if (filters.dateFrom) {
+            conditions.push(sql`${userSubscriptions.createdAt} >= ${filters.dateFrom}`);
+        }
+
+        if (filters.dateTo) {
+            conditions.push(sql`${userSubscriptions.createdAt} <= ${filters.dateTo}`);
+        }
+
+        if (conditions.length > 0) {
+            query = db
+                .select({
+                    id: userSubscriptions.id,
+                    userId: userSubscriptions.userId,
+                    userEmail: users.email,
+                    planName: subscriptionPlans.name,
+                    status: userSubscriptions.status,
+                    billingCycle: userSubscriptions.billingCycle,
+                    startDate: userSubscriptions.startDate,
+                    endDate: userSubscriptions.endDate,
+                    autoRenew: userSubscriptions.autoRenew,
+                    createdAt: userSubscriptions.createdAt,
+                })
+                .from(userSubscriptions)
+                .leftJoin(users, eq(userSubscriptions.userId, users.id))
+                .leftJoin(subscriptionPlans, eq(userSubscriptions.planId, subscriptionPlans.id))
+                .where(and(...conditions));
+        }
+
+        const result = await query.orderBy(desc(userSubscriptions.createdAt));
+
+        return result.map(row => ({
+            id: row.id,
+            userId: row.userId,
+            userEmail: row.userEmail || 'N/A',
+            planName: row.planName || 'N/A',
+            status: row.status,
+            billingCycle: row.billingCycle,
+            startDate: row.startDate,
+            endDate: row.endDate,
+            autoRenew: row.autoRenew,
+            createdAt: row.createdAt,
+        }));
+    }
 }
 
 // Export singleton instance
