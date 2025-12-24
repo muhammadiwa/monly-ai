@@ -14,8 +14,9 @@ import { cn } from "@/lib/utils";
 const navigation = [
     { name: "Dashboard", href: "/admin/dashboard", icon: LayoutDashboard },
     { name: "User Management", href: "/admin/users", icon: Users },
-    { name: "Subscriptions", href: "/admin/subscriptions", icon: Package },
-    { name: "Payments", href: "/admin/payments", icon: CreditCard },
+    { name: "Subscription Plans", href: "/admin/plans", icon: Package },
+    { name: "Subscriptions", href: "/admin/subscriptions", icon: CreditCard },
+    { name: "Payments", href: "/admin/payments", icon: DollarSign },
     { name: "Revenue Analytics", href: "/admin/analytics", icon: BarChart3 },
     { name: "WhatsApp Bot", href: "/admin/whatsapp", icon: MessageSquare },
     { name: "System Settings", href: "/admin/settings", icon: Settings },
