@@ -17,6 +17,8 @@ import Goals from "@/pages/goals";
 import Reports from "@/pages/reports";
 import Settings from "@/pages/settings";
 import WhatsAppIntegration from "@/pages/whatsapp-integration";
+import { AdminLogin, AdminDashboard } from "@/admin/pages";
+import { AdminRoute } from "@/admin/components";
 import { useEffect } from "react";
 
 // Simple redirect component
@@ -24,7 +26,7 @@ function RedirectToDashboard() {
   useEffect(() => {
     window.location.href = "/dashboard";
   }, []);
-  
+
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center">
       <div className="text-center">
@@ -40,7 +42,7 @@ function RedirectToAuth() {
   useEffect(() => {
     window.location.href = "/auth";
   }, []);
-  
+
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center">
       <div className="text-center">
@@ -69,6 +71,8 @@ function Router() {
     return (
       <Switch>
         <Route path="/auth" component={Auth} />
+        <Route path="/admin/login" component={AdminLogin} />
+        <Route path="/admin/*" component={AdminLogin} />
         <Route path="/" component={Landing} />
         <Route component={NotFound} />
       </Switch>
@@ -79,6 +83,12 @@ function Router() {
     <Switch>
       <Route path="/auth">
         {isAuthenticated ? <RedirectToDashboard /> : <Auth />}
+      </Route>
+      <Route path="/admin/login" component={AdminLogin} />
+      <Route path="/admin/dashboard">
+        <AdminRoute>
+          <AdminDashboard />
+        </AdminRoute>
       </Route>
       <Route path="/" component={Landing} />
       <Route path="*">
