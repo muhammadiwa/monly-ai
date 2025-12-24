@@ -3109,7 +3109,19 @@ export class AdminStorage {
         dateFrom?: number;
         dateTo?: number;
     }): Promise<any[]> {
-        let query = db
+        // Build conditions array
+        const conditions = [];
+
+        if (filters.dateFrom) {
+            conditions.push(sql`${userSubscriptions.createdAt} >= ${filters.dateFrom}`);
+        }
+
+        if (filters.dateTo) {
+            conditions.push(sql`${userSubscriptions.createdAt} <= ${filters.dateTo}`);
+        }
+
+        // Build query with or without where clause
+        const baseQuery = db
             .select({
                 id: userSubscriptions.id,
                 userId: userSubscriptions.userId,
@@ -3126,36 +3138,10 @@ export class AdminStorage {
             .leftJoin(users, eq(userSubscriptions.userId, users.id))
             .leftJoin(subscriptionPlans, eq(userSubscriptions.planId, subscriptionPlans.id));
 
-        // Apply date filters if provided
-        const conditions = [];
-
-        if (filters.dateFrom) {
-            conditions.push(sql`${userSubscriptions.createdAt} >= ${filters.dateFrom}`);
-        }
-
-        if (filters.dateTo) {
-            conditions.push(sql`${userSubscriptions.createdAt} <= ${filters.dateTo}`);
-        }
-
-        if (conditions.length > 0) {
-            query = db
-                .select({
-                    id: userSubscriptions.id,
-                    userId: userSubscriptions.userId,
-                    userEmail: users.email,
-                    planName: subscriptionPlans.name,
-                    status: userSubscriptions.status,
-                    billingCycle: userSubscriptions.billingCycle,
-                    startDate: userSubscriptions.startDate,
-                    endDate: userSubscriptions.endDate,
-                    autoRenew: userSubscriptions.autoRenew,
-                    createdAt: userSubscriptions.createdAt,
-                })
-                .from(userSubscriptions)
-                .leftJoin(users, eq(userSubscriptions.userId, users.id))
-                .leftJoin(subscriptionPlans, eq(userSubscriptions.planId, subscriptionPlans.id))
-                .where(and(...conditions));
-        }
+        // Apply where clause if conditions exist
+        const query = conditions.length > 0
+            ? baseQuery.where(and(...conditions))
+            : baseQuery;
 
         const result = await query.orderBy(desc(userSubscriptions.createdAt));
 
