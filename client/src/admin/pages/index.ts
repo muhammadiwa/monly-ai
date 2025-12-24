@@ -4,3 +4,4 @@ export { default as UserManagement } from './UserManagement';
 export { default as UserDetails } from './UserDetails';
 export { default as SubscriptionPlans } from './SubscriptionPlans';
 export { default as SubscriptionList } from './SubscriptionList';
+export { default as PaymentList } from './PaymentList';

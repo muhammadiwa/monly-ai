@@ -12,3 +12,5 @@ export type { UserListItem } from './UserTable';
 export { default as PlanFormModal } from './PlanFormModal';
 export type { PlanFormModalProps } from './PlanFormModal';
 export { default as SubscriptionDetailsModal } from './SubscriptionDetailsModal';
+export { default as PaymentDetailsModal } from './PaymentDetailsModal';
+export type { PaymentDetailsModalProps } from './PaymentDetailsModal';

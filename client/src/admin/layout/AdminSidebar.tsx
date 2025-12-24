@@ -8,6 +8,7 @@ import {
     Settings,
     MessageSquare,
     BarChart3,
+    Activity,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -17,6 +18,7 @@ const navigation = [
     { name: "Subscription Plans", href: "/admin/plans", icon: Package },
     { name: "Subscriptions", href: "/admin/subscriptions", icon: CreditCard },
     { name: "Payments", href: "/admin/payments", icon: DollarSign },
+    { name: "Midtrans Monitoring", href: "/admin/midtrans", icon: Activity },
     { name: "Revenue Analytics", href: "/admin/analytics", icon: BarChart3 },
     { name: "WhatsApp Bot", href: "/admin/whatsapp", icon: MessageSquare },
     { name: "System Settings", href: "/admin/settings", icon: Settings },
