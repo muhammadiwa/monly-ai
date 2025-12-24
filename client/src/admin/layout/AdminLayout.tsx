@@ -16,9 +16,9 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             <AdminSidebar />
 
             {/* Main content area */}
-            <div className="lg:pl-64 pt-20 px-4 sm:px-6 lg:px-8 pb-6">
-                <div className="min-h-screen w-full">
-                    <div className="w-full max-w-none">
+            <div className="lg:pl-64 pt-20">
+                <div className="min-h-screen w-full px-6 sm:px-8 lg:px-12 py-8">
+                    <div className="w-full max-w-[1600px] mx-auto">
                         {children}
                     </div>
                 </div>

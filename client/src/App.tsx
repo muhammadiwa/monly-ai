@@ -56,6 +56,25 @@ function RedirectToAuth() {
 function Router() {
   const { isAuthenticated, isLoading } = useAuth();
 
+  // Check if current path is admin route
+  const isAdminRoute = window.location.pathname.startsWith('/admin');
+
+  // If admin route, don't check user auth
+  if (isAdminRoute) {
+    return (
+      <Switch>
+        <Route path="/admin/login" component={AdminLogin} />
+        <Route path="/admin/dashboard">
+          <AdminRoute>
+            <AdminDashboard />
+          </AdminRoute>
+        </Route>
+        <Route path="/admin/*" component={AdminLogin} />
+        <Route component={NotFound} />
+      </Switch>
+    );
+  }
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -71,8 +90,6 @@ function Router() {
     return (
       <Switch>
         <Route path="/auth" component={Auth} />
-        <Route path="/admin/login" component={AdminLogin} />
-        <Route path="/admin/*" component={AdminLogin} />
         <Route path="/" component={Landing} />
         <Route component={NotFound} />
       </Switch>
@@ -83,12 +100,6 @@ function Router() {
     <Switch>
       <Route path="/auth">
         {isAuthenticated ? <RedirectToDashboard /> : <Auth />}
-      </Route>
-      <Route path="/admin/login" component={AdminLogin} />
-      <Route path="/admin/dashboard">
-        <AdminRoute>
-          <AdminDashboard />
-        </AdminRoute>
       </Route>
       <Route path="/" component={Landing} />
       <Route path="*">

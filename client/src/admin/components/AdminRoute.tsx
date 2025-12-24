@@ -13,11 +13,11 @@ interface AdminRouteProps {
  * Requirements: 1.3 - Admin authentication verification and access control
  */
 export default function AdminRoute({ children }: AdminRouteProps) {
-    const { isAuthenticated, isLoading, admin } = useAdminAuth();
+    const { isAuthenticated, isLoading } = useAdminAuth();
     const [, setLocation] = useLocation();
 
     useEffect(() => {
-        // Only redirect if we're done loading and not authenticated
+        // Only redirect if we're done loading and definitely not authenticated
         if (!isLoading && !isAuthenticated) {
             // Store the attempted URL for redirect after login
             const currentPath = window.location.pathname;
@@ -43,7 +43,7 @@ export default function AdminRoute({ children }: AdminRouteProps) {
     }
 
     // Don't render children if not authenticated
-    if (!isAuthenticated || !admin) {
+    if (!isAuthenticated) {
         return null;
     }
 

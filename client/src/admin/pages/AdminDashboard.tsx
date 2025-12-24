@@ -1,71 +1,253 @@
+import { useQuery } from "@tanstack/react-query";
 import AdminLayout from "../layout/AdminLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, DollarSign, CreditCard, TrendingUp } from "lucide-react";
+import { Users, DollarSign, CreditCard, Activity, AlertCircle, Loader2 } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { useEffect } from "react";
+import { RecentActivity, RevenueChart, UserGrowthChart } from "../components";
+
+interface DashboardMetrics {
+    users: {
+        total: number;
+        active: number;
+        newThisMonth: number;
+        growthRate: number;
+    };
+    subscriptions: {
+        total: number;
+        byPlan: {
+            free: number;
+            premium: number;
+            business: number;
+        };
+        churnRate: number;
+        conversionRate: number;
+    };
+    revenue: {
+        mrr: number;
+        totalRevenue: number;
+        revenueGrowth: number;
+        revenueByPlan: {
+            premium: number;
+            business: number;
+        };
+    };
+    system: {
+        databaseSize: number;
+        apiResponseTime: number;
+        errorRate: number;
+        uptime: number;
+    };
+    recentActivity: {
+        newUsers: Array<{
+            id: string;
+            name: string;
+            email: string;
+            createdAt: number;
+        }>;
+        newSubscriptions: Array<{
+            id: number;
+            userId: string;
+            planId: number;
+            status: string;
+            createdAt: number;
+        }>;
+        recentPayments: Array<{
+            id: number;
+            userId: string;
+            amount: number;
+            currency: string;
+            status: string;
+            createdAt: number;
+        }>;
+    };
+}
+
+interface DashboardResponse {
+    success: boolean;
+    data: DashboardMetrics;
+}
 
 export default function AdminDashboard() {
-    // Mock data - will be replaced with real API data
-    const metrics = [
+    // Fetch dashboard metrics with auto-refresh every 30 seconds
+    const { data, isLoading, error, refetch } = useQuery<DashboardResponse>({
+        queryKey: ["/api/admin/dashboard/metrics"],
+        queryFn: async () => {
+            const adminToken = localStorage.getItem('admin-token');
+            if (!adminToken) {
+                throw new Error('No admin token');
+            }
+
+            const res = await fetch('/api/admin/dashboard/metrics', {
+                headers: {
+                    'Authorization': `Bearer ${adminToken}`,
+                },
+            });
+
+            if (!res.ok) {
+                throw new Error(`HTTP ${res.status}`);
+            }
+
+            return res.json();
+        },
+        refetchInterval: 30000, // Auto-refresh every 30 seconds
+        staleTime: 25000, // Consider data stale after 25 seconds
+    });
+
+    // Set up auto-refresh
+    useEffect(() => {
+        const interval = setInterval(() => {
+            refetch();
+        }, 30000);
+
+        return () => clearInterval(interval);
+    }, [refetch]);
+
+    const metrics = data?.data;
+
+    // Format currency
+    const formatCurrency = (amount: number | undefined | null, currency: string = 'IDR') => {
+        const safeAmount = amount ?? 0;
+        if (currency === 'IDR') {
+            return `Rp ${safeAmount.toLocaleString('id-ID')}`;
+        }
+        return `$${safeAmount.toLocaleString('en-US')}`;
+    };
+
+    // Format percentage
+    const formatPercentage = (value: number | undefined | null) => {
+        const safeValue = value ?? 0;
+        const sign = safeValue >= 0 ? '+' : '';
+        return `${sign}${safeValue.toFixed(1)}%`;
+    };
+
+    if (isLoading) {
+        return (
+            <AdminLayout>
+                <div className="flex items-center justify-center h-96">
+                    <div className="text-center">
+                        <Loader2 className="h-8 w-8 animate-spin text-slate-600 mx-auto mb-4" />
+                        <p className="text-slate-600">Loading dashboard metrics...</p>
+                    </div>
+                </div>
+            </AdminLayout>
+        );
+    }
+
+    if (error) {
+        return (
+            <AdminLayout>
+                <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>
+                        Failed to load dashboard metrics. Please try again.
+                    </AlertDescription>
+                </Alert>
+            </AdminLayout>
+        );
+    }
+
+    if (!metrics) {
+        return (
+            <AdminLayout>
+                <Alert>
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>
+                        No dashboard data available.
+                    </AlertDescription>
+                </Alert>
+            </AdminLayout>
+        );
+    }
+
+    const metricCards = [
         {
             title: "Total Users",
-            value: "1,234",
-            change: "+12.5%",
+            value: metrics.users.total.toLocaleString(),
+            change: formatPercentage(metrics.users.growthRate),
             icon: Users,
             color: "text-blue-600",
             bgColor: "bg-blue-50",
+            subtitle: `${metrics.users.active} active users`,
         },
         {
-            title: "Monthly Revenue",
-            value: "$45,678",
-            change: "+8.2%",
+            title: "Monthly Revenue (MRR)",
+            value: formatCurrency(metrics.revenue.mrr),
+            change: formatPercentage(metrics.revenue.revenueGrowth),
             icon: DollarSign,
             color: "text-green-600",
             bgColor: "bg-green-50",
+            subtitle: `Total: ${formatCurrency(metrics.revenue.totalRevenue)}`,
         },
         {
             title: "Active Subscriptions",
-            value: "892",
-            change: "+5.4%",
+            value: metrics.subscriptions.total.toLocaleString(),
+            change: `${metrics.subscriptions.conversionRate.toFixed(1)}% conversion`,
             icon: CreditCard,
             color: "text-purple-600",
             bgColor: "bg-purple-50",
+            subtitle: `${metrics.subscriptions.churnRate.toFixed(1)}% churn rate`,
         },
         {
-            title: "Growth Rate",
-            value: "23.5%",
-            change: "+2.1%",
-            icon: TrendingUp,
+            title: "System Health",
+            value: `${metrics.system.uptime.toFixed(1)}%`,
+            change: `${metrics.system.apiResponseTime}ms response`,
+            icon: Activity,
             color: "text-orange-600",
             bgColor: "bg-orange-50",
+            subtitle: `${metrics.system.errorRate.toFixed(2)}% error rate`,
         },
     ];
 
     return (
         <AdminLayout>
-            <div className="space-y-6">
+            <div className="space-y-8">
                 {/* Page Header */}
-                <div>
-                    <h1 className="text-3xl font-bold text-slate-900">Dashboard</h1>
-                    <p className="text-slate-500 mt-1">Welcome back! Here's what's happening today.</p>
+                <div className="flex items-center justify-between bg-gradient-to-r from-slate-50 to-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                    <div>
+                        <h1 className="text-4xl font-bold bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent">
+                            Dashboard
+                        </h1>
+                        <p className="text-slate-600 mt-2 font-medium">Welcome back! Here's what's happening today.</p>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm text-slate-500 bg-white px-4 py-2 rounded-lg border border-slate-200 shadow-sm">
+                        <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                        <span className="font-medium">Auto-refreshing every 30s</span>
+                    </div>
                 </div>
 
                 {/* Metrics Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                    {metrics.map((metric) => {
+                    {metricCards.map((metric) => {
                         const Icon = metric.icon;
+                        const isPositive = metric.change.startsWith('+');
+                        const changeColor = isPositive ? 'text-green-600' : 'text-red-600';
+
                         return (
-                            <Card key={metric.title} className="hover:shadow-lg transition-shadow duration-200">
-                                <CardHeader className="flex flex-row items-center justify-between pb-2">
-                                    <CardTitle className="text-sm font-medium text-slate-600">
+                            <Card
+                                key={metric.title}
+                                className="relative overflow-hidden border-slate-200 hover:shadow-xl hover:scale-105 transition-all duration-300 group"
+                            >
+                                {/* Gradient Background */}
+                                <div className="absolute inset-0 bg-gradient-to-br from-white via-white to-slate-50 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+
+                                <CardHeader className="relative flex flex-row items-center justify-between pb-2">
+                                    <CardTitle className="text-sm font-semibold text-slate-600 group-hover:text-slate-800 transition-colors">
                                         {metric.title}
                                     </CardTitle>
-                                    <div className={`p-2 rounded-lg ${metric.bgColor}`}>
+                                    <div className={`p-3 rounded-xl ${metric.bgColor} shadow-lg group-hover:shadow-xl transition-all duration-300`}>
                                         <Icon className={`h-5 w-5 ${metric.color}`} />
                                     </div>
                                 </CardHeader>
-                                <CardContent>
-                                    <div className="text-2xl font-bold text-slate-900">{metric.value}</div>
-                                    <p className="text-xs text-green-600 mt-1">
-                                        {metric.change} from last month
+                                <CardContent className="relative">
+                                    <div className="text-3xl font-bold text-slate-900 mb-2">{metric.value}</div>
+                                    <div className="flex items-center gap-2">
+                                        <span className={`text-sm font-semibold ${changeColor} bg-opacity-10 px-2 py-0.5 rounded-full ${isPositive ? 'bg-green-100' : 'bg-red-100'}`}>
+                                            {metric.change}
+                                        </span>
+                                    </div>
+                                    <p className="text-xs text-slate-500 mt-2 font-medium">
+                                        {metric.subtitle}
                                     </p>
                                 </CardContent>
                             </Card>
@@ -73,37 +255,55 @@ export default function AdminDashboard() {
                     })}
                 </div>
 
+                {/* Subscription Breakdown */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <Card className="border-slate-200 hover:shadow-lg transition-all duration-300 hover:scale-105">
+                        <CardHeader className="bg-gradient-to-r from-slate-50 to-white border-b border-slate-100">
+                            <CardTitle className="text-sm font-semibold text-slate-700">Free Plan</CardTitle>
+                        </CardHeader>
+                        <CardContent className="pt-6">
+                            <div className="text-3xl font-bold text-slate-900 mb-2">
+                                {metrics.subscriptions.byPlan.free.toLocaleString()}
+                            </div>
+                            <p className="text-sm text-slate-500 font-medium">subscribers</p>
+                        </CardContent>
+                    </Card>
+                    <Card className="border-purple-200 hover:shadow-lg hover:shadow-purple-100 transition-all duration-300 hover:scale-105">
+                        <CardHeader className="bg-gradient-to-r from-purple-50 to-white border-b border-purple-100">
+                            <CardTitle className="text-sm font-semibold text-purple-700">Premium Plan</CardTitle>
+                        </CardHeader>
+                        <CardContent className="pt-6">
+                            <div className="text-3xl font-bold text-purple-900 mb-2">
+                                {metrics.subscriptions.byPlan.premium.toLocaleString()}
+                            </div>
+                            <p className="text-sm text-slate-600 font-medium mt-1">
+                                {formatCurrency(metrics.revenue.revenueByPlan.premium)} revenue
+                            </p>
+                        </CardContent>
+                    </Card>
+                    <Card className="border-blue-200 hover:shadow-lg hover:shadow-blue-100 transition-all duration-300 hover:scale-105">
+                        <CardHeader className="bg-gradient-to-r from-blue-50 to-white border-b border-blue-100">
+                            <CardTitle className="text-sm font-semibold text-blue-700">Business Plan</CardTitle>
+                        </CardHeader>
+                        <CardContent className="pt-6">
+                            <div className="text-3xl font-bold text-blue-900 mb-2">
+                                {metrics.subscriptions.byPlan.business.toLocaleString()}
+                            </div>
+                            <p className="text-sm text-slate-600 font-medium mt-1">
+                                {formatCurrency(metrics.revenue.revenueByPlan.business)} revenue
+                            </p>
+                        </CardContent>
+                    </Card>
+                </div>
+
+                {/* Charts Section */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <RevenueChart />
+                    <UserGrowthChart />
+                </div>
+
                 {/* Recent Activity */}
-                <Card>
-                    <CardHeader>
-                        <CardTitle>Recent Activity</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="space-y-4">
-                            <div className="flex items-center justify-between py-3 border-b">
-                                <div>
-                                    <p className="font-medium text-slate-900">New user registration</p>
-                                    <p className="text-sm text-slate-500">John Doe joined the platform</p>
-                                </div>
-                                <span className="text-xs text-slate-400">5 min ago</span>
-                            </div>
-                            <div className="flex items-center justify-between py-3 border-b">
-                                <div>
-                                    <p className="font-medium text-slate-900">Payment received</p>
-                                    <p className="text-sm text-slate-500">Premium subscription - $29.99</p>
-                                </div>
-                                <span className="text-xs text-slate-400">1 hour ago</span>
-                            </div>
-                            <div className="flex items-center justify-between py-3">
-                                <div>
-                                    <p className="font-medium text-slate-900">Subscription cancelled</p>
-                                    <p className="text-sm text-slate-500">User requested cancellation</p>
-                                </div>
-                                <span className="text-xs text-slate-400">2 hours ago</span>
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
+                <RecentActivity limit={5} autoRefresh={true} refreshInterval={30000} />
             </div>
         </AdminLayout>
     );

@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState, useEffect } from "react";
+import { useEffect } from "react";
 
 export interface AdminUser {
     id: string;
@@ -40,53 +40,39 @@ const redirectToAdminLogin = () => {
 
 export function useAdminAuth() {
     const queryClient = useQueryClient();
-    const [adminUser, setAdminUser] = useState<AdminUser | null>(null);
-    const [isLoadingAuth, setIsLoadingAuth] = useState(true);
-    const [hasToken, setHasToken] = useState(false);
 
-    // Check for admin token in localStorage on mount
-    useEffect(() => {
-        const checkAuth = () => {
-            try {
-                const adminToken = getAdminToken();
-                const storedAdminUser = getStoredAdminUser();
+    // Get initial token state synchronously
+    const adminToken = getAdminToken();
+    const storedAdminUser = getStoredAdminUser();
+    const hasToken = !!adminToken;
 
-                if (adminToken && storedAdminUser) {
-                    setAdminUser(storedAdminUser);
-                    setHasToken(true);
-                } else {
-                    setAdminUser(null);
-                    setHasToken(false);
-                }
-            } catch (error) {
-                console.error("Error checking admin auth:", error);
-                setAdminUser(null);
-                setHasToken(false);
-            } finally {
-                setIsLoadingAuth(false);
-            }
-        };
-
-        checkAuth();
-    }, []);
+    // Debug logging
+    console.log('[useAdminAuth] Initial state:', {
+        hasToken,
+        storedAdminUser: storedAdminUser?.email,
+    });
 
     // Fetch admin user from API to verify token is still valid
-    const { data: apiAdmin, isLoading: isApiLoading, error } = useQuery<AdminAuthResponse>({
+    const { data: apiAdmin, isLoading: isApiLoading, error, isError } = useQuery<AdminAuthResponse>({
         queryKey: ["/api/admin/auth/me"],
         retry: false,
         enabled: hasToken, // Only run query if we have a token
         refetchInterval: 5 * 60 * 1000, // Refresh every 5 minutes to keep session alive
+        staleTime: 4 * 60 * 1000, // Consider data fresh for 4 minutes
         queryFn: async () => {
-            const adminToken = getAdminToken();
-            if (!adminToken) {
+            console.log('[useAdminAuth] Fetching admin from API...');
+            const token = getAdminToken();
+            if (!token) {
                 throw new Error('No admin token');
             }
 
             const res = await fetch('/api/admin/auth/me', {
                 headers: {
-                    'Authorization': `Bearer ${adminToken}`,
+                    'Authorization': `Bearer ${token}`,
                 },
             });
+
+            console.log('[useAdminAuth] API response status:', res.status);
 
             if (res.status === 401 || res.status === 403) {
                 // Token is invalid or expired
@@ -99,40 +85,37 @@ export function useAdminAuth() {
             }
 
             const data = await res.json();
+            console.log('[useAdminAuth] API response data:', data);
 
             // Update stored admin user with fresh data
             if (data.success && data.admin) {
                 localStorage.setItem('admin-user', JSON.stringify(data.admin));
-                setAdminUser(data.admin);
             }
 
             return data;
         }
     });
 
-    // Handle auth errors
+    // Handle auth errors - clear data and don't redirect (let AdminRoute handle it)
     useEffect(() => {
-        if (error && hasToken) {
-            console.error('Admin auth error:', error);
+        if (isError && hasToken) {
+            console.error('[useAdminAuth] Auth error:', error);
             clearAdminAuthData();
-            setAdminUser(null);
-            setHasToken(false);
-            redirectToAdminLogin();
         }
-    }, [error, hasToken]);
+    }, [isError, error, hasToken]);
 
     // Logout mutation
     const logoutMutation = useMutation({
         mutationFn: async () => {
-            const adminToken = getAdminToken();
-            if (!adminToken) {
+            const token = getAdminToken();
+            if (!token) {
                 return;
             }
 
             const res = await fetch('/api/admin/auth/logout', {
                 method: 'POST',
                 headers: {
-                    'Authorization': `Bearer ${adminToken}`,
+                    'Authorization': `Bearer ${token}`,
                 },
             });
 
@@ -145,8 +128,6 @@ export function useAdminAuth() {
         onSuccess: () => {
             // Clear auth data
             clearAdminAuthData();
-            setAdminUser(null);
-            setHasToken(false);
 
             // Clear all queries
             queryClient.clear();
@@ -158,21 +139,32 @@ export function useAdminAuth() {
             console.error('Logout error:', error);
             // Even if logout fails on server, clear local data
             clearAdminAuthData();
-            setAdminUser(null);
-            setHasToken(false);
             queryClient.clear();
             redirectToAdminLogin();
         }
     });
 
-    // Token refresh logic (implicit through refetchInterval in useQuery)
-    // The query automatically refetches every 5 minutes, which keeps the session alive
-    // and updates the admin user data
+    // Determine current admin user
+    const admin = apiAdmin?.admin || storedAdminUser;
 
-    // Use priority: apiAdmin > adminUser
-    const admin = apiAdmin?.admin || adminUser;
-    const isLoading = isLoadingAuth || (hasToken && isApiLoading);
-    const isAuthenticated = !!(hasToken && admin);
+    // Loading state logic:
+    // - If no token: not loading (will redirect to login)
+    // - If has token and API is loading: loading (checking token validity)
+    // - If has token and API done: not loading
+    const isLoading = hasToken && isApiLoading;
+
+    // Authenticated if we have token and admin data (either from API or localStorage)
+    // If API returned error, we're not authenticated
+    const isAuthenticated = hasToken && !!admin && !isError;
+
+    // Debug logging
+    console.log('[useAdminAuth] Computed state:', {
+        isLoading,
+        isAuthenticated,
+        isApiLoading,
+        isError,
+        hasAdmin: !!admin,
+    });
 
     const logout = () => {
         logoutMutation.mutate();
