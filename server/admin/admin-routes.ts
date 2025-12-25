@@ -4243,6 +4243,341 @@ router.post('/admin/settings/email/test', requireAdminAuth, async (req: AdminAut
     }
 });
 
+// ============================================
+// Google OAuth Settings Routes
+// ============================================
+// IMPORTANT: These routes must come BEFORE /admin/settings/:key to avoid matching "google-oauth" as a key
+
+// Validation schema for Google OAuth config
+const googleOAuthConfigSchema = z.object({
+    clientId: z.string().min(1, 'Client ID is required'),
+    clientSecret: z.string().min(1, 'Client Secret is required'),
+    callbackUrl: z.string().url('Callback URL must be a valid URL'),
+    enabled: z.boolean().optional().default(true),
+});
+
+// GET /api/admin/settings/google-oauth - Get Google OAuth configuration
+router.get('/admin/settings/google-oauth', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        // Fetch Google OAuth settings from database
+        const googleOAuthSettings = await adminStorage.getSystemSettings('google_oauth');
+
+        // Build config object from database settings
+        const googleOAuthConfig: any = {
+            clientId: '',
+            clientSecret: '',
+            callbackUrl: '',
+            enabled: false,
+        };
+
+        for (const setting of googleOAuthSettings) {
+            if (setting.key === 'google_oauth.client_id') {
+                googleOAuthConfig.clientId = setting.value;
+            } else if (setting.key === 'google_oauth.client_secret') {
+                // Decrypt secret before checking
+                try {
+                    const decryptedSecret = decryptData(setting.value);
+                    googleOAuthConfig.clientSecret = '********'; // Mask secret
+                    googleOAuthConfig.hasClientSecret = decryptedSecret.length > 0;
+                } catch (error) {
+                    googleOAuthConfig.clientSecret = '';
+                    googleOAuthConfig.hasClientSecret = false;
+                }
+            } else if (setting.key === 'google_oauth.callback_url') {
+                googleOAuthConfig.callbackUrl = setting.value;
+            } else if (setting.key === 'google_oauth.enabled') {
+                googleOAuthConfig.enabled = setting.value === 'true' || setting.value === true;
+            }
+        }
+
+        // Check if configured
+        googleOAuthConfig.hasClientId = googleOAuthConfig.clientId.length > 0;
+        if (googleOAuthConfig.hasClientSecret === undefined) {
+            googleOAuthConfig.hasClientSecret = false;
+        }
+        googleOAuthConfig.enabled = googleOAuthConfig.hasClientId && googleOAuthConfig.hasClientSecret;
+
+        // Log admin activity
+        await adminStorage.logAdminActivity({
+            adminId: req.admin.id,
+            action: 'VIEW_GOOGLE_OAUTH_SETTINGS',
+            resourceType: 'GOOGLE_OAUTH_SETTINGS',
+            ipAddress: req.ip || req.socket.remoteAddress,
+        });
+
+        res.json({
+            success: true,
+            data: {
+                clientId: googleOAuthConfig.clientId,
+                hasClientId: googleOAuthConfig.hasClientId,
+                clientSecret: googleOAuthConfig.clientSecret,
+                hasClientSecret: googleOAuthConfig.hasClientSecret,
+                callbackUrl: googleOAuthConfig.callbackUrl,
+                enabled: googleOAuthConfig.enabled,
+                source: 'database',
+            },
+        });
+    } catch (error) {
+        console.error('Error fetching Google OAuth settings:', error);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to fetch Google OAuth settings'
+            }
+        });
+    }
+});
+
+// PUT /api/admin/settings/google-oauth - Update Google OAuth configuration
+router.put('/admin/settings/google-oauth', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        // Validate input
+        const validatedData = googleOAuthConfigSchema.parse(req.body);
+
+        // Encrypt client secret before storing
+        const encryptedSecret = encryptData(validatedData.clientSecret);
+
+        // Get old settings for audit log
+        const oldSettings = await adminStorage.getSystemSettings('google_oauth');
+        const oldConfig: any = {};
+        for (const setting of oldSettings) {
+            if (setting.key === 'google_oauth.client_id') {
+                oldConfig.clientId = setting.value;
+            } else if (setting.key === 'google_oauth.callback_url') {
+                oldConfig.callbackUrl = setting.value;
+            }
+        }
+
+        // Update or create settings in database
+        await adminStorage.upsertSystemSetting({
+            category: 'google_oauth',
+            key: 'google_oauth.client_id',
+            value: validatedData.clientId,
+            dataType: 'string',
+            description: 'Google OAuth Client ID',
+            updatedBy: req.admin.id,
+        });
+
+        await adminStorage.upsertSystemSetting({
+            category: 'google_oauth',
+            key: 'google_oauth.client_secret',
+            value: encryptedSecret,
+            dataType: 'string',
+            description: 'Google OAuth Client Secret (encrypted)',
+            updatedBy: req.admin.id,
+        });
+
+        await adminStorage.upsertSystemSetting({
+            category: 'google_oauth',
+            key: 'google_oauth.callback_url',
+            value: validatedData.callbackUrl,
+            dataType: 'string',
+            description: 'Google OAuth Callback URL',
+            updatedBy: req.admin.id,
+        });
+
+        await adminStorage.upsertSystemSetting({
+            category: 'google_oauth',
+            key: 'google_oauth.enabled',
+            value: 'true',
+            dataType: 'boolean',
+            description: 'Google OAuth Enabled',
+            updatedBy: req.admin.id,
+        });
+
+        // Also update .env file for the server to use on restart
+        const envUpdates: Record<string, string> = {
+            'GOOGLE_CLIENT_ID': validatedData.clientId,
+            'GOOGLE_CLIENT_SECRET': validatedData.clientSecret,
+            'GOOGLE_CALLBACK_URL': validatedData.callbackUrl,
+        };
+        updateEnvVariables(envUpdates);
+
+        // Log admin activity
+        await adminStorage.logAdminActivity({
+            adminId: req.admin.id,
+            action: 'UPDATE_GOOGLE_OAUTH_SETTINGS',
+            resourceType: 'GOOGLE_OAUTH_SETTINGS',
+            details: {
+                changes: {
+                    clientId: oldConfig.clientId !== validatedData.clientId ? 'changed' : 'unchanged',
+                    clientSecret: 'updated',
+                    callbackUrl: oldConfig.callbackUrl !== validatedData.callbackUrl ? { from: oldConfig.callbackUrl, to: validatedData.callbackUrl } : 'unchanged',
+                }
+            },
+            ipAddress: req.ip || req.socket.remoteAddress,
+        });
+
+        res.json({
+            success: true,
+            message: 'Google OAuth settings updated successfully. Server restart may be required for changes to take effect.',
+            data: {
+                clientId: validatedData.clientId,
+                hasClientId: true,
+                hasClientSecret: true,
+                callbackUrl: validatedData.callbackUrl,
+                enabled: true,
+            },
+        });
+    } catch (error) {
+        console.error('Error updating Google OAuth settings:', error);
+
+        if (error instanceof z.ZodError) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Invalid input data',
+                    details: error.errors
+                }
+            });
+        }
+
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to update Google OAuth settings'
+            }
+        });
+    }
+});
+
+// POST /api/admin/settings/google-oauth/test - Test Google OAuth configuration
+router.post('/admin/settings/google-oauth/test', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        // Get current configuration from database
+        const googleOAuthSettings = await adminStorage.getSystemSettings('google_oauth');
+
+        let clientId = '';
+        let clientSecret = '';
+        let callbackUrl = '';
+
+        for (const setting of googleOAuthSettings) {
+            if (setting.key === 'google_oauth.client_id') {
+                clientId = setting.value;
+            } else if (setting.key === 'google_oauth.client_secret') {
+                try {
+                    clientSecret = decryptData(setting.value);
+                } catch (error) {
+                    clientSecret = '';
+                }
+            } else if (setting.key === 'google_oauth.callback_url') {
+                callbackUrl = setting.value;
+            }
+        }
+
+        // Validate configuration exists
+        if (!clientId || !clientSecret) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'CONFIGURATION_MISSING',
+                    message: 'Google OAuth is not configured. Please set Client ID and Client Secret first.'
+                }
+            });
+        }
+
+        // Basic validation of credentials format
+        const isValidClientId = clientId.endsWith('.apps.googleusercontent.com');
+        const isValidClientSecret = clientSecret.length >= 10;
+        const isValidCallbackUrl = callbackUrl.startsWith('http');
+
+        // Log admin activity
+        await adminStorage.logAdminActivity({
+            adminId: req.admin.id,
+            action: 'TEST_GOOGLE_OAUTH_SETTINGS',
+            resourceType: 'GOOGLE_OAUTH_SETTINGS',
+            details: {
+                hasClientId: !!clientId,
+                hasClientSecret: !!clientSecret,
+                hasCallbackUrl: !!callbackUrl,
+                validationResult: {
+                    clientIdFormat: isValidClientId,
+                    clientSecretFormat: isValidClientSecret,
+                    callbackUrlFormat: isValidCallbackUrl,
+                }
+            },
+            ipAddress: req.ip || req.socket.remoteAddress,
+        });
+
+        if (!isValidClientId) {
+            return res.json({
+                success: false,
+                message: 'Client ID format appears invalid. It should end with ".apps.googleusercontent.com"',
+                data: {
+                    clientIdValid: false,
+                    clientSecretValid: isValidClientSecret,
+                    callbackUrlValid: isValidCallbackUrl,
+                }
+            });
+        }
+
+        if (!isValidCallbackUrl) {
+            return res.json({
+                success: false,
+                message: 'Callback URL format appears invalid. It should be a valid HTTP/HTTPS URL.',
+                data: {
+                    clientIdValid: isValidClientId,
+                    clientSecretValid: isValidClientSecret,
+                    callbackUrlValid: false,
+                }
+            });
+        }
+
+        res.json({
+            success: true,
+            message: 'Google OAuth configuration appears valid. Test by attempting to sign in with Google.',
+            data: {
+                clientIdValid: isValidClientId,
+                clientSecretValid: isValidClientSecret,
+                callbackUrlValid: isValidCallbackUrl,
+                authUrl: `/api/auth/google`,
+            }
+        });
+    } catch (error) {
+        console.error('Error testing Google OAuth settings:', error);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to test Google OAuth settings'
+            }
+        });
+    }
+});
+
 // PUT /api/admin/settings/:key - Update system setting by key
 // IMPORTANT: This route must come AFTER specific routes like /admin/settings/features/:key and /admin/settings/payment
 router.put('/admin/settings/:key', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
