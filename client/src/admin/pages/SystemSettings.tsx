@@ -23,7 +23,6 @@ import {
     AlertCircle,
     Loader2,
     Globe,
-    Flag,
     CreditCard,
     Mail,
     History,
@@ -47,28 +46,9 @@ interface SystemSetting {
     updatedAt: number;
 }
 
-interface FeatureFlag {
-    id: number;
-    category: string;
-    key: string;
-    value: {
-        enabled: boolean;
-        plans: string[];
-    };
-    dataType: string;
-    description: string | null;
-    updatedBy: string | null;
-    updatedAt: number;
-}
-
 interface SettingsResponse {
     success: boolean;
     data: SystemSetting[];
-}
-
-interface FeatureFlagsResponse {
-    success: boolean;
-    data: FeatureFlag[];
 }
 
 interface PaymentGatewayConfig {
@@ -1534,29 +1514,6 @@ export default function SystemSettings() {
         },
     });
 
-    // Fetch feature flags
-    const { data: featureFlagsData, isLoading: featureFlagsLoading } = useQuery<FeatureFlagsResponse>({
-        queryKey: ["/api/admin/settings/features"],
-        queryFn: async () => {
-            const adminToken = localStorage.getItem('admin-token');
-            if (!adminToken) {
-                throw new Error('No admin token');
-            }
-
-            const res = await fetch('/api/admin/settings/features', {
-                headers: {
-                    'Authorization': `Bearer ${adminToken}`,
-                },
-            });
-
-            if (!res.ok) {
-                throw new Error(`HTTP ${res.status}`);
-            }
-
-            return res.json();
-        },
-    });
-
     // Update setting mutation
     const updateSettingMutation = useMutation({
         mutationFn: async ({ key, value }: { key: string; value: string }) => {
@@ -1600,46 +1557,6 @@ export default function SystemSettings() {
         },
     });
 
-    // Update feature flag mutation
-    const updateFeatureFlagMutation = useMutation({
-        mutationFn: async ({ key, enabled, plans }: { key: string; enabled: boolean; plans: string[] }) => {
-            const adminToken = localStorage.getItem('admin-token');
-            if (!adminToken) {
-                throw new Error('No admin token');
-            }
-
-            const res = await fetch(`/api/admin/settings/features/${key}`, {
-                method: 'PUT',
-                headers: {
-                    'Authorization': `Bearer ${adminToken}`,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ enabled, plans }),
-            });
-
-            if (!res.ok) {
-                const error = await res.json();
-                throw new Error(error.error?.message || 'Failed to update feature flag');
-            }
-
-            return res.json();
-        },
-        onSuccess: () => {
-            toast({
-                title: "Feature Flag Updated",
-                description: "The feature flag has been updated successfully.",
-            });
-            queryClient.invalidateQueries({ queryKey: ["/api/admin/settings/features"] });
-        },
-        onError: (error: Error) => {
-            toast({
-                title: "Update Failed",
-                description: error.message,
-                variant: "destructive",
-            });
-        },
-    });
-
     // Handle edit setting
     const handleEditSetting = (setting: SystemSetting) => {
         setEditingSetting(setting);
@@ -1661,26 +1578,7 @@ export default function SystemSettings() {
         updateSettingMutation.mutate({ key: editingSetting.key, value: editValue });
     };
 
-    // Handle toggle feature flag
-    const handleToggleFeatureFlag = (featureKey: string, currentEnabled: boolean, plans: string[]) => {
-        updateFeatureFlagMutation.mutate({
-            key: featureKey,
-            enabled: !currentEnabled,
-            plans: plans,
-        });
-    };
-
-    // Handle update feature flag plans
-    const handleUpdateFeaturePlans = (featureKey: string, enabled: boolean, newPlans: string[]) => {
-        updateFeatureFlagMutation.mutate({
-            key: featureKey,
-            enabled: enabled,
-            plans: newPlans,
-        });
-    };
-
     const settings = data?.data || [];
-    const featureFlags = featureFlagsData?.data || [];
 
     // Group settings by category
     const settingsByCategory = settings.reduce((acc, setting) => {
@@ -1747,13 +1645,6 @@ export default function SystemSettings() {
                                 >
                                     <Globe className="h-4 w-4" />
                                     <span className="hidden sm:inline">General</span>
-                                </TabsTrigger>
-                                <TabsTrigger
-                                    value="features"
-                                    className="flex items-center gap-2 data-[state=active]:bg-white data-[state=active]:shadow-sm"
-                                >
-                                    <Flag className="h-4 w-4" />
-                                    <span className="hidden sm:inline">Features</span>
                                 </TabsTrigger>
                                 <TabsTrigger
                                     value="payment"
@@ -1829,104 +1720,6 @@ export default function SystemSettings() {
                                                 </div>
                                             )}
                                         </div>
-                                    </CardContent>
-                                </Card>
-                            </TabsContent>
-
-                            {/* Feature Flags Tab */}
-                            <TabsContent value="features" className="mt-6">
-                                <Card className="border-slate-200">
-                                    <CardHeader className="bg-gradient-to-r from-slate-50 to-white border-b border-slate-100">
-                                        <CardTitle className="flex items-center gap-2 text-lg">
-                                            <Flag className="h-5 w-5 text-purple-600" />
-                                            Feature Flags
-                                        </CardTitle>
-                                        <CardDescription>
-                                            Enable or disable features per plan
-                                        </CardDescription>
-                                    </CardHeader>
-                                    <CardContent className="pt-6">
-                                        {featureFlagsLoading ? (
-                                            <div className="flex items-center justify-center py-8">
-                                                <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
-                                            </div>
-                                        ) : (
-                                            <div className="space-y-4">
-                                                {featureFlags && featureFlags.length > 0 ? (
-                                                    featureFlags.map((flag) => (
-                                                        <div
-                                                            key={flag.id}
-                                                            className="flex items-start justify-between p-4 bg-slate-50 rounded-lg border border-slate-200 hover:border-purple-300 transition-colors"
-                                                        >
-                                                            <div className="flex-1 space-y-3">
-                                                                <div className="flex items-center gap-3">
-                                                                    <div className="font-medium text-slate-900">{flag.key}</div>
-                                                                    <Badge
-                                                                        variant={flag.value.enabled ? "default" : "secondary"}
-                                                                        className={flag.value.enabled ? "bg-green-100 text-green-800 hover:bg-green-100" : ""}
-                                                                    >
-                                                                        {flag.value.enabled ? (
-                                                                            <>
-                                                                                <Check className="h-3 w-3 mr-1" />
-                                                                                Enabled
-                                                                            </>
-                                                                        ) : (
-                                                                            <>
-                                                                                <X className="h-3 w-3 mr-1" />
-                                                                                Disabled
-                                                                            </>
-                                                                        )}
-                                                                    </Badge>
-                                                                </div>
-                                                                {flag.description && (
-                                                                    <div className="text-sm text-slate-500">
-                                                                        {flag.description}
-                                                                    </div>
-                                                                )}
-                                                                <div className="flex items-center gap-2 flex-wrap">
-                                                                    <span className="text-xs text-slate-500 font-medium">Available for:</span>
-                                                                    {flag.value.plans && flag.value.plans.length > 0 ? (
-                                                                        flag.value.plans.map((plan) => (
-                                                                            <Badge
-                                                                                key={plan}
-                                                                                variant="outline"
-                                                                                className="text-xs capitalize"
-                                                                            >
-                                                                                {plan}
-                                                                            </Badge>
-                                                                        ))
-                                                                    ) : (
-                                                                        <Badge variant="outline" className="text-xs">
-                                                                            All Plans
-                                                                        </Badge>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-                                                            <div className="flex items-center gap-3 ml-4">
-                                                                <Switch
-                                                                    checked={flag.value.enabled}
-                                                                    onCheckedChange={() =>
-                                                                        handleToggleFeatureFlag(
-                                                                            flag.key,
-                                                                            flag.value.enabled,
-                                                                            flag.value.plans || []
-                                                                        )
-                                                                    }
-                                                                    disabled={updateFeatureFlagMutation.isPending}
-                                                                    className="data-[state=checked]:bg-purple-600"
-                                                                />
-                                                            </div>
-                                                        </div>
-                                                    ))
-                                                ) : (
-                                                    <div className="text-center py-8 text-slate-500">
-                                                        <Flag className="h-12 w-12 text-slate-300 mx-auto mb-3" />
-                                                        <p className="font-medium">No feature flags found</p>
-                                                        <p className="text-sm mt-1">Feature flags will appear here</p>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
                                     </CardContent>
                                 </Card>
                             </TabsContent>
