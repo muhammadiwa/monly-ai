@@ -3,7 +3,9 @@
 import path from 'path';
 import MigrationRunner from './migration-runner.js';
 
-const DB_PATH = path.join(process.cwd(), 'database.db');
+// Use DATABASE_URL from environment or default to database.sqlite
+const DATABASE_URL = process.env.DATABASE_URL || 'file:./database.sqlite';
+const DB_PATH = DATABASE_URL.replace('file:', '');
 
 async function main() {
   const args = process.argv.slice(2);
@@ -17,17 +19,17 @@ async function main() {
       case 'migrate':
         await migrationRunner.runMigrations();
         break;
-        
+
       case 'status':
         migrationRunner.showStatus();
         break;
-        
+
       case 'rollback': {
         const steps = parseInt(args[1]) || 1;
         await migrationRunner.rollback(steps);
         break;
       }
-        
+
       case 'help':
       case '--help':
       case '-h':
@@ -50,7 +52,7 @@ Examples:
   npm run migrate rollback 3      # Rollback last 3 migrations
         `);
         break;
-        
+
       default:
         console.error(`Unknown command: ${command}`);
         console.log('Use "npm run migrate help" for usage information');

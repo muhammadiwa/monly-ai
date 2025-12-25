@@ -8,19 +8,20 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { 
-  Send, 
-  Mic, 
-  MicOff, 
-  Image as ImageIcon, 
-  Bot, 
-  User, 
+import {
+  Send,
+  Mic,
+  MicOff,
+  Image as ImageIcon,
+  Bot,
+  User,
   Loader2,
   Upload,
   CheckCircle,
   AlertCircle,
   Camera
 } from "lucide-react";
+import FeatureGate from "@/components/subscription/FeatureGate";
 
 interface ChatMessage {
   id: string;
@@ -82,13 +83,13 @@ export default function ChatPage() {
         messageType: 'text',
         transactionCreated: data.success
       };
-      
+
       setMessages(prev => [...prev, aiMessage]);
-      
+
       if (data.success && data.transaction) {
         queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
         queryClient.invalidateQueries({ queryKey: ["/api/analytics/dashboard"] });
-        
+
         toast({
           title: "💰 Transaction Created!",
           description: `Added ${data.transaction.type}: ${data.transaction.description} (${data.transaction.amount})`,
@@ -105,7 +106,7 @@ export default function ChatPage() {
         });
         return;
       }
-      
+
       const aiMessage: ChatMessage = {
         id: Date.now().toString(),
         type: 'ai',
@@ -113,7 +114,7 @@ export default function ChatPage() {
         timestamp: new Date(),
         messageType: 'text'
       };
-      
+
       setMessages(prev => [...prev, aiMessage]);
     },
   });
@@ -123,17 +124,17 @@ export default function ChatPage() {
     mutationFn: async (audioBlob: Blob) => {
       const formData = new FormData();
       formData.append("audio", audioBlob, "recording.wav");
-      
+
       const response = await fetch("/api/chat/voice", {
         method: "POST",
         body: formData,
         credentials: "include",
       });
-      
+
       if (!response.ok) {
         throw new Error("Failed to process voice message");
       }
-      
+
       return response.json();
     },
     onSuccess: (data: TransactionResult & { transcription?: string }) => {
@@ -148,7 +149,7 @@ export default function ChatPage() {
         };
         setMessages(prev => [...prev, userMessage]);
       }
-      
+
       const aiMessage: ChatMessage = {
         id: Date.now().toString(),
         type: 'ai',
@@ -157,13 +158,13 @@ export default function ChatPage() {
         messageType: 'text',
         transactionCreated: data.success
       };
-      
+
       setMessages(prev => [...prev, aiMessage]);
-      
+
       if (data.success && data.transaction) {
         queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
         queryClient.invalidateQueries({ queryKey: ["/api/analytics/dashboard"] });
-        
+
         toast({
           title: "🎤 Voice Transaction Created!",
           description: `Added from voice: ${data.transaction.description}`,
@@ -179,7 +180,7 @@ export default function ChatPage() {
         timestamp: new Date(),
         messageType: 'text'
       };
-      
+
       setMessages(prev => [...prev, aiMessage]);
     },
   });
@@ -189,17 +190,17 @@ export default function ChatPage() {
     mutationFn: async (file: File) => {
       const formData = new FormData();
       formData.append("image", file);
-      
+
       const response = await fetch("/api/chat/image", {
         method: "POST",
         body: formData,
         credentials: "include",
       });
-      
+
       if (!response.ok) {
         throw new Error("Failed to process image");
       }
-      
+
       return response.json();
     },
     onSuccess: (data: TransactionResult & { imageUrl?: string }) => {
@@ -211,13 +212,13 @@ export default function ChatPage() {
         messageType: 'text',
         transactionCreated: data.success
       };
-      
+
       setMessages(prev => [...prev, aiMessage]);
-      
+
       if (data.success) {
         queryClient.invalidateQueries({ queryKey: ["/api/transactions"] });
         queryClient.invalidateQueries({ queryKey: ["/api/analytics/dashboard"] });
-        
+
         toast({
           title: "📷 Image Transaction Created!",
           description: "Transaction extracted from image successfully",
@@ -233,14 +234,14 @@ export default function ChatPage() {
         timestamp: new Date(),
         messageType: 'text'
       };
-      
+
       setMessages(prev => [...prev, aiMessage]);
     },
   });
 
   const handleSendMessage = () => {
     if (!inputMessage.trim()) return;
-    
+
     const userMessage: ChatMessage = {
       id: Date.now().toString(),
       type: 'user',
@@ -248,7 +249,7 @@ export default function ChatPage() {
       timestamp: new Date(),
       messageType: 'text'
     };
-    
+
     setMessages(prev => [...prev, userMessage]);
     chatMutation.mutate(inputMessage);
     setInputMessage("");
@@ -258,21 +259,21 @@ export default function ChatPage() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const recorder = new MediaRecorder(stream);
-      
+
       recorder.ondataavailable = (event) => {
         setAudioChunks(prev => [...prev, event.data]);
       };
-      
+
       recorder.onstop = () => {
         const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
         voiceMutation.mutate(audioBlob);
         setAudioChunks([]);
       };
-      
+
       setMediaRecorder(recorder);
       setIsRecording(true);
       recorder.start();
-      
+
       toast({
         title: "🎤 Recording Started",
         description: "Speak your transaction details...",
@@ -293,7 +294,7 @@ export default function ChatPage() {
       mediaRecorder.stream.getTracks().forEach(track => track.stop());
       setIsRecording(false);
       setMediaRecorder(null);
-      
+
       toast({
         title: "⏹️ Recording Stopped",
         description: "Processing your voice message...",
@@ -315,17 +316,17 @@ export default function ChatPage() {
         messageType: 'image',
         imageUrl
       };
-      
+
       setMessages(prev => [...prev, userMessage]);
       imageMutation.mutate(file);
     }
   };
 
   const formatTime = (date: Date) => {
-    return date.toLocaleTimeString('en-US', { 
-      hour: '2-digit', 
+    return date.toLocaleTimeString('en-US', {
+      hour: '2-digit',
       minute: '2-digit',
-      hour12: false 
+      hour12: false
     });
   };
 
@@ -353,22 +354,20 @@ export default function ChatPage() {
           {messages.map((message) => (
             <div
               key={message.id}
-              className={`flex gap-3 ${
-                message.type === 'user' ? 'justify-end' : 'justify-start'
-              }`}
+              className={`flex gap-3 ${message.type === 'user' ? 'justify-end' : 'justify-start'
+                }`}
             >
               {message.type === 'ai' && (
                 <div className="bg-gradient-to-r from-blue-500 to-purple-500 p-2 rounded-full h-fit">
                   <Bot className="h-4 w-4 text-white" />
                 </div>
               )}
-              
+
               <div
-                className={`max-w-[70%] ${
-                  message.type === 'user'
-                    ? 'bg-blue-500 text-white'
-                    : 'bg-white border shadow-sm'
-                } rounded-2xl p-3`}
+                className={`max-w-[70%] ${message.type === 'user'
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-white border shadow-sm'
+                  } rounded-2xl p-3`}
               >
                 {message.imageUrl && (
                   <img
@@ -377,26 +376,26 @@ export default function ChatPage() {
                     className="max-w-full h-auto rounded-lg mb-2"
                   />
                 )}
-                
+
                 <p className="text-sm leading-relaxed">{message.content}</p>
-                
+
                 <div className="flex items-center justify-between mt-2 text-xs opacity-70">
                   <span>{formatTime(message.timestamp)}</span>
-                  
+
                   {message.transactionCreated && (
                     <div className="flex items-center gap-1 text-green-600">
                       <CheckCircle className="h-3 w-3" />
                       <span>Transaction created</span>
                     </div>
                   )}
-                  
+
                   {message.messageType === 'voice' && (
                     <div className="flex items-center gap-1">
                       <Mic className="h-3 w-3" />
                       <span>Voice</span>
                     </div>
                   )}
-                  
+
                   {message.messageType === 'image' && (
                     <div className="flex items-center gap-1">
                       <Camera className="h-3 w-3" />
@@ -405,7 +404,7 @@ export default function ChatPage() {
                   )}
                 </div>
               </div>
-              
+
               {message.type === 'user' && (
                 <div className="bg-blue-500 p-2 rounded-full h-fit">
                   <User className="h-4 w-4 text-white" />
@@ -413,7 +412,7 @@ export default function ChatPage() {
               )}
             </div>
           ))}
-          
+
           {(chatMutation.isPending || voiceMutation.isPending || imageMutation.isPending) && (
             <div className="flex gap-3 justify-start">
               <div className="bg-gradient-to-r from-blue-500 to-purple-500 p-2 rounded-full h-fit">
@@ -457,25 +456,27 @@ export default function ChatPage() {
           </Button>
 
           {/* Image Upload Button */}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={imageMutation.isPending}
-            className="px-3"
-          >
-            <ImageIcon className="h-4 w-4" />
-            <span className="ml-1 text-xs">Image</span>
-          </Button>
-          
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            onChange={handleImageUpload}
-            className="hidden"
-          />
+          <FeatureGate feature="receipt_ocr" showUpgradePrompt={true}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={imageMutation.isPending}
+              className="px-3"
+            >
+              <ImageIcon className="h-4 w-4" />
+              <span className="ml-1 text-xs">Image</span>
+            </Button>
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleImageUpload}
+              className="hidden"
+            />
+          </FeatureGate>
         </div>
 
         <div className="flex gap-2">
@@ -499,7 +500,7 @@ export default function ChatPage() {
             )}
           </Button>
         </div>
-        
+
         <div className="mt-2 text-xs text-gray-500 text-center">
           💡 Try: "I bought coffee for $5", "Spent 50k on groceries", or upload a receipt photo
         </div>

@@ -10,6 +10,7 @@ import whatsappMultiAccountRoutes from './whatsapp-multi-account-routes';
 import adminRoutes from './admin/admin-routes';
 import subscriptionRoutes from './routes/subscription-routes';
 import paymentWebhookRoutes from './routes/payment-webhook';
+import invoiceRoutes from './routes/invoice-routes';
 import { triggerTransactionRemindersManually } from './transaction-reminder-scheduler';
 import { getHealthMonitor } from './whatsapp-health-monitor';
 import { getSingleBotConnectionState } from './whatsapp-single-bot';
@@ -18,6 +19,8 @@ import { z } from "zod";
 import session from "express-session";
 import MemoryStore from "memorystore";
 import { getAIClient, getModelForTask, getCurrentProviderInfo } from "./ai-provider";
+import { requireFeature, checkUsageLimit } from './middleware/feature-gate';
+import { usageTrackingService } from './services/usage-tracking-service';
 
 // Helper function to get currency symbol
 function getCurrencySymbol(currency: string): string {
@@ -63,6 +66,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register Payment Webhook routes (Midtrans callbacks)
   app.use('/api/payment', paymentWebhookRoutes);
+
+  // Register Invoice routes (user-facing)
+  app.use('/api/invoice', invoiceRoutes);
 
   // Register WhatsApp routes
   // WhatsApp routes (Single Bot System)
@@ -496,7 +502,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // AI-powered transaction analysis
-  app.post('/api/transactions/analyze', requireAuth, async (req: AuthRequest, res: Response) => {
+  app.post('/api/transactions/analyze', requireAuth, requireFeature('ai_categorization'), checkUsageLimit('aiAnalysis'), async (req: AuthRequest, res: Response) => {
     try {
       if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
       const { text } = req.body;
@@ -504,6 +510,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!text) {
         return res.status(400).json({ message: "Text is required" });
       }
+
+      // Track usage
+      await usageTrackingService.trackUsage(req.user.id, 'aiAnalysis');
 
       const analysis = await analyzeTransactionText(text);
 
@@ -537,13 +546,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // OCR receipt processing
-  app.post('/api/transactions/ocr', requireAuth, upload.single('receipt'), async (req: AuthRequest, res: Response) => {
+  app.post('/api/transactions/ocr', requireAuth, requireFeature('receipt_ocr'), checkUsageLimit('receiptOCR'), upload.single('receipt'), async (req: AuthRequest, res: Response) => {
     try {
       if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
 
       if (!req.file) {
         return res.status(400).json({ message: "Receipt image is required" });
       }
+
+      // Track usage
+      await usageTrackingService.trackUsage(req.user.id, 'receiptOCR');
 
       // Get user's categories and preferences for AI analysis
       const categories = await storage.getCategories(req.user.id);
@@ -1236,7 +1248,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Chat completion endpoint
-  app.post('/api/chat/completions', requireAuth, async (req: AuthRequest, res: Response) => {
+  app.post('/api/chat/completions', requireAuth, requireFeature('ai_chat'), checkUsageLimit('aiChat'), async (req: AuthRequest, res: Response) => {
     try {
       if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
       const { messages } = req.body;
@@ -1244,6 +1256,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!messages || !Array.isArray(messages)) {
         return res.status(400).json({ message: "Invalid messages format" });
       }
+
+      // Track usage
+      await usageTrackingService.trackUsage(req.user.id, 'aiChat');
 
       // Call OpenAI chat completion API
       const response = await openai.chat.completions.create({
@@ -1324,7 +1339,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Additional analytics routes
-  app.get('/api/analytics/monthly/:year/:month', requireAuth, async (req: AuthRequest, res: Response) => {
+  app.get('/api/analytics/monthly/:year/:month', requireAuth, requireFeature('advanced_reports'), async (req: AuthRequest, res: Response) => {
     try {
       if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
       const year = parseInt(req.params.year);
@@ -1352,7 +1367,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Chat AI routes
-  app.post('/api/chat/process', requireAuth, async (req: AuthRequest, res: Response) => {
+  app.post('/api/chat/process', requireAuth, requireFeature('ai_chat'), checkUsageLimit('aiChat'), async (req: AuthRequest, res: Response) => {
     try {
       console.log('Chat request received:', req.body);
       const { message, type } = req.body;
@@ -1363,6 +1378,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           message: "Please provide a valid message"
         });
       }
+
+      // Track usage
+      await usageTrackingService.trackUsage(req.user!.id, 'aiChat');
 
       console.log('Analyzing message with OpenAI:', message);
 
@@ -1468,7 +1486,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/chat/voice', requireAuth, upload.single('audio'), async (req: AuthRequest, res: Response) => {
+  app.post('/api/chat/voice', requireAuth, requireFeature('ai_chat'), checkUsageLimit('aiChat'), upload.single('audio'), async (req: AuthRequest, res: Response) => {
     try {
       if (!req.file) {
         return res.status(400).json({
@@ -1476,6 +1494,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           message: "No audio file provided"
         });
       }
+
+      // Track usage
+      await usageTrackingService.trackUsage(req.user!.id, 'aiChat');
 
       console.log('Processing voice message...', {
         filename: req.file.originalname,
@@ -1654,7 +1675,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/chat/image', requireAuth, upload.single('image'), async (req: AuthRequest, res: Response) => {
+  app.post('/api/chat/image', requireAuth, requireFeature('receipt_ocr'), checkUsageLimit('receiptOCR'), upload.single('image'), async (req: AuthRequest, res: Response) => {
     try {
       if (!req.file) {
         return res.status(400).json({
@@ -1662,6 +1683,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           message: "No image file provided"
         });
       }
+
+      // Track usage
+      await usageTrackingService.trackUsage(req.user!.id, 'receiptOCR');
 
       console.log('Processing image receipt...');
 

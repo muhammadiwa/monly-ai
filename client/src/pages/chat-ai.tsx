@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Avatar } from '@/components/ui/avatar';
 import { Loader2, Send, Bot, X, Minimize2, Maximize2, Mic, MicOff, Camera } from 'lucide-react';
+import FeatureGate from '@/components/subscription/FeatureGate';
 
 interface Message {
   id: string;
@@ -67,10 +68,10 @@ export function ChatWidget({ isOpen, onToggle }: ChatWidgetProps) {
           transaction: data.transaction
         };
         setMessages(prev => [...prev, aiMessage]);
-        
+
         queryClient.invalidateQueries({ queryKey: ['/api/transactions'] });
         queryClient.invalidateQueries({ queryKey: ['/api/analytics/dashboard'] });
-        
+
         toast({
           title: '✨ Transaction Created!',
           description: 'Your expense has been tracked successfully',
@@ -98,7 +99,7 @@ export function ChatWidget({ isOpen, onToggle }: ChatWidgetProps) {
         }, 2000);
         return;
       }
-      
+
       const errorMessage: Message = {
         id: Date.now().toString(),
         text: '❌ Sorry, I couldn\'t process your message. Please try again or check your internet connection.',
@@ -114,13 +115,13 @@ export function ChatWidget({ isOpen, onToggle }: ChatWidgetProps) {
     mutationFn: async (audioBlob: Blob) => {
       const formData = new FormData();
       formData.append('audio', audioBlob, 'recording.webm');
-      
+
       // Get auth token for manual fetch with FormData
       const token = localStorage.getItem('auth-token');
       if (!token) {
         throw new Error('No authentication token found');
       }
-      
+
       const response = await fetch('/api/chat/voice', {
         method: 'POST',
         headers: {
@@ -129,12 +130,12 @@ export function ChatWidget({ isOpen, onToggle }: ChatWidgetProps) {
         body: formData,
         credentials: 'include',
       });
-      
+
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(`${response.status}: ${errorText}`);
       }
-      
+
       return response.json();
     },
     onSuccess: (data) => {
@@ -147,10 +148,10 @@ export function ChatWidget({ isOpen, onToggle }: ChatWidgetProps) {
           transaction: data.transaction
         };
         setMessages(prev => [...prev, aiMessage]);
-        
+
         queryClient.invalidateQueries({ queryKey: ['/api/transactions'] });
         queryClient.invalidateQueries({ queryKey: ['/api/analytics/dashboard'] });
-        
+
         toast({
           title: '🎤 Voice Processed!',
           description: 'Your voice message was processed successfully',
@@ -168,11 +169,11 @@ export function ChatWidget({ isOpen, onToggle }: ChatWidgetProps) {
     },
     onError: (error) => {
       console.error('Voice mutation error:', error);
-      
+
       // Check for authentication errors
-      if (error.message.includes('401:') || error.message.includes('403:') || 
-          error.message.includes('Access token required') || 
-          error.message.includes('Invalid or expired token')) {
+      if (error.message.includes('401:') || error.message.includes('403:') ||
+        error.message.includes('Access token required') ||
+        error.message.includes('Invalid or expired token')) {
         toast({
           title: '🔐 Session Expired',
           description: 'Please login again to continue',
@@ -185,7 +186,7 @@ export function ChatWidget({ isOpen, onToggle }: ChatWidgetProps) {
         }, 2000);
         return;
       }
-      
+
       const errorMessage: Message = {
         id: Date.now().toString(),
         text: '❌ Sorry, I couldn\'t process your voice message. Please try again or check your microphone.',
@@ -194,7 +195,7 @@ export function ChatWidget({ isOpen, onToggle }: ChatWidgetProps) {
         isError: true,
       };
       setMessages(prev => [...prev, errorMessage]);
-      
+
       toast({
         title: '🎤 Voice Error',
         description: 'Unable to process voice message',
@@ -207,13 +208,13 @@ export function ChatWidget({ isOpen, onToggle }: ChatWidgetProps) {
     mutationFn: async (file: File) => {
       const formData = new FormData();
       formData.append('image', file);
-      
+
       // Get auth token for manual fetch with FormData
       const token = localStorage.getItem('auth-token');
       if (!token) {
         throw new Error('No authentication token found');
       }
-      
+
       const response = await fetch('/api/chat/image', {
         method: 'POST',
         headers: {
@@ -222,12 +223,12 @@ export function ChatWidget({ isOpen, onToggle }: ChatWidgetProps) {
         body: formData,
         credentials: 'include',
       });
-      
+
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(`${response.status}: ${errorText}`);
       }
-      
+
       return response.json();
     },
     onSuccess: (data) => {
@@ -239,10 +240,10 @@ export function ChatWidget({ isOpen, onToggle }: ChatWidgetProps) {
           timestamp: new Date(),
         };
         setMessages(prev => [...prev, aiMessage]);
-        
+
         queryClient.invalidateQueries({ queryKey: ['/api/transactions'] });
         queryClient.invalidateQueries({ queryKey: ['/api/analytics/dashboard'] });
-        
+
         toast({
           title: '📸 Receipt Processed!',
           description: 'Your receipt was analyzed successfully',
@@ -260,11 +261,11 @@ export function ChatWidget({ isOpen, onToggle }: ChatWidgetProps) {
     },
     onError: (error) => {
       console.error('Image mutation error:', error);
-      
+
       // Check for authentication errors
-      if (error.message.includes('401:') || error.message.includes('403:') || 
-          error.message.includes('Access token required') || 
-          error.message.includes('Invalid or expired token')) {
+      if (error.message.includes('401:') || error.message.includes('403:') ||
+        error.message.includes('Access token required') ||
+        error.message.includes('Invalid or expired token')) {
         toast({
           title: '🔐 Session Expired',
           description: 'Please login again to continue',
@@ -277,7 +278,7 @@ export function ChatWidget({ isOpen, onToggle }: ChatWidgetProps) {
         }, 2000);
         return;
       }
-      
+
       const errorMessage: Message = {
         id: Date.now().toString(),
         text: '❌ Sorry, I couldn\'t process your image. Please try uploading a clearer receipt.',
@@ -286,7 +287,7 @@ export function ChatWidget({ isOpen, onToggle }: ChatWidgetProps) {
         isError: true,
       };
       setMessages(prev => [...prev, errorMessage]);
-      
+
       toast({
         title: '📸 Image Error',
         description: 'Unable to process image',
@@ -297,14 +298,14 @@ export function ChatWidget({ isOpen, onToggle }: ChatWidgetProps) {
 
   const handleSendMessage = () => {
     if (!input.trim()) return;
-    
+
     const userMessage: Message = {
       id: Date.now().toString(),
       text: input,
       type: 'user',
       timestamp: new Date(),
     };
-    
+
     setMessages(prev => [...prev, userMessage]);
     sendMessageMutation.mutate(input);
     setInput('');
@@ -329,7 +330,7 @@ export function ChatWidget({ isOpen, onToggle }: ChatWidgetProps) {
 
       recorder.onstop = () => {
         const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-        
+
         // Add user voice message
         const userMessage: Message = {
           id: Date.now().toString(),
@@ -338,10 +339,10 @@ export function ChatWidget({ isOpen, onToggle }: ChatWidgetProps) {
           timestamp: new Date(),
         };
         setMessages(prev => [...prev, userMessage]);
-        
+
         // Process voice with AI
         sendVoiceMutation.mutate(audioBlob);
-        
+
         stream.getTracks().forEach(track => track.stop());
       };
 
@@ -459,21 +460,20 @@ export function ChatWidget({ isOpen, onToggle }: ChatWidgetProps) {
                     </div>
                   )}
                   <div
-                    className={`max-w-[75%] p-3 rounded-2xl text-sm ${
-                      message.type === 'user'
-                        ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-br-sm'
-                        : message.isError
+                    className={`max-w-[75%] p-3 rounded-2xl text-sm ${message.type === 'user'
+                      ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-br-sm'
+                      : message.isError
                         ? 'bg-red-50 border border-red-200 text-red-700 rounded-bl-sm'
                         : message.transaction
-                        ? 'bg-green-50 border border-green-200 text-green-700 rounded-bl-sm'
-                        : 'bg-white border border-gray-200 text-gray-700 rounded-bl-sm shadow-sm'
-                    }`}
+                          ? 'bg-green-50 border border-green-200 text-green-700 rounded-bl-sm'
+                          : 'bg-white border border-gray-200 text-gray-700 rounded-bl-sm shadow-sm'
+                      }`}
                   >
                     <p className="whitespace-pre-line">{message.text}</p>
                     <p className="text-xs opacity-60 mt-1">
-                      {message.timestamp.toLocaleTimeString([], { 
-                        hour: '2-digit', 
-                        minute: '2-digit' 
+                      {message.timestamp.toLocaleTimeString([], {
+                        hour: '2-digit',
+                        minute: '2-digit'
                       })}
                     </p>
                   </div>
@@ -513,7 +513,7 @@ export function ChatWidget({ isOpen, onToggle }: ChatWidgetProps) {
                     className="border-gray-300 focus:border-emerald-500 focus:ring-emerald-500 rounded-2xl"
                   />
                 </div>
-                
+
                 <Button
                   type="button"
                   variant={isRecording ? "destructive" : "outline"}
@@ -531,20 +531,30 @@ export function ChatWidget({ isOpen, onToggle }: ChatWidgetProps) {
                   )}
                 </Button>
 
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={sendImageMutation.isPending}
-                  className="rounded-full"
-                >
-                  {sendImageMutation.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Camera className="h-4 w-4" />
-                  )}
-                </Button>
+                <FeatureGate feature="receipt_ocr" showUpgradePrompt={true}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={sendImageMutation.isPending}
+                    className="rounded-full"
+                  >
+                    {sendImageMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Camera className="h-4 w-4" />
+                    )}
+                  </Button>
+
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleFileUpload}
+                  />
+                </FeatureGate>
 
                 <Button
                   type="button"
@@ -587,14 +597,6 @@ export function ChatWidget({ isOpen, onToggle }: ChatWidgetProps) {
                   💼 Income
                 </Button>
               </div>
-
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handleFileUpload}
-              />
             </div>
           </>
         )}
@@ -620,12 +622,12 @@ export default function ChatAI() {
   const [isChatOpen, setIsChatOpen] = useState(false);
 
   return (
-    <>
+    <FeatureGate feature="ai_chat" showUpgradePrompt={true}>
       {isChatOpen ? (
         <ChatWidget isOpen={isChatOpen} onToggle={() => setIsChatOpen(false)} />
       ) : (
         <ChatFAB onClick={() => setIsChatOpen(true)} />
       )}
-    </>
+    </FeatureGate>
   );
 }

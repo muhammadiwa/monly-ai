@@ -15,6 +15,8 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import SubscriptionDashboard from "@/components/subscription/SubscriptionDashboard";
+import InvoiceList from "@/components/subscription/InvoiceList";
 
 // Import all required icons in one statement
 import {
@@ -35,7 +37,9 @@ import {
   Download,
   Trash2,
   LogOut,
-  XCircle
+  XCircle,
+  Crown,
+  ArrowUpRight
 } from "lucide-react";
 
 interface UserPreferences {
@@ -401,7 +405,7 @@ export default function Settings() {
         </div>
 
         <Tabs defaultValue="profile" className="space-y-3">
-          <TabsList className="grid w-full grid-cols-4 lg:w-fit lg:grid-cols-4 bg-white shadow-sm border border-gray-200">
+          <TabsList className="grid w-full grid-cols-5 lg:w-fit lg:grid-cols-5 bg-white shadow-sm border border-gray-200">
             <TabsTrigger value="profile" className="flex items-center space-x-1 text-xs sm:text-sm">
               <User className="h-3 w-3 sm:h-4 sm:w-4" />
               <span>Profile</span>
@@ -409,6 +413,10 @@ export default function Settings() {
             <TabsTrigger value="financial" className="flex items-center space-x-1 text-xs sm:text-sm">
               <CreditCard className="h-3 w-3 sm:h-4 sm:w-4" />
               <span>Financial</span>
+            </TabsTrigger>
+            <TabsTrigger value="subscription" className="flex items-center space-x-1 text-xs sm:text-sm">
+              <Crown className="h-3 w-3 sm:h-4 sm:w-4" />
+              <span>Subscription</span>
             </TabsTrigger>
             <TabsTrigger value="preferences" className="flex items-center space-x-1 text-xs sm:text-sm">
               <Bell className="h-3 w-3 sm:h-4 sm:w-4" />
@@ -688,6 +696,43 @@ export default function Settings() {
                 </div>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* Subscription Tab */}
+          <TabsContent value="subscription" className="space-y-3">
+            {/* Link to Pricing Page */}
+            <Card className="shadow-lg border-0 bg-gradient-to-r from-blue-50 to-purple-50 border-blue-200">
+              <CardContent className="p-4 sm:p-6">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div className="flex items-start gap-3">
+                    <div className="p-3 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 text-white">
+                      <Crown className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-900 mb-1">
+                        Explore Our Plans
+                      </h3>
+                      <p className="text-sm text-gray-600">
+                        Discover the perfect plan for your financial management needs
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    onClick={() => window.location.href = '/pricing'}
+                    className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 w-full sm:w-auto"
+                  >
+                    <ArrowUpRight className="w-4 h-4 mr-2" />
+                    View Pricing Plans
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Subscription Dashboard Component */}
+            <SubscriptionDashboard />
+
+            {/* Invoice List Component */}
+            <InvoiceList />
           </TabsContent>
 
           {/* Preferences Tab */}

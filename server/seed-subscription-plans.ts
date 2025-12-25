@@ -1,5 +1,6 @@
+import "dotenv/config";
 import { db } from "./db";
-import { subscriptionPlans } from "@shared/schema";
+import { subscriptionPlans, userSubscriptions, payments, invoices } from "@shared/schema";
 
 async function seedSubscriptionPlans() {
     console.log("🌱 Seeding subscription plans...");
@@ -122,16 +123,21 @@ async function seedSubscriptionPlans() {
     ];
 
     try {
-        // Check if plans already exist
-        const existingPlans = await db.select().from(subscriptionPlans);
+        // Delete related data first (foreign key constraints) - order matters!
+        console.log("🗑️  Clearing related data...");
+        await db.delete(invoices);
+        console.log("   ✅ Invoices cleared");
+        await db.delete(payments);
+        console.log("   ✅ Payments cleared");
+        await db.delete(userSubscriptions);
+        console.log("   ✅ User subscriptions cleared");
 
-        if (existingPlans.length > 0) {
-            console.log("⚠️  Subscription plans already exist. Skipping seed.");
-            console.log(`   Found ${existingPlans.length} existing plans.`);
-            return;
-        }
+        // Delete all existing plans
+        console.log("🗑️  Clearing existing subscription plans...");
+        await db.delete(subscriptionPlans);
+        console.log("✅ Existing plans cleared");
 
-        // Insert plans
+        // Insert fresh plans
         for (const plan of plans) {
             await db.insert(subscriptionPlans).values(plan);
             console.log(`✅ Created plan: ${plan.displayName}`);
@@ -149,17 +155,15 @@ async function seedSubscriptionPlans() {
     }
 }
 
-// Run if called directly
-if (require.main === module) {
-    seedSubscriptionPlans()
-        .then(() => {
-            console.log("\n✨ Done!");
-            process.exit(0);
-        })
-        .catch((error) => {
-            console.error("\n💥 Fatal error:", error);
-            process.exit(1);
-        });
-}
+// Run the seed
+seedSubscriptionPlans()
+    .then(() => {
+        console.log("\n✨ Done!");
+        process.exit(0);
+    })
+    .catch((error) => {
+        console.error("\n💥 Fatal error:", error);
+        process.exit(1);
+    });
 
 export { seedSubscriptionPlans };

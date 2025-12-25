@@ -16,6 +16,7 @@ import Budgets from "@/pages/budgets";
 import Goals from "@/pages/goals";
 import Reports from "@/pages/reports";
 import Settings from "@/pages/settings";
+import Pricing from "@/pages/pricing";
 import WhatsAppIntegration from "@/pages/whatsapp-integration";
 import { AdminLogin, AdminDashboard, AdminProfile, UserManagement, UserDetails, SubscriptionPlans, SubscriptionList, PaymentList, RevenueAnalytics, SystemSettings, WhatsAppBotConfig } from "@/admin/pages";
 import MidtransMonitoring from "@/admin/pages/MidtransMonitoring";
@@ -166,6 +167,7 @@ function Router() {
               <Route path="/budgets" component={Budgets} />
               <Route path="/goals" component={Goals} />
               <Route path="/reports" component={Reports} />
+              <Route path="/pricing" component={Pricing} />
               <Route path="/whatsapp-integration" component={WhatsAppIntegration} />
               <Route path="/settings" component={Settings} />
               <Route component={NotFound} />

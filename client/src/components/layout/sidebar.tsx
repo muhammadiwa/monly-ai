@@ -1,6 +1,8 @@
 import { Link, useLocation } from "wouter";
-import { ChartLine, BarChart3, CreditCard, PieChart, Settings, Grid3X3, Target, MessageCircle } from "lucide-react";
+import { ChartLine, BarChart3, CreditCard, PieChart, Settings, Grid3X3, Target, MessageCircle, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useSubscription } from "@/hooks/useSubscription";
+import { Badge } from "@/components/ui/badge";
 
 const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: BarChart3 },
@@ -10,22 +12,28 @@ const navigation = [
   { name: "Goals", href: "/goals", icon: Target },
   { name: "Reports", href: "/reports", icon: ChartLine },
   { name: "WhatsApp Integration", href: "/whatsapp-integration", icon: MessageCircle },
+  { name: "Pricing", href: "/pricing", icon: Sparkles, showUpgradeBadge: true },
   { name: "Settings", href: "/settings", icon: Settings },
 ];
 
 export default function Sidebar() {
   const [location] = useLocation();
+  const { subscription } = useSubscription();
+
+  // Check if user is on free plan
+  const isFreeUser = subscription?.planName === 'free' || !subscription;
 
   return (
     <div className="fixed inset-y-0 left-0 z-30 w-64 bg-white shadow-xl transform -translate-x-full lg:translate-x-0 transition-transform duration-300 ease-in-out top-16 border-r border-gray-200/60">
-      
+
       {/* Navigation */}
       <nav className="mt-6 px-4 pb-4">
         <div className="space-y-2">
           {navigation.map((item) => {
             const Icon = item.icon;
             const isActive = location === item.href;
-            
+            const showBadge = item.showUpgradeBadge && isFreeUser;
+
             return (
               <Link
                 key={item.name}
@@ -42,7 +50,15 @@ export default function Sidebar() {
                   isActive ? "text-white" : "text-gray-500 group-hover:text-emerald-600"
                 )} />
                 <span className="font-medium">{item.name}</span>
-                {isActive && (
+                {showBadge && (
+                  <Badge
+                    variant="default"
+                    className="ml-auto bg-gradient-to-r from-amber-500 to-orange-500 text-white text-xs px-2 py-0.5 animate-pulse"
+                  >
+                    Upgrade
+                  </Badge>
+                )}
+                {isActive && !showBadge && (
                   <div className="ml-auto w-2 h-2 bg-white rounded-full opacity-80" />
                 )}
               </Link>

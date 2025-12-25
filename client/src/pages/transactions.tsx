@@ -17,6 +17,7 @@ import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip, Legend } fro
 import AddTransactionModal from "@/components/modals/add-transaction-modal";
 import { exportToPDF, exportToExcel } from "@/lib/exportUtils";
 import { getCurrencySymbol, getUserCurrency } from "@/lib/currencyUtils";
+import FeatureGate from "@/components/subscription/FeatureGate";
 
 export default function Transactions() {
   const { toast } = useToast();
@@ -27,24 +28,24 @@ export default function Transactions() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [transactionToDelete, setTransactionToDelete] = useState<any>(null);
   const [searchTerm, setSearchTerm] = useState("");
-  
+
   // Filter states
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [selectedType, setSelectedType] = useState<string>("all");
   const [dateRange, setDateRange] = useState(() => {
     const now = new Date();
-    
+
     // Menggunakan format YYYY-MM-DD langsung untuk menghindari masalah timezone
     const year = now.getFullYear();
     const month = now.getMonth() + 1; // getMonth() returns 0-11, kita butuh 1-12
-    
+
     // Tanggal 1 bulan ini
     const startDate = `${year}-${month.toString().padStart(2, '0')}-01`;
-    
+
     // Tanggal akhir bulan ini - hitung jumlah hari dalam bulan
     const daysInMonth = new Date(year, month, 0).getDate();
     const endDate = `${year}-${month.toString().padStart(2, '0')}-${daysInMonth.toString().padStart(2, '0')}`;
-    
+
     console.log('Setting date range:', {
       now: now.toDateString(),
       currentMonth: month,
@@ -52,13 +53,13 @@ export default function Transactions() {
       startDate,
       endDate
     });
-    
+
     return {
       start: startDate, // Tanggal 1 bulan ini
       end: endDate      // Tanggal akhir bulan ini
     };
   });
-  
+
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 5;
@@ -86,13 +87,13 @@ export default function Transactions() {
     };
 
     const finalDescription = transactionName ? `"${transactionName}" ${description}` : description;
-    
+
     const getClassName = () => {
       if (type === 'success') return 'border-green-200 bg-green-50';
       if (type === 'warning') return 'border-yellow-200 bg-yellow-50';
       return '';
     };
-    
+
     toast({
       title,
       description: finalDescription,
@@ -123,7 +124,7 @@ export default function Transactions() {
   const formatAmount = (amount: number, currency?: string) => {
     const currencyToUse = currency || userCurrency;
     const symbol = getCurrencySymbol(currencyToUse);
-    
+
     if (currencyToUse === 'IDR') {
       return `${symbol}${amount.toLocaleString('id-ID')}`;
     }
@@ -144,11 +145,11 @@ export default function Transactions() {
       console.warn('Invalid transaction date');
       return true; // Include invalid dates to avoid hiding transactions
     }
-    
+
     if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
       return true; // Include all if range is invalid
     }
-    
+
     endDate.setHours(23, 59, 59, 999);
     return transactionDate >= startDate && transactionDate <= endDate;
   };
@@ -156,26 +157,26 @@ export default function Transactions() {
   // Filter and process transactions
   const filteredTransactions = (transactions as any[])?.filter((transaction: any) => {
     if (!transaction) return false;
-    
+
     const matchesSearch = transaction.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         transaction.category?.name?.toLowerCase().includes(searchTerm.toLowerCase());
-    
+      transaction.category?.name?.toLowerCase().includes(searchTerm.toLowerCase());
+
     const matchesCategory = selectedCategory === "all" || transaction.category?.name === selectedCategory;
     const matchesType = selectedType === "all" || transaction.type === selectedType;
-    
+
     // Date filtering with error handling
     let matchesDate = true;
     try {
       const transactionDate = parseTransactionDate(transaction.date);
       const startDate = new Date(dateRange.start);
       const endDate = new Date(dateRange.end);
-      
+
       matchesDate = isDateInRange(transactionDate, startDate, endDate);
     } catch (error) {
       console.warn('Date filtering error:', error);
       matchesDate = true;
     }
-    
+
     return matchesSearch && matchesCategory && matchesType && matchesDate;
   })?.sort((a: any, b: any) => {
     // Sort by transaction date from newest to oldest
@@ -205,16 +206,16 @@ export default function Transactions() {
 
   // Chart data preparation - sort by date first
   const chartDataMap = new Map();
-  
+
   // Group transactions by date
   filteredTransactions.forEach(transaction => {
     const transactionDate = parseTransactionDate(transaction.date);
     const dateKey = transactionDate.toISOString().split('T')[0]; // YYYY-MM-DD format for sorting
-    const displayDate = transactionDate.toLocaleDateString('en-US', { 
-      month: 'short', 
-      day: 'numeric' 
+    const displayDate = transactionDate.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric'
     });
-    
+
     if (!chartDataMap.has(dateKey)) {
       chartDataMap.set(dateKey, {
         date: displayDate,
@@ -223,7 +224,7 @@ export default function Transactions() {
         expense: 0,
       });
     }
-    
+
     const entry = chartDataMap.get(dateKey);
     if (transaction.type === 'income') {
       entry.income += transaction.amount;
@@ -231,7 +232,7 @@ export default function Transactions() {
       entry.expense += transaction.amount;
     }
   });
-  
+
   // Convert to array and sort by date, then take last 7 days
   const chartData = Array.from(chartDataMap.values())
     .sort((a, b) => a.dateKey.localeCompare(b.dateKey))
@@ -246,7 +247,7 @@ export default function Transactions() {
   const totalIncome = filteredTransactions
     .filter(t => t.type === 'income')
     .reduce((sum, t) => sum + t.amount, 0);
-  
+
   const totalExpense = filteredTransactions
     .filter(t => t.type === 'expense')
     .reduce((sum, t) => sum + t.amount, 0);
@@ -364,26 +365,28 @@ export default function Transactions() {
               </p>
             </div>
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 mt-3 sm:mt-0">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" className="flex items-center justify-center gap-1 sm:gap-2 bg-white shadow-sm border-gray-200 h-9 sm:h-10">
-                    <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                    <span className="hidden sm:inline">Export</span>
-                    <ChevronDown className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-44 sm:w-48">
-                  <DropdownMenuItem onClick={handleExportPDF} className="flex items-center gap-1.5 sm:gap-2 cursor-pointer text-xs sm:text-sm">
-                    <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-red-500" />
-                    <span>Export as PDF</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleExportExcel} className="flex items-center gap-1.5 sm:gap-2 cursor-pointer text-xs sm:text-sm">
-                    <FileSpreadsheet className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-green-500" />
-                    <span>Export as Excel</span>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-              <Button 
+              <FeatureGate feature="export_data" showUpgradePrompt={true}>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" className="flex items-center justify-center gap-1 sm:gap-2 bg-white shadow-sm border-gray-200 h-9 sm:h-10">
+                      <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                      <span className="hidden sm:inline">Export</span>
+                      <ChevronDown className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-44 sm:w-48">
+                    <DropdownMenuItem onClick={handleExportPDF} className="flex items-center gap-1.5 sm:gap-2 cursor-pointer text-xs sm:text-sm">
+                      <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-red-500" />
+                      <span>Export as PDF</span>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={handleExportExcel} className="flex items-center gap-1.5 sm:gap-2 cursor-pointer text-xs sm:text-sm">
+                      <FileSpreadsheet className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-green-500" />
+                      <span>Export as Excel</span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </FeatureGate>
+              <Button
                 className="bg-primary hover:bg-primary/90 text-white h-9 sm:h-10"
                 onClick={() => setShowAddTransaction(true)}
               >
@@ -453,7 +456,7 @@ export default function Transactions() {
                 />
               </div>
             </div>
-            
+
             {/* Summary Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
               <Card className="border-emerald-100 bg-gradient-to-br from-emerald-50 to-green-50">
@@ -519,23 +522,23 @@ export default function Transactions() {
                 <div className="h-60 sm:h-72 mt-2">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={chartData} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
-                      <XAxis 
-                        dataKey="date" 
+                      <XAxis
+                        dataKey="date"
                         fontSize={10}
                         tick={{ fontSize: 10 }}
                         tickMargin={8}
                       />
-                      <YAxis 
+                      <YAxis
                         fontSize={10}
                         tick={{ fontSize: 10 }}
-                        tickFormatter={(value) => formatAmount(value).replace(/\d+/, (match) => 
+                        tickFormatter={(value) => formatAmount(value).replace(/\d+/, (match) =>
                           parseInt(match) > 1000 ? `${Math.round(parseInt(match) / 1000)}K` : match
                         )}
                         width={45}
                       />
-                      <Tooltip 
+                      <Tooltip
                         formatter={(value: any, name: string) => [
-                          formatAmount(value), 
+                          formatAmount(value),
                           name === 'income' ? 'Income' : 'Expense'
                         ]}
                         contentStyle={{
@@ -576,7 +579,7 @@ export default function Transactions() {
                   <div className="text-center py-6">
                     <DollarSign className="w-10 h-10 text-gray-400 mx-auto mb-3" />
                     <p className="text-gray-500 mb-3 text-sm">No transactions found</p>
-                    <Button 
+                    <Button
                       onClick={() => setShowAddTransaction(true)}
                       className="bg-primary hover:bg-primary/90 text-white"
                     >
@@ -591,11 +594,10 @@ export default function Transactions() {
                         className="flex items-center justify-between p-2 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
                       >
                         <div className="flex items-center gap-2 flex-1 min-w-0">
-                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm flex-shrink-0 ${
-                            transaction.type === 'income' 
-                              ? 'bg-emerald-100' 
-                              : 'bg-red-100'
-                          }`}>
+                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm flex-shrink-0 ${transaction.type === 'income'
+                            ? 'bg-emerald-100'
+                            : 'bg-red-100'
+                            }`}>
                             <span>
                               {transaction.category?.icon || (transaction.type === 'income' ? '💰' : '💸')}
                             </span>
@@ -605,13 +607,12 @@ export default function Transactions() {
                               {transaction.description}
                             </p>
                             <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
-                              <Badge 
-                                variant="outline" 
-                                className={`border-0 text-xs px-1.5 py-0.5 ${
-                                  transaction.type === 'income' 
-                                    ? 'bg-emerald-100 text-emerald-700' 
-                                    : 'bg-red-100 text-red-700'
-                                }`}
+                              <Badge
+                                variant="outline"
+                                className={`border-0 text-xs px-1.5 py-0.5 ${transaction.type === 'income'
+                                  ? 'bg-emerald-100 text-emerald-700'
+                                  : 'bg-red-100 text-red-700'
+                                  }`}
                               >
                                 {transaction.category?.name || 'Uncategorized'}
                               </Badge>
@@ -625,22 +626,21 @@ export default function Transactions() {
                           </div>
                         </div>
                         <div className="text-right flex-shrink-0 ml-2">
-                          <p className={`font-semibold text-sm ${
-                            transaction.type === 'income' ? 'text-emerald-600' : 'text-red-600'
-                          }`}>
+                          <p className={`font-semibold text-sm ${transaction.type === 'income' ? 'text-emerald-600' : 'text-red-600'
+                            }`}>
                             {transaction.type === 'income' ? '+' : '-'}{formatAmount(transaction.amount, transaction.currency)}
                           </p>
                           <div className="flex items-center gap-1 mt-1 justify-end">
-                            <Button 
-                              variant="ghost" 
+                            <Button
+                              variant="ghost"
                               size="sm"
                               onClick={() => handleEdit(transaction)}
                               className="h-6 w-6 p-0 hover:bg-blue-100 hover:text-blue-600"
                             >
                               <Edit className="w-3 h-3" />
                             </Button>
-                            <Button 
-                              variant="ghost" 
+                            <Button
+                              variant="ghost"
                               size="sm"
                               onClick={() => handleDelete(transaction)}
                               className="h-6 w-6 p-0 hover:bg-red-100 hover:text-red-600"
@@ -668,7 +668,7 @@ export default function Transactions() {
                           >
                             <ChevronLeft className="w-3 h-3" />
                           </Button>
-                          
+
                           {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
                             let page;
                             if (totalPages <= 5) {
@@ -680,7 +680,7 @@ export default function Transactions() {
                             } else {
                               page = currentPage - 2 + i;
                             }
-                            
+
                             return (
                               <Button
                                 key={page}
@@ -693,7 +693,7 @@ export default function Transactions() {
                               </Button>
                             );
                           })}
-                          
+
                           <Button
                             variant="outline"
                             size="sm"
@@ -712,15 +712,15 @@ export default function Transactions() {
             </Card>
           </div>
         </div>
-        
+
         {/* Modals */}
-        <AddTransactionModal 
-          isOpen={showAddTransaction} 
-          onClose={() => setShowAddTransaction(false)} 
+        <AddTransactionModal
+          isOpen={showAddTransaction}
+          onClose={() => setShowAddTransaction(false)}
         />
-        
-        <AddTransactionModal 
-          isOpen={showEditTransaction} 
+
+        <AddTransactionModal
+          isOpen={showEditTransaction}
           onClose={() => {
             setShowEditTransaction(false);
             setEditingTransaction(null);
@@ -748,16 +748,15 @@ export default function Transactions() {
                 This action cannot be undone
               </AlertDialogDescription>
             </AlertDialogHeader>
-            
+
             <div className="space-y-4 my-2">
               {transactionToDelete && (
                 <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
                   <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center shadow-sm ${
-                      transactionToDelete.type === 'income' 
-                        ? 'bg-emerald-500' 
-                        : 'bg-red-500'
-                    }`}>
+                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center shadow-sm ${transactionToDelete.type === 'income'
+                      ? 'bg-emerald-500'
+                      : 'bg-red-500'
+                      }`}>
                       <span className="text-white text-lg">
                         {transactionToDelete.category?.icon || (transactionToDelete.type === 'income' ? '💰' : '💸')}
                       </span>
@@ -767,19 +766,17 @@ export default function Transactions() {
                         {transactionToDelete.description}
                       </div>
                       <div className="flex items-center flex-wrap gap-2 text-sm text-gray-600">
-                        <Badge className={`border-0 ${
-                          transactionToDelete.type === 'income' 
-                            ? 'bg-emerald-100 text-emerald-700' 
-                            : 'bg-red-100 text-red-700'
-                        }`}>
+                        <Badge className={`border-0 ${transactionToDelete.type === 'income'
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : 'bg-red-100 text-red-700'
+                          }`}>
                           {transactionToDelete.category?.name || 'Uncategorized'}
                         </Badge>
                         <span className="text-xs">📅 {parseTransactionDate(transactionToDelete.date).toLocaleDateString('en-US')}</span>
                       </div>
                     </div>
-                    <div className={`text-right font-bold text-base ${
-                      transactionToDelete.type === 'income' ? 'text-emerald-600' : 'text-red-600'
-                    }`}>
+                    <div className={`text-right font-bold text-base ${transactionToDelete.type === 'income' ? 'text-emerald-600' : 'text-red-600'
+                      }`}>
                       {transactionToDelete.type === 'income' ? '+' : '-'}{formatAmount(transactionToDelete.amount)}
                     </div>
                   </div>
@@ -793,7 +790,7 @@ export default function Transactions() {
             </div>
 
             <AlertDialogFooter className="flex flex-col sm:flex-row gap-2">
-              <AlertDialogCancel 
+              <AlertDialogCancel
                 className="sm:mt-0 border-gray-200"
                 onClick={() => {
                   setIsDeleteDialogOpen(false);
@@ -802,7 +799,7 @@ export default function Transactions() {
               >
                 Cancel
               </AlertDialogCancel>
-              <AlertDialogAction 
+              <AlertDialogAction
                 onClick={confirmDelete}
                 className="bg-red-600 hover:bg-red-700 text-white"
                 disabled={deleteTransactionMutation.isPending}
