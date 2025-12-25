@@ -90,6 +90,7 @@ interface WebhookNotification {
 
 class MidtransService {
     private config: MidtransConfig;
+    private snapUrl: string;
 
     constructor() {
         // Initialize Midtrans configuration from environment variables
@@ -101,6 +102,11 @@ class MidtransService {
         const apiUrl = isProduction
             ? 'https://api.midtrans.com/v2'
             : 'https://api.sandbox.midtrans.com/v2';
+
+        // Snap API URL for creating payment page
+        this.snapUrl = isProduction
+            ? 'https://app.midtrans.com/snap/v1/transactions'
+            : 'https://app.sandbox.midtrans.com/snap/v1/transactions';
 
         this.config = {
             serverKey,
@@ -134,7 +140,7 @@ class MidtransService {
     }
 
     /**
-     * Create a new transaction with Midtrans
+     * Create a new transaction with Midtrans Snap API
      * 
      * @param params - Transaction parameters
      * @returns Transaction response with token and redirect URL
@@ -146,23 +152,35 @@ class MidtransService {
                 throw new Error('Midtrans server key is not configured');
             }
 
-            // Prepare transaction payload
+            // Prepare transaction payload for Snap API
             const payload = {
                 transaction_details: {
                     order_id: params.orderId,
-                    gross_amount: params.grossAmount,
+                    gross_amount: Math.round(params.grossAmount), // Midtrans requires integer
                 },
                 customer_details: {
-                    first_name: params.customerDetails.firstName,
+                    first_name: params.customerDetails.firstName || 'Customer',
                     last_name: params.customerDetails.lastName || '',
-                    email: params.customerDetails.email,
+                    email: params.customerDetails.email || 'customer@example.com',
                     phone: params.customerDetails.phone || '',
                 },
-                item_details: params.itemDetails,
+                item_details: params.itemDetails.map(item => ({
+                    id: item.id,
+                    price: Math.round(item.price), // Midtrans requires integer
+                    quantity: item.quantity,
+                    name: item.name.substring(0, 50), // Max 50 chars
+                })),
+                callbacks: {
+                    finish: `${process.env.APP_URL || 'http://localhost:5000'}/pricing?payment=success`,
+                    error: `${process.env.APP_URL || 'http://localhost:5000'}/pricing?payment=error`,
+                    pending: `${process.env.APP_URL || 'http://localhost:5000'}/pricing?payment=pending`,
+                },
             };
 
-            // Make API request to Midtrans
-            const response = await fetch(`${this.config.apiUrl}/charge`, {
+            console.log('Creating Midtrans Snap transaction:', JSON.stringify(payload, null, 2));
+
+            // Make API request to Midtrans Snap API
+            const response = await fetch(this.snapUrl, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -174,13 +192,19 @@ class MidtransService {
 
             const data = await response.json();
 
-            if (!response.ok) {
-                throw new Error(
-                    `Midtrans API error: ${data.status_message || 'Unknown error'}`
-                );
+            console.log('Midtrans Snap response:', JSON.stringify(data, null, 2));
+
+            if (!response.ok || data.error_messages) {
+                const errorMsg = data.error_messages?.join(', ') || data.status_message || 'Unknown error';
+                throw new Error(`Midtrans API error: ${errorMsg}`);
             }
 
-            return data as TransactionResponse;
+            return {
+                token: data.token,
+                redirect_url: data.redirect_url,
+                order_id: params.orderId,
+                gross_amount: String(params.grossAmount),
+            } as TransactionResponse;
         } catch (error) {
             console.error('Error creating Midtrans transaction:', error);
             throw error;

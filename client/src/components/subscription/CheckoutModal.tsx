@@ -81,19 +81,23 @@ export default function CheckoutModal({
             return response.json();
         },
         onSuccess: (data) => {
-            // Call onSuccess callback with subscription ID
             if (data.data?.subscriptionId) {
                 onSuccess(data.data.subscriptionId);
             }
 
-            // Redirect to Midtrans payment page
+            // Store orderId in localStorage for verification when user returns
+            if (data.data?.orderId) {
+                localStorage.setItem('pending_order_id', data.data.orderId);
+                console.log('Stored pending order ID:', data.data.orderId);
+            }
+
             if (data.data?.paymentUrl) {
                 window.location.href = data.data.paymentUrl;
             } else {
                 throw new Error('Payment URL not received');
             }
         },
-        onError: (error: any) => {
+        onError: (error: Error) => {
             console.error('Checkout error:', error);
             toast({
                 title: "Checkout Failed",
@@ -128,8 +132,8 @@ export default function CheckoutModal({
 
     return (
         <Dialog open={open} onOpenChange={onClose}>
-            <DialogContent className="sm:max-w-[600px] max-h-[95vh] overflow-hidden bg-white/95 backdrop-blur-xl border-white/20 rounded-3xl shadow-2xl">
-                <DialogHeader className="text-center pb-2">
+            <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-hidden bg-white/95 backdrop-blur-xl border-white/20 rounded-3xl shadow-2xl flex flex-col">
+                <DialogHeader className="text-center pb-2 flex-shrink-0">
                     <div className="mx-auto w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center mb-4 shadow-lg">
                         <CreditCard className="w-8 h-8 text-white" />
                     </div>
@@ -141,7 +145,8 @@ export default function CheckoutModal({
                     </DialogDescription>
                 </DialogHeader>
 
-                <div className="space-y-6 overflow-y-auto max-h-[calc(95vh-200px)] px-1">
+                {/* Scrollable Content */}
+                <div className="flex-1 overflow-y-auto space-y-6 px-1 min-h-0">
                     {/* Plan Summary */}
                     <div className="bg-gradient-to-br from-blue-50 to-purple-50 border border-blue-200 rounded-2xl p-6">
                         <div className="flex items-center justify-between mb-4">
@@ -296,8 +301,8 @@ export default function CheckoutModal({
                     </div>
                 </div>
 
-                {/* Action Buttons */}
-                <div className="flex gap-3 pt-4 border-t border-slate-200">
+                {/* Action Buttons - Fixed at bottom */}
+                <div className="flex gap-3 pt-4 border-t border-slate-200 flex-shrink-0 mt-4">
                     <Button
                         type="button"
                         variant="outline"
@@ -310,7 +315,7 @@ export default function CheckoutModal({
                     <Button
                         type="button"
                         onClick={handleConfirm}
-                        className="flex-1 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white border-0 rounded-xl py-3 font-medium shadow-lg transform hover:scale-105 transition-all duration-200"
+                        className="flex-1 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white border-0 rounded-xl py-3 font-medium shadow-lg"
                         disabled={checkoutMutation.isPending || !agreeToTerms}
                     >
                         {checkoutMutation.isPending ? (

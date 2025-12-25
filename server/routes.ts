@@ -21,6 +21,8 @@ import MemoryStore from "memorystore";
 import { getAIClient, getModelForTask, getCurrentProviderInfo } from "./ai-provider";
 import { requireFeature, checkUsageLimit } from './middleware/feature-gate';
 import { usageTrackingService } from './services/usage-tracking-service';
+import passport from 'passport';
+import { configureGoogleAuth, generateOAuthToken } from './google-auth';
 
 // Helper function to get currency symbol
 function getCurrencySymbol(currency: string): string {
@@ -89,6 +91,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
       secure: process.env.NODE_ENV === 'production',
     }
   }));
+
+  // Initialize Passport and Google OAuth
+  configureGoogleAuth();
+  app.use(passport.initialize());
+  app.use(passport.session());
+
+  // Google OAuth routes
+  app.get('/api/auth/google', passport.authenticate('google', {
+    scope: ['profile', 'email']
+  }));
+
+  app.get('/api/auth/google/callback',
+    passport.authenticate('google', { failureRedirect: '/auth?error=google_auth_failed' }),
+    (req, res) => {
+      try {
+        const user = req.user as any;
+        if (!user) {
+          return res.redirect('/auth?error=no_user');
+        }
+
+        // Generate JWT token
+        const token = generateOAuthToken(user);
+
+        // Redirect to frontend with token
+        res.redirect(`/auth?token=${token}&oauth=google`);
+      } catch (error) {
+        console.error('Google OAuth callback error:', error);
+        res.redirect('/auth?error=oauth_error');
+      }
+    }
+  );
 
   // Auth routes
   app.post('/api/auth/register', async (req: AuthRequest, res) => {

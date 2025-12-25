@@ -1,14 +1,17 @@
-import { Router, Response } from 'express';
+import { Router, Response, RequestHandler } from 'express';
 import { requireAuth, AuthRequest } from '../auth';
 import { AdminStorage } from '../admin/admin-storage';
 import { midtransService } from '../services/midtrans-service';
 import { usageTrackingService } from '../services/usage-tracking-service';
 import { db } from '../db';
 import { userSubscriptions, subscriptionPlans, users, payments } from '../../shared/schema';
-import { eq } from 'drizzle-orm';
+import { eq, desc } from 'drizzle-orm';
 
 const router = Router();
 const adminStorage = new AdminStorage();
+
+// Type assertion for requireAuth middleware
+const authMiddleware = requireAuth as unknown as RequestHandler;
 
 /**
  * GET /api/subscription/plans
@@ -44,11 +47,11 @@ router.get('/plans', async (req, res: Response) => {
  * Get current user's subscription details
  * Requirements: 1.2, 8.1, 8.2
  */
-router.get('/current', requireAuth, async (req: AuthRequest, res: Response) => {
+router.get('/current', authMiddleware, async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.user!.id;
 
-        // Get user's current subscription
+        // Get user's current subscription (get the most recent one)
         const subscription = await db
             .select({
                 id: userSubscriptions.id,
@@ -69,7 +72,7 @@ router.get('/current', requireAuth, async (req: AuthRequest, res: Response) => {
             .from(userSubscriptions)
             .innerJoin(subscriptionPlans, eq(userSubscriptions.planId, subscriptionPlans.id))
             .where(eq(userSubscriptions.userId, userId))
-            .orderBy(userSubscriptions.createdAt)
+            .orderBy(desc(userSubscriptions.createdAt))
             .limit(1)
             .get();
 
@@ -144,7 +147,7 @@ router.get('/current', requireAuth, async (req: AuthRequest, res: Response) => {
  * Initiate subscription checkout
  * Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 3.1
  */
-router.post('/checkout', requireAuth, async (req: AuthRequest, res: Response) => {
+router.post('/checkout', authMiddleware, async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.user!.id;
         const { planId, billingCycle } = req.body;
@@ -309,7 +312,7 @@ router.post('/checkout', requireAuth, async (req: AuthRequest, res: Response) =>
  * Cancel user's own subscription
  * Requirements: 7.2, 7.3
  */
-router.post('/cancel', requireAuth, async (req: AuthRequest, res: Response) => {
+router.post('/cancel', authMiddleware, async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.user!.id;
         const { reason } = req.body;
@@ -371,7 +374,7 @@ router.post('/cancel', requireAuth, async (req: AuthRequest, res: Response) => {
  * Get current usage statistics
  * Requirements: 6.5, 6.6
  */
-router.get('/usage', requireAuth, async (req: AuthRequest, res: Response) => {
+router.get('/usage', authMiddleware, async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.user!.id;
 

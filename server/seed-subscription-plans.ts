@@ -10,20 +10,18 @@ async function seedSubscriptionPlans() {
     const plans = [
         {
             name: "free",
-            displayName: "Free",
-            description: "Perfect for getting started with basic financial tracking",
+            displayName: "Gratis",
+            description: "Mulai kelola keuanganmu tanpa biaya",
             priceMonthly: 0,
             priceYearly: 0,
             currency: "IDR",
             features: JSON.stringify([
-                "Up to 50 transactions per month",
-                "Basic transaction tracking",
-                "1 budget category",
-                "1 financial goal",
-                "Manual transaction entry",
-                "Basic expense categorization",
-                "Monthly financial summary",
-                "Email support",
+                "50 transaksi per bulan",
+                "Pencatatan transaksi manual",
+                "1 kategori budget",
+                "1 target keuangan",
+                "Ringkasan bulanan",
+                "Kategorisasi dasar",
             ]),
             limits: JSON.stringify({
                 transactions: 50,
@@ -42,30 +40,61 @@ async function seedSubscriptionPlans() {
             updatedAt: now,
         },
         {
-            name: "premium",
-            displayName: "Premium",
-            description: "Advanced features for serious financial management",
-            priceMonthly: 49000,
-            priceYearly: 490000, // ~2 months free
+            name: "starter",
+            displayName: "Starter",
+            description: "Cocok untuk pemula yang ingin lebih teratur",
+            priceMonthly: 15000,
+            priceYearly: 150000, // 2 bulan gratis
             currency: "IDR",
             features: JSON.stringify([
-                "Unlimited transactions",
-                "AI-powered transaction categorization",
-                "Up to 10 budget categories",
-                "Up to 5 financial goals",
-                "Receipt OCR scanning (50/month)",
-                "AI chat assistant (100 messages/month)",
-                "WhatsApp notifications & reminders",
-                "Advanced financial insights",
-                "Monthly & yearly reports",
-                "Data export (CSV, PDF)",
-                "Multi-currency support",
-                "Priority email support",
+                "200 transaksi per bulan",
+                "5 kategori budget",
+                "3 target keuangan",
+                "Scan struk (10x/bulan)",
+                "AI Chat (20 pesan/bulan)",
+                "Notifikasi WhatsApp",
+                "Export data CSV",
+                "Laporan bulanan",
             ]),
             limits: JSON.stringify({
-                transactions: -1, // unlimited
+                transactions: 200,
+                budgets: 5,
+                goals: 3,
+                aiAnalysis: 20,
+                receiptOCR: 10,
+                aiChat: 20,
+                whatsappNotifications: true,
+                exportData: true,
+                advancedReports: false,
+                prioritySupport: false,
+            }),
+            isActive: true,
+            createdAt: now,
+            updatedAt: now,
+        },
+        {
+            name: "plus",
+            displayName: "Plus",
+            description: "Fitur lengkap untuk pengelolaan keuangan serius",
+            priceMonthly: 29000,
+            priceYearly: 290000, // 2 bulan gratis
+            currency: "IDR",
+            features: JSON.stringify([
+                "Transaksi unlimited",
+                "10 kategori budget",
+                "10 target keuangan",
+                "Scan struk (50x/bulan)",
+                "AI Chat (100 pesan/bulan)",
+                "AI Analisis keuangan",
+                "Notifikasi WhatsApp",
+                "Export data CSV & PDF",
+                "Laporan lengkap",
+                "Dukungan prioritas",
+            ]),
+            limits: JSON.stringify({
+                transactions: -1,
                 budgets: 10,
-                goals: 5,
+                goals: 10,
                 aiAnalysis: 100,
                 receiptOCR: 50,
                 aiChat: 100,
@@ -79,42 +108,36 @@ async function seedSubscriptionPlans() {
             updatedAt: now,
         },
         {
-            name: "business",
-            displayName: "Business",
-            description: "Complete solution for businesses and power users",
-            priceMonthly: 99000,
-            priceYearly: 990000, // ~2 months free
+            name: "pro",
+            displayName: "Pro",
+            description: "Semua fitur tanpa batas untuk power user",
+            priceMonthly: 49000,
+            priceYearly: 490000, // 2 bulan gratis
             currency: "IDR",
             features: JSON.stringify([
-                "Everything in Premium",
-                "Unlimited AI-powered features",
-                "Unlimited budget categories",
-                "Unlimited financial goals",
-                "Unlimited receipt OCR scanning",
-                "Unlimited AI chat assistant",
-                "Advanced AI financial analysis",
-                "Custom financial reports",
-                "Automated transaction reminders",
-                "Goal savings automation",
-                "API access",
-                "Team collaboration (coming soon)",
-                "Dedicated account manager",
-                "24/7 priority support",
+                "Semua fitur Plus",
+                "Budget unlimited",
+                "Target unlimited",
+                "Scan struk unlimited",
+                "AI Chat unlimited",
+                "AI Analisis unlimited",
+                "Laporan kustom",
+                "API Access",
+                "Dukungan prioritas 24/7",
             ]),
             limits: JSON.stringify({
-                transactions: -1, // unlimited
-                budgets: -1, // unlimited
-                goals: -1, // unlimited
-                aiAnalysis: -1, // unlimited
-                receiptOCR: -1, // unlimited
-                aiChat: -1, // unlimited
+                transactions: -1,
+                budgets: -1,
+                goals: -1,
+                aiAnalysis: -1,
+                receiptOCR: -1,
+                aiChat: -1,
                 whatsappNotifications: true,
                 exportData: true,
                 advancedReports: true,
                 prioritySupport: true,
                 apiAccess: true,
                 customReports: true,
-                dedicatedSupport: true,
             }),
             isActive: true,
             createdAt: now,
@@ -145,9 +168,10 @@ async function seedSubscriptionPlans() {
 
         console.log("🎉 Subscription plans seeded successfully!");
         console.log("\n📊 Plan Summary:");
-        console.log("   • Free: Rp 0/month - Basic features");
-        console.log("   • Premium: Rp 49,000/month - Advanced AI features");
-        console.log("   • Business: Rp 99,000/month - Unlimited everything");
+        console.log("   • Gratis: Rp 0/bulan - Fitur dasar");
+        console.log("   • Starter: Rp 15.000/bulan - Untuk pemula");
+        console.log("   • Plus: Rp 29.000/bulan - Fitur lengkap");
+        console.log("   • Pro: Rp 49.000/bulan - Unlimited");
 
     } catch (error) {
         console.error("❌ Error seeding subscription plans:", error);

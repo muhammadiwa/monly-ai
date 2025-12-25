@@ -9,6 +9,153 @@ const router = Router();
 const adminStorage = new AdminStorage();
 
 /**
+ * Manual Payment Verification Endpoint
+ * 
+ * This endpoint allows the frontend to verify payment status when user returns
+ * from Midtrans payment page. It checks the transaction status directly with
+ * Midtrans API and activates the subscription if payment is successful.
+ * 
+ * GET /api/payment/verify/:orderId
+ */
+router.get('/verify/:orderId', async (req: Request, res: Response) => {
+    try {
+        const { orderId } = req.params;
+
+        if (!orderId) {
+            return res.status(400).json({
+                success: false,
+                error: 'Order ID is required',
+            });
+        }
+
+        console.log('Verifying payment for order:', orderId);
+
+        // Find payment by Midtrans order ID
+        const payment = await db
+            .select()
+            .from(payments)
+            .where(eq(payments.midtransOrderId, orderId))
+            .limit(1);
+
+        if (!payment || payment.length === 0) {
+            return res.status(404).json({
+                success: false,
+                error: 'Payment not found',
+                status: 'not_found',
+            });
+        }
+
+        const paymentRecord = payment[0];
+
+        // If already paid, check if subscription is active, if not activate it
+        if (paymentRecord.status === 'paid') {
+            // Double-check subscription is activated
+            if (paymentRecord.subscriptionId) {
+                try {
+                    await adminStorage.activateSubscriptionAfterPayment(paymentRecord.subscriptionId);
+                    console.log('Re-activated subscription:', paymentRecord.subscriptionId);
+                } catch (err) {
+                    console.log('Subscription already active or error:', err);
+                }
+            }
+            return res.json({
+                success: true,
+                status: 'paid',
+                message: 'Payment already verified and subscription activated',
+            });
+        }
+
+        // Check transaction status from Midtrans
+        try {
+            const midtransStatus = await midtransService.getTransactionStatus(orderId);
+            console.log('Midtrans status for order', orderId, ':', midtransStatus);
+
+            const transactionStatus = midtransStatus.transaction_status;
+            const fraudStatus = midtransStatus.fraud_status;
+
+            if (transactionStatus === 'capture' || transactionStatus === 'settlement') {
+                // Check fraud status for capture
+                if (transactionStatus === 'capture' && fraudStatus !== 'accept') {
+                    return res.json({
+                        success: false,
+                        status: 'fraud_detected',
+                        message: 'Payment flagged for fraud review',
+                    });
+                }
+
+                // Payment successful - activate subscription
+                console.log('Payment successful, activating subscription for payment ID:', paymentRecord.id);
+                try {
+                    await handleSuccessfulPayment(
+                        paymentRecord.id,
+                        midtransStatus.transaction_id,
+                        Math.floor(new Date(midtransStatus.settlement_time || Date.now()).getTime() / 1000)
+                    );
+                    console.log('Subscription activation completed successfully');
+                } catch (activationError) {
+                    console.error('Error activating subscription:', activationError);
+                    // Still return success for payment, but note the activation error
+                    return res.json({
+                        success: true,
+                        status: 'paid',
+                        message: 'Payment verified but subscription activation failed. Please contact support.',
+                        error: activationError instanceof Error ? activationError.message : 'Unknown error',
+                    });
+                }
+
+                return res.json({
+                    success: true,
+                    status: 'paid',
+                    message: 'Payment verified and subscription activated',
+                });
+            } else if (transactionStatus === 'pending') {
+                return res.json({
+                    success: true,
+                    status: 'pending',
+                    message: 'Payment is still pending',
+                });
+            } else if (transactionStatus === 'deny' || transactionStatus === 'expire' || transactionStatus === 'cancel') {
+                // Update payment status to failed
+                await adminStorage.updatePaymentStatus(
+                    paymentRecord.id,
+                    'failed',
+                    midtransStatus.transaction_id
+                );
+
+                return res.json({
+                    success: false,
+                    status: 'failed',
+                    message: `Payment ${transactionStatus}`,
+                });
+            }
+
+            return res.json({
+                success: true,
+                status: transactionStatus,
+                message: `Payment status: ${transactionStatus}`,
+            });
+        } catch (midtransError) {
+            console.error('Error checking Midtrans status:', midtransError);
+
+            // Return current payment status from database
+            // Cast to check against 'paid' since TypeScript infers limited enum
+            const isPaid = (paymentRecord.status as string) === 'paid';
+            return res.json({
+                success: isPaid,
+                status: paymentRecord.status,
+                message: 'Could not verify with Midtrans, returning stored status',
+            });
+        }
+    } catch (error) {
+        console.error('Error verifying payment:', error);
+        return res.status(500).json({
+            success: false,
+            error: 'Internal server error',
+        });
+    }
+});
+
+/**
  * Payment Webhook Handler
  * 
  * Handles Midtrans webhook notifications for payment status updates.

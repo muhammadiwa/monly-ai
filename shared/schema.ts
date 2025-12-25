@@ -28,6 +28,7 @@ export const users = sqliteTable("users", {
   lastName: text("last_name"),
   profileImageUrl: text("profile_image_url"),
   password: text("password"), // For demo authentication
+  googleId: text("google_id").unique(), // For Google OAuth
   subscriptionPlanId: integer("subscription_plan_id"),
   subscriptionStatus: text("subscription_status").default("free"),
   createdAt: integer("created_at"), // Unix timestamp

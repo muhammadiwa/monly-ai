@@ -235,7 +235,7 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
-  async createUser(userData: { email: string; name: string; password: string }): Promise<User> {
+  async createUser(userData: { email: string; name: string; password: string; googleId?: string; profileImageUrl?: string }): Promise<User> {
     // Generate proper UUID v4
     const userId = crypto.randomUUID();
     const now = Math.floor(Date.now() / 1000);
@@ -248,7 +248,8 @@ export class DatabaseStorage implements IStorage {
         firstName: userData.name.split(' ')[0] || userData.name,
         lastName: userData.name.split(' ').slice(1).join(' ') || null,
         password: userData.password,
-        profileImageUrl: null,
+        googleId: userData.googleId || null,
+        profileImageUrl: userData.profileImageUrl || null,
         createdAt: now,
         updatedAt: now,
       })

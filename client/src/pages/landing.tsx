@@ -3,39 +3,124 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { useState } from "react";
-import { 
-  ArrowRight, 
-  BarChart, 
-  Brain, 
-  Camera, 
-  MessageCircle, 
-  PiggyBank, 
-  TrendingUp, 
-  Star, 
-  Check, 
-  Zap, 
-  Shield, 
-  Smartphone, 
-  Globe,
-  Users,
-  DollarSign,
-  ChevronRight,
-  Play,
-  CreditCard,
-  Coins,
+import { useQuery } from "@tanstack/react-query";
+import {
+  ArrowRight,
+  BarChart,
+  Brain,
+  Camera,
+  MessageCircle,
   Target,
+  Shield,
+  Check,
+  Zap,
   Sparkles,
-  Award,
-  Crown
+  Gift,
+  Rocket,
+  Play,
+  Loader2
 } from "lucide-react";
+
+interface Plan {
+  id: number;
+  name: string;
+  displayName: string;
+  description: string;
+  price: {
+    monthly: number;
+    yearly: number;
+  };
+  currency: string;
+  features: string[];
+  isActive: boolean;
+}
 
 export default function Landing() {
   const [isYearly, setIsYearly] = useState(false);
+
+  // Fetch subscription plans from database
+  const { data: plansResponse, isLoading: plansLoading } = useQuery({
+    queryKey: ['/api/subscription/plans/public'],
+    queryFn: async () => {
+      const response = await fetch('/api/subscription/plans');
+      if (!response.ok) throw new Error('Failed to fetch plans');
+      return response.json();
+    },
+  });
+
+  const plans: Plan[] = plansResponse?.data || [];
 
   const scrollToSection = (sectionId: string) => {
     const element = document.getElementById(sectionId);
     if (element) {
       element.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
+  const formatPrice = (price: number, currency: string) => {
+    if (currency === 'IDR') {
+      return `Rp ${price.toLocaleString('id-ID')}`;
+    }
+    return `${currency} ${price.toLocaleString()}`;
+  };
+
+  const getPlanIcon = (planName: string) => {
+    switch (planName.toLowerCase()) {
+      case 'free':
+        return <Gift className="h-8 w-8 text-white" />;
+      case 'starter':
+        return <Zap className="h-8 w-8 text-white" />;
+      case 'plus':
+        return <Sparkles className="h-8 w-8 text-white" />;
+      case 'pro':
+        return <Rocket className="h-8 w-8 text-white" />;
+      default:
+        return <Sparkles className="h-8 w-8 text-white" />;
+    }
+  };
+
+  const getPlanGradient = (planName: string) => {
+    switch (planName.toLowerCase()) {
+      case 'free':
+        return 'from-slate-500 to-slate-600';
+      case 'starter':
+        return 'from-emerald-500 to-teal-600';
+      case 'plus':
+        return 'from-blue-500 to-indigo-600';
+      case 'pro':
+        return 'from-purple-500 to-pink-600';
+      default:
+        return 'from-gray-500 to-gray-600';
+    }
+  };
+
+  const getPlanBorder = (planName: string) => {
+    switch (planName.toLowerCase()) {
+      case 'free':
+        return 'border-slate-200';
+      case 'starter':
+        return 'border-emerald-200';
+      case 'plus':
+        return 'border-blue-300';
+      case 'pro':
+        return 'border-purple-200';
+      default:
+        return 'border-gray-200';
+    }
+  };
+
+  const getPlanBg = (planName: string) => {
+    switch (planName.toLowerCase()) {
+      case 'free':
+        return 'bg-white';
+      case 'starter':
+        return 'bg-gradient-to-br from-emerald-50 to-teal-50';
+      case 'plus':
+        return 'bg-gradient-to-br from-blue-50 to-indigo-50';
+      case 'pro':
+        return 'bg-gradient-to-br from-purple-50 to-pink-50';
+      default:
+        return 'bg-white';
     }
   };
 
@@ -64,21 +149,21 @@ export default function Landing() {
               </span>
             </div>
             <div className="flex items-center space-x-4">
-              <Button 
-                variant="ghost" 
+              <Button
+                variant="ghost"
                 className="hidden md:inline-flex text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-all duration-300"
                 onClick={() => scrollToSection('features')}
               >
                 Features
               </Button>
-              <Button 
+              <Button
                 variant="ghost"
                 className="hidden md:inline-flex text-gray-600 hover:text-gray-900 hover:bg-gray-100 transition-all duration-300"
                 onClick={() => scrollToSection('pricing')}
               >
                 Pricing
               </Button>
-              <Button 
+              <Button
                 onClick={() => window.location.href = '/auth'}
                 className="bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-700 hover:to-blue-700 text-white shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-300 px-6 py-2"
               >
@@ -97,7 +182,7 @@ export default function Landing() {
             <Sparkles className="w-4 h-4 mr-2" />
             New: AI-Powered Financial Insights
           </Badge>
-          
+
           <h1 className="text-6xl md:text-8xl font-bold text-gray-900 mb-8 leading-tight">
             Your Money,
             <br />
@@ -105,24 +190,24 @@ export default function Landing() {
               Smarter Than Ever
             </span>
           </h1>
-          
+
           <p className="text-xl md:text-2xl text-gray-600 mb-12 max-w-4xl mx-auto leading-relaxed">
-            Transform your financial life with AI-powered insights, automated expense tracking, 
+            Transform your financial life with AI-powered insights, automated expense tracking,
             and intelligent budgeting that adapts to your lifestyle.
           </p>
-          
+
           <div className="flex flex-col sm:flex-row gap-4 justify-center mb-16">
-            <Button 
-              size="lg" 
+            <Button
+              size="lg"
               onClick={() => window.location.href = '/auth'}
               className="bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-700 hover:to-blue-700 text-white shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-300 px-8 py-4 text-lg font-semibold"
             >
-              Start Free Trial
+              Get Started Free
               <ArrowRight className="ml-2 h-5 w-5" />
             </Button>
-            <Button 
-              size="lg" 
-              variant="outline" 
+            <Button
+              size="lg"
+              variant="outline"
               className="border-2 border-gray-300 hover:border-emerald-600 hover:bg-emerald-50 transition-all duration-300 px-8 py-4 text-lg font-semibold"
               onClick={() => scrollToSection('demo')}
             >
@@ -143,7 +228,7 @@ export default function Landing() {
                   <p className="text-gray-600">Smart categorization and insights</p>
                 </CardContent>
               </Card>
-              
+
               <Card className="transform hover:rotate-y-12 transition-transform duration-500 bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200 shadow-xl hover:shadow-2xl">
                 <CardContent className="p-8 text-center">
                   <div className="w-16 h-16 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg">
@@ -153,7 +238,7 @@ export default function Landing() {
                   <p className="text-gray-600">Instant expense capture</p>
                 </CardContent>
               </Card>
-              
+
               <Card className="transform hover:rotate-y-12 transition-transform duration-500 bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200 shadow-xl hover:shadow-2xl">
                 <CardContent className="p-8 text-center">
                   <div className="w-16 h-16 bg-gradient-to-r from-purple-600 to-pink-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg">
@@ -173,7 +258,7 @@ export default function Landing() {
         <div className="container mx-auto px-4">
           <div className="text-center mb-16">
             <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-6">
-              Powerful Features for 
+              Powerful Features for
               <span className="bg-gradient-to-r from-emerald-600 to-blue-600 bg-clip-text text-transparent"> Smart Money Management</span>
             </h2>
             <p className="text-xl text-gray-600 max-w-3xl mx-auto">
@@ -234,18 +319,18 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* Pricing Section */}
+      {/* Pricing Section - Dynamic from Database */}
       <section id="pricing" className="py-20 bg-gradient-to-br from-emerald-50 to-blue-50">
         <div className="container mx-auto px-4">
           <div className="text-center mb-16">
             <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-6">
-              Simple, Transparent 
+              Simple, Transparent
               <span className="bg-gradient-to-r from-emerald-600 to-blue-600 bg-clip-text text-transparent"> Pricing</span>
             </h2>
             <p className="text-xl text-gray-600 max-w-3xl mx-auto mb-8">
               Choose the perfect plan for your financial journey. Start free, upgrade when you're ready.
             </p>
-            
+
             {/* Pricing Toggle */}
             <div className="flex items-center justify-center gap-4 mb-12">
               <span className={`text-lg font-semibold ${!isYearly ? 'text-emerald-600' : 'text-gray-500'}`}>
@@ -265,136 +350,79 @@ export default function Landing() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
-            {/* Free Plan */}
-            <Card className="relative bg-white border-2 border-gray-200 shadow-xl hover:shadow-2xl transition-all duration-500 transform hover:scale-105">
-              <CardHeader className="text-center pb-8">
-                <div className="w-16 h-16 bg-gradient-to-r from-gray-500 to-gray-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg">
-                  <Coins className="h-8 w-8 text-white" />
-                </div>
-                <CardTitle className="text-2xl font-bold text-gray-900">Free</CardTitle>
-                <CardDescription className="text-gray-600">Perfect for getting started</CardDescription>
-                <div className="mt-4">
-                  <span className="text-4xl font-bold text-gray-900">$0</span>
-                  <span className="text-gray-600 ml-2">forever</span>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-3">
-                  {[
-                    "Up to 100 transactions/month",
-                    "Basic expense tracking",
-                    "Simple budget tracking",
-                    "Mobile app access",
-                    "Email support"
-                  ].map((feature, index) => (
-                    <div key={index} className="flex items-center gap-3">
-                      <Check className="h-5 w-5 text-emerald-600" />
-                      <span className="text-gray-700">{feature}</span>
-                    </div>
-                  ))}
-                </div>
-                <Button 
-                  className="w-full mt-8 bg-gray-600 hover:bg-gray-700 text-white"
-                  onClick={() => window.location.href = '/auth'}
-                >
-                  Get Started Free
-                </Button>
-              </CardContent>
-            </Card>
+          {plansLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-12 w-12 animate-spin text-emerald-600" />
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-7xl mx-auto">
+              {plans.map((plan) => {
+                const price = isYearly ? plan.price.yearly : plan.price.monthly;
+                const isPopular = plan.name.toLowerCase() === 'plus';
 
-            {/* Pro Plan */}
-            <Card className="relative bg-gradient-to-br from-emerald-50 to-blue-50 border-2 border-emerald-300 shadow-xl hover:shadow-2xl transition-all duration-500 transform hover:scale-105">
-              <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
-                <Badge className="bg-gradient-to-r from-emerald-600 to-blue-600 text-white border-0 px-4 py-2 shadow-lg">
-                  <Award className="w-4 h-4 mr-1" />
-                  Most Popular
-                </Badge>
-              </div>
-              <CardHeader className="text-center pb-8 pt-8">
-                <div className="w-16 h-16 bg-gradient-to-r from-emerald-600 to-blue-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg">
-                  <CreditCard className="h-8 w-8 text-white" />
-                </div>
-                <CardTitle className="text-2xl font-bold text-gray-900">Pro</CardTitle>
-                <CardDescription className="text-gray-600">Best for individuals</CardDescription>
-                <div className="mt-4">
-                  <span className="text-4xl font-bold text-gray-900">
-                    ${isYearly ? '79' : '9.99'}
-                  </span>
-                  <span className="text-gray-600 ml-2">/{isYearly ? 'year' : 'month'}</span>
-                  {isYearly && <div className="text-sm text-emerald-600 font-semibold mt-1">Save $40/year</div>}
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-3">
-                  {[
-                    "Unlimited transactions",
-                    "AI-powered insights",
-                    "Receipt OCR scanning",
-                    "WhatsApp integration",
-                    "Advanced analytics",
-                    "Custom categories",
-                    "Priority support"
-                  ].map((feature, index) => (
-                    <div key={index} className="flex items-center gap-3">
-                      <Check className="h-5 w-5 text-emerald-600" />
-                      <span className="text-gray-700">{feature}</span>
-                    </div>
-                  ))}
-                </div>
-                <Button 
-                  className="w-full mt-8 bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-700 hover:to-blue-700 text-white shadow-lg"
-                  onClick={() => window.location.href = '/auth'}
-                >
-                  Start Pro Trial
-                  <ArrowRight className="ml-2 h-4 w-4" />
-                </Button>
-              </CardContent>
-            </Card>
+                return (
+                  <Card
+                    key={plan.id}
+                    className={`relative ${getPlanBg(plan.name)} border-2 ${getPlanBorder(plan.name)} shadow-xl hover:shadow-2xl transition-all duration-500 transform hover:scale-105 ${isPopular ? 'ring-2 ring-blue-500' : ''}`}
+                  >
+                    {isPopular && (
+                      <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
+                        <Badge className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white border-0 px-4 py-1 shadow-lg">
+                          <Sparkles className="w-3 h-3 mr-1" />
+                          Most Popular
+                        </Badge>
+                      </div>
+                    )}
 
-            {/* Premium Plan */}
-            <Card className="relative bg-gradient-to-br from-purple-50 to-pink-50 border-2 border-purple-300 shadow-xl hover:shadow-2xl transition-all duration-500 transform hover:scale-105">
-              <CardHeader className="text-center pb-8">
-                <div className="w-16 h-16 bg-gradient-to-r from-purple-600 to-pink-600 rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg">
-                  <Crown className="h-8 w-8 text-white" />
-                </div>
-                <CardTitle className="text-2xl font-bold text-gray-900">Premium</CardTitle>
-                <CardDescription className="text-gray-600">For power users</CardDescription>
-                <div className="mt-4">
-                  <span className="text-4xl font-bold text-gray-900">
-                    ${isYearly ? '159' : '19.99'}
-                  </span>
-                  <span className="text-gray-600 ml-2">/{isYearly ? 'year' : 'month'}</span>
-                  {isYearly && <div className="text-sm text-purple-600 font-semibold mt-1">Save $80/year</div>}
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-3">
-                  {[
-                    "Everything in Pro",
-                    "Advanced AI predictions",
-                    "Investment tracking",
-                    "Multi-currency support",
-                    "API access",
-                    "Custom reports",
-                    "Dedicated support"
-                  ].map((feature, index) => (
-                    <div key={index} className="flex items-center gap-3">
-                      <Check className="h-5 w-5 text-purple-600" />
-                      <span className="text-gray-700">{feature}</span>
-                    </div>
-                  ))}
-                </div>
-                <Button 
-                  className="w-full mt-8 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white shadow-lg"
-                  onClick={() => window.location.href = '/auth'}
-                >
-                  Go Premium
-                  <ArrowRight className="ml-2 h-4 w-4" />
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
+                    <CardHeader className="text-center pb-4 pt-8">
+                      <div className={`w-16 h-16 bg-gradient-to-r ${getPlanGradient(plan.name)} rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg`}>
+                        {getPlanIcon(plan.name)}
+                      </div>
+                      <CardTitle className="text-2xl font-bold text-gray-900">{plan.displayName}</CardTitle>
+                      <CardDescription className="text-gray-600 text-sm">{plan.description}</CardDescription>
+                      <div className="mt-4">
+                        <span className="text-3xl font-bold text-gray-900">
+                          {formatPrice(price, plan.currency)}
+                        </span>
+                        <span className="text-gray-600 ml-1 text-sm">
+                          /{isYearly ? 'year' : 'month'}
+                        </span>
+                      </div>
+                    </CardHeader>
+
+                    <CardContent className="space-y-3 pb-6">
+                      <div className="space-y-2">
+                        {plan.features.slice(0, 5).map((feature, index) => (
+                          <div key={index} className="flex items-start gap-2">
+                            <Check className={`h-4 w-4 flex-shrink-0 mt-0.5 ${plan.name.toLowerCase() === 'free' ? 'text-slate-500' :
+                              plan.name.toLowerCase() === 'starter' ? 'text-emerald-500' :
+                                plan.name.toLowerCase() === 'plus' ? 'text-blue-500' :
+                                  'text-purple-500'
+                              }`} />
+                            <span className="text-sm text-gray-700">{feature}</span>
+                          </div>
+                        ))}
+                        {plan.features.length > 5 && (
+                          <p className="text-xs text-gray-500 pl-6">+{plan.features.length - 5} more features</p>
+                        )}
+                      </div>
+
+                      <Button
+                        className={`w-full mt-4 ${plan.name.toLowerCase() === 'free'
+                          ? 'bg-slate-600 hover:bg-slate-700'
+                          : `bg-gradient-to-r ${getPlanGradient(plan.name)} hover:opacity-90`
+                          } text-white`}
+                        onClick={() => window.location.href = '/auth'}
+                      >
+                        {plan.name.toLowerCase() === 'free' ? 'Get Started Free' : 'Subscribe'}
+                        <ArrowRight className="ml-2 h-4 w-4" />
+                      </Button>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
         </div>
       </section>
 
@@ -402,13 +430,13 @@ export default function Landing() {
       <section id="demo" className="py-20 bg-white">
         <div className="container mx-auto px-4 text-center">
           <h2 className="text-4xl md:text-5xl font-bold text-gray-900 mb-6">
-            See Monly AI in 
+            See Monly AI in
             <span className="bg-gradient-to-r from-emerald-600 to-blue-600 bg-clip-text text-transparent"> Action</span>
           </h2>
           <p className="text-xl text-gray-600 max-w-3xl mx-auto mb-12">
             Watch how easy it is to track your expenses and get AI-powered insights
           </p>
-          
+
           <div className="relative max-w-4xl mx-auto">
             <div className="bg-gradient-to-r from-emerald-600 to-blue-600 rounded-2xl p-8 shadow-2xl">
               <div className="bg-white rounded-xl p-8 text-center">
@@ -419,7 +447,7 @@ export default function Landing() {
                 <p className="text-gray-600 mb-6">
                   See how Monly AI transforms your financial management in under 2 minutes
                 </p>
-                <Button 
+                <Button
                   size="lg"
                   className="bg-gradient-to-r from-emerald-600 to-blue-600 hover:from-emerald-700 hover:to-blue-700 text-white shadow-lg"
                   onClick={() => window.location.href = '/auth'}
@@ -442,20 +470,20 @@ export default function Landing() {
           <p className="text-xl text-emerald-100 max-w-3xl mx-auto mb-12">
             Join thousands of users who have already taken control of their financial future with Monly AI
           </p>
-          
+
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Button 
+            <Button
               size="lg"
               onClick={() => window.location.href = '/auth'}
               className="bg-white text-emerald-600 hover:bg-gray-100 shadow-xl hover:shadow-2xl transform hover:scale-105 transition-all duration-300 px-8 py-4 text-lg font-semibold"
             >
-              Start Your Free Trial
+              Get Started Free
               <ArrowRight className="ml-2 h-5 w-5" />
             </Button>
-            <Button 
+            <Button
               size="lg"
               variant="outline"
-              className="border-2 border-white text-white hover:bg-white hover:text-emerald-600 transition-all duration-300 px-8 py-4 text-lg font-semibold"
+              className="border-2 border-white bg-transparent text-white hover:bg-white hover:text-emerald-600 transition-all duration-300 px-8 py-4 text-lg font-semibold"
               onClick={() => scrollToSection('pricing')}
             >
               View Pricing

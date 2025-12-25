@@ -1,4 +1,4 @@
-import { Router, Response } from 'express';
+import { Router, Response, RequestHandler } from 'express';
 import { requireAuth, AuthRequest } from '../auth';
 import { db } from '../db';
 import { invoices, payments, userSubscriptions, subscriptionPlans, users } from '../../shared/schema';
@@ -8,12 +8,15 @@ import autoTable from 'jspdf-autotable';
 
 const router = Router();
 
+// Type assertion for requireAuth middleware
+const authMiddleware = requireAuth as unknown as RequestHandler;
+
 /**
  * GET /api/invoice/list
  * Get user's own invoices
  * Requirements: 4.2, 4.3, 8.1, 8.2
  */
-router.get('/list', requireAuth, async (req: AuthRequest, res: Response) => {
+router.get('/list', authMiddleware, async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.user!.id;
 
@@ -56,7 +59,7 @@ router.get('/list', requireAuth, async (req: AuthRequest, res: Response) => {
  * Get invoice details (verify ownership)
  * Requirements: 4.2, 4.3, 8.1, 8.2
  */
-router.get('/:id', requireAuth, async (req: AuthRequest, res: Response) => {
+router.get('/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.user!.id;
         const invoiceId = parseInt(req.params.id);
@@ -189,7 +192,7 @@ router.get('/:id', requireAuth, async (req: AuthRequest, res: Response) => {
  * Download invoice PDF (verify ownership)
  * Requirements: 4.2, 4.3, 8.1, 8.2
  */
-router.get('/:id/download', requireAuth, async (req: AuthRequest, res: Response) => {
+router.get('/:id/download', authMiddleware, async (req: AuthRequest, res: Response) => {
     try {
         const userId = req.user!.id;
         const invoiceId = parseInt(req.params.id);

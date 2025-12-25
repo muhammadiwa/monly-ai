@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { Check, Loader2, Sparkles, Zap, Crown, X } from "lucide-react";
+import { Check, Loader2, Sparkles, Zap, X, Rocket, Gift } from "lucide-react";
 import { calculateYearlySavings } from "@/lib/pricingUtils";
 import { CheckoutModal } from "@/components/subscription";
 
@@ -53,10 +53,71 @@ interface UserSubscription {
 
 export default function Pricing() {
     const { toast } = useToast();
-    const { user, isAuthenticated } = useAuth();
+    const { isAuthenticated } = useAuth();
+    const queryClient = useQueryClient();
     const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
     const [checkoutModalOpen, setCheckoutModalOpen] = useState(false);
     const [selectedPlan, setSelectedPlan] = useState<Plan | null>(null);
+    const [isVerifying, setIsVerifying] = useState(false);
+
+    // Check for payment callback and verify payment
+    useEffect(() => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const paymentStatus = urlParams.get('payment');
+        const orderId = urlParams.get('order_id');
+        const transactionStatus = urlParams.get('transaction_status');
+
+        if (paymentStatus === 'success' || transactionStatus === 'settlement' || transactionStatus === 'capture') {
+            // Payment completed, verify and activate subscription
+            const verifyPayment = async () => {
+                setIsVerifying(true);
+                try {
+                    // Get the latest pending payment order ID from localStorage or URL
+                    const storedOrderId = localStorage.getItem('pending_order_id') || orderId;
+
+                    if (storedOrderId) {
+                        const response = await fetch(`/api/payment/verify/${storedOrderId}`);
+                        const data = await response.json();
+
+                        if (data.success && data.status === 'paid') {
+                            toast({
+                                title: "Payment Successful!",
+                                description: "Your subscription has been activated.",
+                            });
+                            // Refresh subscription data
+                            queryClient.invalidateQueries({ queryKey: ['/api/subscription/current'] });
+                            localStorage.removeItem('pending_order_id');
+                        } else if (data.status === 'pending') {
+                            toast({
+                                title: "Payment Pending",
+                                description: "Your payment is being processed.",
+                            });
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error verifying payment:', error);
+                } finally {
+                    setIsVerifying(false);
+                    // Clean URL
+                    window.history.replaceState({}, '', '/pricing');
+                }
+            };
+            verifyPayment();
+        } else if (paymentStatus === 'pending') {
+            toast({
+                title: "Payment Pending",
+                description: "Please complete your payment.",
+            });
+            window.history.replaceState({}, '', '/pricing');
+        } else if (paymentStatus === 'error') {
+            toast({
+                title: "Payment Failed",
+                description: "An error occurred while processing your payment.",
+                variant: "destructive",
+            });
+            window.history.replaceState({}, '', '/pricing');
+        }
+    }, [toast, queryClient]);
 
     // Fetch subscription plans
     const { data: plansResponse, isLoading: plansLoading } = useQuery({
@@ -115,11 +176,13 @@ export default function Pricing() {
     const getPlanIcon = (planName: string) => {
         switch (planName.toLowerCase()) {
             case 'free':
-                return <Sparkles className="h-6 w-6" />;
-            case 'premium':
+                return <Gift className="h-6 w-6" />;
+            case 'starter':
                 return <Zap className="h-6 w-6" />;
-            case 'business':
-                return <Crown className="h-6 w-6" />;
+            case 'plus':
+                return <Sparkles className="h-6 w-6" />;
+            case 'pro':
+                return <Rocket className="h-6 w-6" />;
             default:
                 return <Sparkles className="h-6 w-6" />;
         }
@@ -128,27 +191,50 @@ export default function Pricing() {
     const getPlanColor = (planName: string) => {
         switch (planName.toLowerCase()) {
             case 'free':
-                return 'from-gray-500 to-gray-600';
-            case 'premium':
-                return 'from-blue-500 to-purple-600';
-            case 'business':
-                return 'from-amber-500 to-orange-600';
+                return 'from-slate-500 to-slate-600';
+            case 'starter':
+                return 'from-emerald-500 to-teal-600';
+            case 'plus':
+                return 'from-blue-500 to-indigo-600';
+            case 'pro':
+                return 'from-purple-500 to-pink-600';
             default:
                 return 'from-gray-500 to-gray-600';
         }
     };
 
+    const getPlanBgColor = (planName: string) => {
+        switch (planName.toLowerCase()) {
+            case 'free':
+                return 'bg-white';
+            case 'starter':
+                return 'bg-gradient-to-br from-emerald-50 to-teal-50';
+            case 'plus':
+                return 'bg-gradient-to-br from-blue-50 to-indigo-50';
+            case 'pro':
+                return 'bg-gradient-to-br from-purple-50 to-pink-50';
+            default:
+                return 'bg-white';
+        }
+    };
+
     const isCurrentPlan = (planName: string) => {
-        return currentSubscription?.planName === planName;
+        return currentSubscription?.planName?.toLowerCase() === planName.toLowerCase();
     };
 
     const canUpgrade = (planName: string) => {
+        // If no subscription or user is on free plan, they can upgrade to any paid plan
         if (!currentSubscription) return true;
 
-        const planHierarchy = ['free', 'premium', 'business'];
-        const currentIndex = planHierarchy.indexOf(currentSubscription.planName.toLowerCase());
-        const targetIndex = planHierarchy.indexOf(planName.toLowerCase());
+        const currentPlanName = currentSubscription.planName?.toLowerCase() || 'free';
+        const targetPlanName = planName.toLowerCase();
 
+        // Plan hierarchy from lowest to highest
+        const planHierarchy = ['free', 'starter', 'plus', 'pro'];
+        const currentIndex = planHierarchy.indexOf(currentPlanName);
+        const targetIndex = planHierarchy.indexOf(targetPlanName);
+
+        // Can upgrade if target plan is higher than current plan
         return targetIndex > currentIndex;
     };
 
@@ -158,13 +244,17 @@ export default function Pricing() {
         return limit.toLocaleString();
     };
 
-    if (plansLoading) {
+    if (plansLoading || isVerifying) {
         return (
             <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
                 <div className="text-center">
                     <Loader2 className="h-16 w-16 animate-spin text-primary mx-auto mb-4" />
-                    <h2 className="text-2xl font-semibold text-gray-900 mb-2">Loading Plans</h2>
-                    <p className="text-gray-600">Please wait while we load subscription plans...</p>
+                    <h2 className="text-2xl font-semibold text-gray-900 mb-2">
+                        {isVerifying ? 'Verifying Payment' : 'Loading Plans'}
+                    </h2>
+                    <p className="text-gray-600">
+                        {isVerifying ? 'Please wait while we verify your payment...' : 'Please wait while we load subscription plans...'}
+                    </p>
                 </div>
             </div>
         );
@@ -204,19 +294,19 @@ export default function Pricing() {
                 </div>
 
                 {/* Plans Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 max-w-7xl mx-auto">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 max-w-7xl mx-auto">
                     {plans.map((plan) => {
                         const price = billingCycle === 'monthly' ? plan.price.monthly : plan.price.yearly;
                         const savings = calculateYearlySavings(plan.price.monthly, plan.price.yearly);
                         const isCurrent = isCurrentPlan(plan.name);
                         const canUpgradeToPlan = canUpgrade(plan.name);
-                        const isPopular = plan.name.toLowerCase() === 'premium';
+                        const isPopular = plan.name.toLowerCase() === 'plus';
 
                         return (
                             <Card
                                 key={plan.id}
-                                className={`relative overflow-hidden transition-all duration-300 hover:shadow-2xl ${isCurrent ? 'ring-2 ring-primary shadow-xl' : ''
-                                    } ${isPopular ? 'border-2 border-primary' : ''}`}
+                                className={`relative overflow-hidden transition-all duration-300 hover:shadow-2xl ${getPlanBgColor(plan.name)} ${isCurrent ? 'ring-2 ring-primary shadow-xl' : ''
+                                    } ${isPopular ? 'border-2 border-blue-400' : ''}`}
                             >
                                 {isPopular && (
                                     <div className="absolute top-0 right-0 bg-gradient-to-r from-blue-500 to-purple-600 text-white px-4 py-1 text-sm font-semibold rounded-bl-lg">
@@ -381,7 +471,6 @@ export default function Pricing() {
                                         <Button
                                             className="w-full"
                                             variant="outline"
-                                            disabled={!isAuthenticated}
                                             onClick={() => {
                                                 if (!isAuthenticated) {
                                                     window.location.href = "/auth";
@@ -395,15 +484,14 @@ export default function Pricing() {
                                             className={`w-full bg-gradient-to-r ${getPlanColor(plan.name)} hover:opacity-90 text-white`}
                                             onClick={() => handleCheckout(plan)}
                                         >
-                                            {isAuthenticated ? 'Upgrade Now' : 'Subscribe Now'}
+                                            {isAuthenticated ? 'Upgrade Now' : 'Subscribe'}
                                         </Button>
                                     ) : (
                                         <Button
-                                            className="w-full"
-                                            variant="outline"
-                                            disabled
+                                            className={`w-full bg-gradient-to-r ${getPlanColor(plan.name)} hover:opacity-90 text-white`}
+                                            onClick={() => handleCheckout(plan)}
                                         >
-                                            Downgrade (Contact Support)
+                                            Downgrade
                                         </Button>
                                     )}
                                 </CardFooter>
