@@ -366,7 +366,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
 
+      console.log('Updating preferences with data:', req.body);
       const preferencesData = updateUserPreferencesSchema.parse(req.body);
+      console.log('Parsed preferences data:', preferencesData);
 
       // Check if preferences exist, if not create them first
       let preferences = await storage.getUserPreferences(req.user.id);
@@ -378,6 +380,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(updatedPreferences);
     } catch (error) {
       console.error("Error updating user preferences:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid preferences data", errors: error.errors });
+      }
       res.status(500).json({ message: "Failed to update user preferences" });
     }
   });

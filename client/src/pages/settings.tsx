@@ -24,13 +24,11 @@ import {
   CreditCard,
   Bell,
   Shield,
-  Settings as SettingsIcon,
   Loader2,
   Save,
   Database,
   Coins,
   Clock,
-  Globe,
   Zap,
   Eye,
   Lock,
@@ -39,7 +37,8 @@ import {
   LogOut,
   XCircle,
   Crown,
-  ArrowUpRight
+  ArrowUpRight,
+  MessageSquare
 } from "lucide-react";
 
 interface UserPreferences {
@@ -50,6 +49,7 @@ interface UserPreferences {
   language: string;
   autoCategorize: boolean;
   transactionReminders: boolean;
+  budgetAlerts: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -75,14 +75,12 @@ export default function Settings() {
   const [financialData, setFinancialData] = useState({
     currency: "IDR",
     timezone: "Asia/Jakarta",
-    language: "id",
+    language: "en",
     autoCategorize: false
   });
   const [notificationData, setNotificationData] = useState({
     transactionReminders: true,
-    budgetAlerts: true,
-    monthlyReports: true,
-    securityAlerts: true
+    budgetAlerts: true
   });
   const [isProfileSaving, setIsProfileSaving] = useState(false);
   const [isFinancialSaving, setIsFinancialSaving] = useState(false);
@@ -121,14 +119,12 @@ export default function Settings() {
       setFinancialData({
         currency: userPreferences.defaultCurrency || "IDR",
         timezone: userPreferences.timezone || "Asia/Jakarta",
-        language: userPreferences.language || "id",
+        language: "en",
         autoCategorize: userPreferences.autoCategorize || false
       });
       setNotificationData({
         transactionReminders: userPreferences.transactionReminders !== undefined ? userPreferences.transactionReminders : true,
-        budgetAlerts: true,
-        monthlyReports: true,
-        securityAlerts: true
+        budgetAlerts: userPreferences.budgetAlerts !== undefined ? userPreferences.budgetAlerts : true
       });
     }
   }, [userPreferences]);
@@ -157,13 +153,21 @@ export default function Settings() {
       // Update only the changed field via API
       await apiRequest('PUT', '/api/user/preferences', { [key]: value });
 
-      // Show specific message for transaction reminders
+      // Show specific message for notification settings
       if (key === 'transactionReminders') {
         toast({
           title: value ? "✅ Transaction Reminders Enabled" : "❌ Transaction Reminders Disabled",
           description: value
             ? "You'll receive daily WhatsApp reminders when you haven't logged transactions"
             : "Daily transaction reminders have been disabled",
+          className: value ? "bg-green-50 border-green-200 text-green-800" : "bg-blue-50 border-blue-200 text-blue-800",
+        });
+      } else if (key === 'budgetAlerts') {
+        toast({
+          title: value ? "✅ Budget Alerts Enabled" : "❌ Budget Alerts Disabled",
+          description: value
+            ? "You'll receive WhatsApp alerts when you're close to or exceed your budget"
+            : "Budget alerts have been disabled",
           className: value ? "bg-green-50 border-green-200 text-green-800" : "bg-blue-50 border-blue-200 text-blue-800",
         });
       } else {
@@ -621,25 +625,6 @@ export default function Settings() {
                   </div>
                 </div>
 
-                <div className="space-y-3">
-                  <Label htmlFor="language" className="flex items-center gap-2">
-                    <Globe className="h-4 w-4 text-primary" />
-                    Language
-                  </Label>
-                  <Select
-                    value={financialData.language}
-                    onValueChange={(value) => setFinancialData(prev => ({ ...prev, language: value }))}
-                  >
-                    <SelectTrigger className="bg-white max-w-md">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="en">🇺🇸 English</SelectItem>
-                      <SelectItem value="id">🇮🇩 Indonesian</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
                 <Separator />
 
                 <div className="flex items-center justify-between p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg border border-blue-200">
@@ -685,7 +670,7 @@ export default function Settings() {
                         setFinancialData({
                           currency: userPreferences.defaultCurrency || "IDR",
                           timezone: userPreferences.timezone || "Asia/Jakarta",
-                          language: userPreferences.language || "id",
+                          language: "en",
                           autoCategorize: userPreferences.autoCategorize || false
                         });
                       }
@@ -742,28 +727,35 @@ export default function Settings() {
                 <CardTitle className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3">
                   <div className="flex items-center gap-2">
                     <Bell className="h-5 w-5 text-primary" />
-                    <span>Notifications & Alerts</span>
+                    <span>WhatsApp Notifications</span>
                   </div>
                   <Badge className="bg-green-100 text-green-700 border-green-200">
                     <Zap className="h-3 w-3 mr-1" />
-                    Transaction Reminders Active
+                    Via WhatsApp
                   </Badge>
                 </CardTitle>
+                <p className="text-sm text-gray-600 mt-2">
+                  Receive notifications via WhatsApp. Make sure you've connected your WhatsApp in the WhatsApp Integration page.
+                </p>
               </CardHeader>
               <CardContent className="p-3 sm:p-6 space-y-3">
                 {[
-                  { id: "budget-alerts", title: "Budget Alerts", desc: "Get notified when you exceed your budget", icon: "💰", enabled: false },
+                  {
+                    id: "budget-alerts",
+                    key: "budgetAlerts" as keyof UserPreferences,
+                    title: "Budget Alerts",
+                    desc: "Get notified when you're close to or exceed your budget",
+                    icon: "💰",
+                    checked: notificationData.budgetAlerts || false
+                  },
                   {
                     id: "transaction-reminders",
+                    key: "transactionReminders" as keyof UserPreferences,
                     title: "Transaction Reminders",
-                    desc: "Daily reminders to log transactions",
+                    desc: "Daily reminders to log your transactions",
                     icon: "⏰",
-                    enabled: true,
-                    checked: preferences?.transactionReminders || false,
-                    onChange: (checked: boolean) => handlePreferenceUpdate('transactionReminders', checked)
-                  },
-                  { id: "monthly-reports", title: "Monthly Reports", desc: "Receive monthly financial summary", icon: "📊", enabled: false },
-                  { id: "security-alerts", title: "Security Alerts", desc: "Important security notifications", icon: "🔒", enabled: false }
+                    checked: notificationData.transactionReminders || false
+                  }
                 ].map((item) => (
                   <div key={item.id} className="flex items-center justify-between p-4 bg-white rounded-lg border">
                     <div className="flex items-center gap-3">
@@ -771,19 +763,29 @@ export default function Settings() {
                       <div>
                         <Label htmlFor={item.id} className="text-base font-medium">{item.title}</Label>
                         <p className="text-sm text-gray-600">{item.desc}</p>
-                        {item.enabled && (
-                          <p className="text-xs text-green-600 font-medium">✅ Available</p>
-                        )}
                       </div>
                     </div>
                     <Switch
                       id={item.id}
-                      checked={item.enabled ? (item.checked || false) : false}
-                      onCheckedChange={item.enabled ? item.onChange : undefined}
-                      disabled={!item.enabled}
+                      checked={item.checked}
+                      onCheckedChange={(checked) => {
+                        setNotificationData(prev => ({ ...prev, [item.key]: checked }));
+                        handlePreferenceUpdate(item.key, checked);
+                      }}
                     />
                   </div>
                 ))}
+
+                <div className="pt-4">
+                  <Button
+                    variant="outline"
+                    onClick={() => window.location.href = '/whatsapp-integration'}
+                    className="w-full sm:w-auto"
+                  >
+                    <MessageSquare className="h-4 w-4 mr-2" />
+                    Manage WhatsApp Connection
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>

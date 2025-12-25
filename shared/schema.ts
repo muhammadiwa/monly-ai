@@ -44,6 +44,7 @@ export const userPreferences = sqliteTable("user_preferences", {
   language: text("language").notNull().default("en"), // 'en' or 'id'
   autoCategorize: integer("auto_categorize", { mode: 'boolean' }).default(true),
   transactionReminders: integer("transaction_reminders", { mode: 'boolean' }).default(true),
+  budgetAlerts: integer("budget_alerts", { mode: 'boolean' }).default(true),
   createdAt: integer("created_at"), // Unix timestamp
   updatedAt: integer("updated_at"), // Unix timestamp
 });
@@ -534,7 +535,7 @@ export const insertUserPreferencesSchema = createInsertSchema(userPreferences).o
 
 export const updateUserPreferencesSchema = insertUserPreferencesSchema.omit({
   userId: true,
-});
+}).partial();
 
 export const insertWhatsappIntegrationSchema = createInsertSchema(whatsappIntegrations).omit({
   id: true,
