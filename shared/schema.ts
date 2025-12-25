@@ -303,6 +303,19 @@ export const midtransWebhookLogs = sqliteTable("midtrans_webhook_logs", {
   createdAt: integer("created_at").notNull(),
 });
 
+// Usage tracking table
+export const usageTracking = sqliteTable("usage_tracking", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: text("user_id").references(() => users.id).notNull(),
+  feature: text("feature").notNull(), // 'receiptOCR', 'aiChat', 'aiAnalysis'
+  count: integer("count").notNull().default(0),
+  period: text("period").notNull(), // 'YYYY-MM' format
+  createdAt: integer("created_at").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+}, (table) => [
+  index("idx_usage_tracking_user_period").on(table.userId, table.period),
+]);
+
 // Relations
 export const usersRelations = relations(users, ({ many, one }) => ({
   transactions: many(transactions),
@@ -480,6 +493,14 @@ export const adminActivityLogsRelations = relations(adminActivityLogs, ({ one })
   }),
 }));
 
+// Usage tracking relations
+export const usageTrackingRelations = relations(usageTracking, ({ one }) => ({
+  user: one(users, {
+    fields: [usageTracking.userId],
+    references: [users.id],
+  }),
+}));
+
 // Insert schemas
 export const insertCategorySchema = createInsertSchema(categories).omit({
   id: true,
@@ -575,6 +596,12 @@ export const insertMidtransWebhookLogSchema = createInsertSchema(midtransWebhook
   createdAt: true,
 });
 
+export const insertUsageTrackingSchema = createInsertSchema(usageTracking).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 // Types
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -635,3 +662,6 @@ export type InsertAdminActivityLog = z.infer<typeof insertAdminActivityLogSchema
 
 export type MidtransWebhookLog = typeof midtransWebhookLogs.$inferSelect;
 export type InsertMidtransWebhookLog = z.infer<typeof insertMidtransWebhookLogSchema>;
+
+export type UsageTracking = typeof usageTracking.$inferSelect;
+export type InsertUsageTracking = z.infer<typeof insertUsageTrackingSchema>;

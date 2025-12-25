@@ -8,6 +8,8 @@ import { AIFinancialIntelligenceEngine } from './ai-intelligence';
 import whatsappSingleBotRoutes from './whatsapp-single-bot-routes';
 import whatsappMultiAccountRoutes from './whatsapp-multi-account-routes';
 import adminRoutes from './admin/admin-routes';
+import subscriptionRoutes from './routes/subscription-routes';
+import paymentWebhookRoutes from './routes/payment-webhook';
 import { triggerTransactionRemindersManually } from './transaction-reminder-scheduler';
 import { getHealthMonitor } from './whatsapp-health-monitor';
 import { getSingleBotConnectionState } from './whatsapp-single-bot';
@@ -55,6 +57,12 @@ const loginSchema = z.object({
 export async function registerRoutes(app: Express): Promise<Server> {
   // Register Admin routes
   app.use('/api', adminRoutes);
+
+  // Register Subscription routes (user-facing)
+  app.use('/api/subscription', subscriptionRoutes);
+
+  // Register Payment Webhook routes (Midtrans callbacks)
+  app.use('/api/payment', paymentWebhookRoutes);
 
   // Register WhatsApp routes
   // WhatsApp routes (Single Bot System)
