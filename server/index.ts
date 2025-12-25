@@ -5,6 +5,7 @@ import { setupVite, serveStatic, log } from "./vite";
 import { initializeSingleWhatsAppBot } from "./whatsapp-single-bot";
 import { getHealthMonitor } from "./whatsapp-health-monitor";
 import { startTransactionReminderScheduler } from "./transaction-reminder-scheduler";
+import { startBudgetAlertScheduler } from "./budget-alert-scheduler";
 import { startSubscriptionCronJobs } from "./cron/subscription-cron";
 
 const app = express();
@@ -99,6 +100,15 @@ app.use((req, res, next) => {
       log('✅ Transaction reminder scheduler started successfully');
     } catch (error) {
       log(`❌ Failed to start transaction reminder scheduler: ${error}`);
+    }
+
+    // Start budget alert scheduler
+    log('⏰ Starting budget alert scheduler...');
+    try {
+      startBudgetAlertScheduler();
+      log('✅ Budget alert scheduler started successfully');
+    } catch (error) {
+      log(`❌ Failed to start budget alert scheduler: ${error}`);
     }
 
     // Start subscription cron jobs

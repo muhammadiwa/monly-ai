@@ -105,6 +105,7 @@ export interface IStorage {
 
   // Transaction reminder operations
   getUsersWithTransactionReminders(): Promise<User[]>;
+  getUsersWithBudgetAlerts(): Promise<User[]>;
   getUserTransactionsInDateRange(userId: string, startTimestamp: number, endTimestamp: number): Promise<Transaction[]>;
   getUserWhatsAppIntegrations(userId: string): Promise<any[]>;
   createNotificationLog(log: any): Promise<any>;
@@ -1474,6 +1475,24 @@ export class DatabaseStorage implements IStorage {
       return usersWithReminders.map(result => result.users);
     } catch (error) {
       console.error('Error getting users with transaction reminders:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get all users who have budget alerts enabled
+   */
+  async getUsersWithBudgetAlerts(): Promise<User[]> {
+    try {
+      const usersWithAlerts = await db
+        .select()
+        .from(users)
+        .innerJoin(userPreferences, eq(users.id, userPreferences.userId))
+        .where(eq(userPreferences.budgetAlerts, true));
+
+      return usersWithAlerts.map(result => result.users);
+    } catch (error) {
+      console.error('Error getting users with budget alerts:', error);
       return [];
     }
   }

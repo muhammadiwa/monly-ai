@@ -4,9 +4,11 @@ import { transactionReminderService } from './transaction-reminder-service';
 /**
  * Transaction Reminder Scheduler
  * 
- * This module handles the scheduling of daily transaction reminders.
- * It runs every day at 8 PM (20:00) to check if users have logged any transactions.
- * If not, it sends a WhatsApp reminder to all connected numbers.
+ * Runs at 8 PM in two timezones:
+ * - 8 PM Asia/Jakarta (20:00 WIB) → sends to users with timezone Asia/Jakarta
+ * - 8 PM UTC (20:00 UTC) → sends to users with timezone UTC
+ * 
+ * Default timezone is Asia/Jakarta.
  */
 
 let schedulerStarted = false;
@@ -19,38 +21,38 @@ export function startTransactionReminderScheduler() {
 
   console.log('🚀 Starting transaction reminder scheduler...');
 
-  // Schedule reminder check every day at 8 PM (20:00)
+  // Schedule for 8 PM Asia/Jakarta (WIB)
   // Cron format: second minute hour day month dayOfWeek
-  // '0 0 20 * * *' = Every day at 8:00 PM
-  const reminderJob = cron.schedule('0 0 20 * * *', async () => {
-    console.log('⏰ Running daily transaction reminder check at', new Date().toLocaleString());
-
+  const jakartaJob = cron.schedule('0 0 20 * * *', async () => {
+    console.log('⏰ Running 8 PM Asia/Jakarta reminder check at', new Date().toLocaleString());
     try {
-      await transactionReminderService.checkAndSendReminders();
+      await transactionReminderService.checkAndSendRemindersForTimezone('Asia/Jakarta');
     } catch (error) {
-      console.error('❌ Error in scheduled transaction reminder check:', error);
+      console.error('❌ Error in Asia/Jakarta reminder check:', error);
     }
   }, {
-    timezone: process.env.TZ || 'Asia/Jakarta' // Use timezone from environment
+    timezone: 'Asia/Jakarta'
   });
 
-  // Also run a check at startup (for testing)
-  if (process.env.NODE_ENV === 'development') {
-    console.log('🧪 Development mode: Running initial reminder check...');
-    setTimeout(async () => {
-      try {
-        await transactionReminderService.checkAndSendReminders();
-      } catch (error) {
-        console.error('❌ Error in initial reminder check:', error);
-      }
-    }, 5000); // Wait 5 seconds after startup
-  }
+  // Schedule for 8 PM UTC
+  const utcJob = cron.schedule('0 0 20 * * *', async () => {
+    console.log('⏰ Running 8 PM UTC reminder check at', new Date().toLocaleString());
+    try {
+      await transactionReminderService.checkAndSendRemindersForTimezone('UTC');
+    } catch (error) {
+      console.error('❌ Error in UTC reminder check:', error);
+    }
+  }, {
+    timezone: 'UTC'
+  });
 
   schedulerStarted = true;
   console.log('✅ Transaction reminder scheduler started successfully');
-  console.log('📅 Reminders will be sent daily at 8:00 PM (Asia/Jakarta timezone)');
+  console.log('📅 Reminders scheduled:');
+  console.log('   - 8:00 PM Asia/Jakarta → users with Asia/Jakarta timezone');
+  console.log('   - 8:00 PM UTC → users with UTC timezone');
 
-  return reminderJob;
+  return { jakartaJob, utcJob };
 }
 
 export function stopTransactionReminderScheduler() {
@@ -59,8 +61,6 @@ export function stopTransactionReminderScheduler() {
     return;
   }
 
-  // Note: In a real application, you would store the job reference
-  // and call job.destroy() here
   schedulerStarted = false;
   console.log('🛑 Transaction reminder scheduler stopped');
 }

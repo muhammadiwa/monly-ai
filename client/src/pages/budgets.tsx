@@ -16,7 +16,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { format, startOfMonth, endOfMonth, isWithinInterval } from "date-fns";
+import { format, isWithinInterval } from "date-fns";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 
@@ -25,8 +25,6 @@ const budgetFormSchema = z.object({
   categoryId: z.number().min(1, "Category is required"),
   amount: z.number().min(0.01, "Amount must be greater than 0"),
   period: z.enum(["monthly", "weekly", "yearly"]),
-  startDate: z.string().min(1, "Start date is required"),
-  endDate: z.string().min(1, "End date is required"),
 });
 
 type BudgetFormData = z.infer<typeof budgetFormSchema>;
@@ -100,7 +98,7 @@ export default function BudgetsPage() {
       if (!authToken) {
         throw new Error('No auth token');
       }
-      
+
       const response = await fetch("/api/user/preferences", {
         headers: {
           'Authorization': `Bearer ${authToken}`,
@@ -134,7 +132,7 @@ export default function BudgetsPage() {
       if (!authToken) {
         throw new Error('No auth token');
       }
-      
+
       const response = await fetch("/api/budgets", {
         headers: {
           'Authorization': `Bearer ${authToken}`,
@@ -166,7 +164,7 @@ export default function BudgetsPage() {
       if (!authToken) {
         throw new Error('No auth token');
       }
-      
+
       const response = await fetch("/api/categories", {
         headers: {
           'Authorization': `Bearer ${authToken}`,
@@ -198,7 +196,7 @@ export default function BudgetsPage() {
       if (!authToken) {
         throw new Error('No auth token');
       }
-      
+
       const response = await fetch("/api/transactions", {
         headers: {
           'Authorization': `Bearer ${authToken}`,
@@ -229,10 +227,10 @@ export default function BudgetsPage() {
       if (!authToken) {
         throw new Error('No auth token');
       }
-      
+
       const response = await fetch("/api/budgets", {
         method: "POST",
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
           'Authorization': `Bearer ${authToken}`,
         },
@@ -278,10 +276,10 @@ export default function BudgetsPage() {
       if (!authToken) {
         throw new Error('No auth token');
       }
-      
+
       const response = await fetch(`/api/budgets/${id}`, {
         method: "PUT",
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
           'Authorization': `Bearer ${authToken}`,
         },
@@ -326,7 +324,7 @@ export default function BudgetsPage() {
       if (!authToken) {
         throw new Error('No auth token');
       }
-      
+
       const response = await fetch(`/api/budgets/${id}`, {
         method: "DELETE",
         headers: {
@@ -368,8 +366,6 @@ export default function BudgetsPage() {
       categoryId: 0,
       amount: 0,
       period: "monthly",
-      startDate: format(startOfMonth(new Date()), "yyyy-MM-dd"),
-      endDate: format(endOfMonth(new Date()), "yyyy-MM-dd"),
     },
   });
 
@@ -380,16 +376,12 @@ export default function BudgetsPage() {
         categoryId: editingBudget.categoryId,
         amount: editingBudget.amount,
         period: editingBudget.period as "monthly" | "weekly" | "yearly",
-        startDate: format(new Date(editingBudget.startDate * 1000), "yyyy-MM-dd"),
-        endDate: format(new Date(editingBudget.endDate * 1000), "yyyy-MM-dd"),
       });
     } else {
       form.reset({
         categoryId: 0,
         amount: 0,
         period: "monthly",
-        startDate: format(startOfMonth(new Date()), "yyyy-MM-dd"),
-        endDate: format(endOfMonth(new Date()), "yyyy-MM-dd"),
       });
     }
   }, [editingBudget, form]);
@@ -397,29 +389,29 @@ export default function BudgetsPage() {
   // Calculate budget statistics
   const budgetStats = useMemo(() => {
     const activeBudgets = budgets.filter(b => b.isActive);
-    
+
     return activeBudgets.map(budget => {
       const budgetStart = new Date(budget.startDate * 1000);
       const budgetEnd = new Date(budget.endDate * 1000);
-      
+
       // Calculate spent amount for this budget period
-      const categoryTransactions = transactions.filter(t => 
-        t.categoryId === budget.categoryId && 
+      const categoryTransactions = transactions.filter(t =>
+        t.categoryId === budget.categoryId &&
         t.type === "expense" &&
         isWithinInterval(parseTransactionDate(t.date), { start: budgetStart, end: budgetEnd })
       );
-      
+
       const spent = categoryTransactions.reduce((sum, t) => sum + t.amount, 0);
       const remaining = budget.amount - spent;
       const percentUsed = budget.amount > 0 ? (spent / budget.amount) * 100 : 0;
-      
+
       let status = "good";
       if (percentUsed >= 100) {
         status = "overbudget";
       } else if (percentUsed >= 80) {
         status = "warning";
       }
-      
+
       return {
         ...budget,
         spent,
@@ -435,7 +427,7 @@ export default function BudgetsPage() {
     const totalSpent = budgetStats.reduce((sum, b) => sum + b.spent, 0);
     const overBudgetCount = budgetStats.filter(b => b.status === "overbudget").length;
     const warningCount = budgetStats.filter(b => b.status === "warning").length;
-    
+
     return {
       totalBudget,
       totalSpent,
@@ -452,7 +444,7 @@ export default function BudgetsPage() {
       ...data,
       currency: userCurrency
     };
-    
+
     if (editingBudget) {
       updateBudgetMutation.mutate({ id: editingBudget.id, data: budgetData });
     } else {
@@ -490,7 +482,7 @@ export default function BudgetsPage() {
             Set spending limits and track your financial goals
           </p>
         </div>
-        
+
         <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
           <DialogTrigger asChild>
             <Button className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white shadow-lg h-9 text-xs sm:text-sm mt-2 sm:mt-0">
@@ -513,7 +505,7 @@ export default function BudgetsPage() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel className="text-xs sm:text-sm">Category</FormLabel>
-                      <Select 
+                      <Select
                         onValueChange={(value) => field.onChange(parseInt(value))}
                         value={field.value ? field.value.toString() : ""}
                       >
@@ -537,7 +529,7 @@ export default function BudgetsPage() {
                     </FormItem>
                   )}
                 />
-                
+
                 <FormField
                   control={form.control}
                   name="amount"
@@ -558,7 +550,7 @@ export default function BudgetsPage() {
                     </FormItem>
                   )}
                 />
-                
+
                 <FormField
                   control={form.control}
                   name="period"
@@ -572,56 +564,26 @@ export default function BudgetsPage() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="weekly" className="text-xs sm:text-sm">Weekly</SelectItem>
-                          <SelectItem value="monthly" className="text-xs sm:text-sm">Monthly</SelectItem>
-                          <SelectItem value="yearly" className="text-xs sm:text-sm">Yearly</SelectItem>
+                          <SelectItem value="weekly" className="text-xs sm:text-sm">Weekly (Mon-Sun)</SelectItem>
+                          <SelectItem value="monthly" className="text-xs sm:text-sm">Monthly (1st-End)</SelectItem>
+                          <SelectItem value="yearly" className="text-xs sm:text-sm">Yearly (Jan-Dec)</SelectItem>
                         </SelectContent>
                       </Select>
                       <FormMessage className="text-xs" />
                     </FormItem>
                   )}
                 />
-                
-                <div className="grid grid-cols-2 gap-2 sm:gap-4">
-                  <FormField
-                    control={form.control}
-                    name="startDate"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="text-xs sm:text-sm">Start Date</FormLabel>
-                        <FormControl>
-                          <Input type="date" {...field} className="h-9 text-xs sm:text-sm p-2" />
-                        </FormControl>
-                        <FormMessage className="text-xs" />
-                      </FormItem>
-                    )}
-                  />
-                  
-                  <FormField
-                    control={form.control}
-                    name="endDate"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="text-xs sm:text-sm">End Date</FormLabel>
-                        <FormControl>
-                          <Input type="date" {...field} className="h-9 text-xs sm:text-sm p-2" />
-                        </FormControl>
-                        <FormMessage className="text-xs" />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-                
+
                 <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 sm:gap-3 pt-3 sm:pt-4 mt-1 sm:mt-0">
                   <Button type="button" variant="outline" onClick={() => {
                     setIsCreateDialogOpen(false);
                     setEditingBudget(null);
                     form.reset();
                   }}
-                  className="h-9 text-xs sm:text-sm w-full sm:w-auto">
+                    className="h-9 text-xs sm:text-sm w-full sm:w-auto">
                     Cancel
                   </Button>
-                  <Button type="submit" 
+                  <Button type="submit"
                     disabled={createBudgetMutation.isPending || updateBudgetMutation.isPending}
                     className="h-9 text-xs sm:text-sm w-full sm:w-auto mb-1 sm:mb-0"
                   >
@@ -655,7 +617,7 @@ export default function BudgetsPage() {
             </p>
           </CardContent>
         </Card>
-        
+
         <Card className="bg-gradient-to-br from-green-50 to-emerald-100 border-green-200 shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 sm:pb-2 px-3 sm:px-6 pt-3 sm:pt-4">
             <CardTitle className="text-xs sm:text-sm font-medium text-green-900">On Track</CardTitle>
@@ -670,7 +632,7 @@ export default function BudgetsPage() {
             </p>
           </CardContent>
         </Card>
-        
+
         <Card className="bg-gradient-to-br from-yellow-50 to-amber-100 border-yellow-200 shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 sm:pb-2 px-3 sm:px-6 pt-3 sm:pt-4">
             <CardTitle className="text-xs sm:text-sm font-medium text-yellow-900">Warning</CardTitle>
@@ -685,7 +647,7 @@ export default function BudgetsPage() {
             </p>
           </CardContent>
         </Card>
-        
+
         <Card className="bg-gradient-to-br from-red-50 to-rose-100 border-red-200 shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 sm:pb-2 px-3 sm:px-6 pt-3 sm:pt-4">
             <CardTitle className="text-xs sm:text-sm font-medium text-red-900">Over Budget</CardTitle>
@@ -723,7 +685,7 @@ export default function BudgetsPage() {
           ))}
         </div>
       )}
-      
+
       {/* Filters */}
       <Tabs defaultValue="monthly" onValueChange={setSelectedPeriod}>
         <TabsList className="grid w-full grid-cols-4 p-0.5">
@@ -741,7 +703,7 @@ export default function BudgetsPage() {
             <CardHeader className="pb-2 sm:pb-3 px-3 sm:px-6 pt-3 sm:pt-4">
               <div className="flex flex-wrap sm:flex-nowrap items-start sm:items-center justify-between gap-2 sm:gap-0">
                 <div className="flex items-center gap-2 sm:gap-3">
-                  <div 
+                  <div
                     className="w-8 h-8 sm:w-10 sm:h-10 rounded-full flex items-center justify-center text-white font-semibold"
                     style={{ backgroundColor: budget.category?.color }}
                   >
@@ -768,15 +730,15 @@ export default function BudgetsPage() {
                 </Badge>
               </div>
             </CardHeader>
-            
+
             <CardContent className="space-y-3 sm:space-y-4 px-3 sm:px-6 pb-3 sm:pb-4">
               <div className="space-y-2">
                 <div className="flex justify-between text-xs sm:text-sm">
                   <span className="text-muted-foreground">Spent</span>
                   <span className="font-medium">{formatCurrency(budget.spent, userCurrency)}</span>
                 </div>
-                <Progress 
-                  value={Math.min(budget.percentUsed, 100)} 
+                <Progress
+                  value={Math.min(budget.percentUsed, 100)}
                   className="h-1.5 sm:h-2"
                 />
                 <div className="flex flex-col sm:flex-row sm:justify-between text-xs sm:text-sm">
@@ -788,7 +750,7 @@ export default function BudgetsPage() {
                   </span>
                 </div>
               </div>
-              
+
               <div className="flex flex-wrap sm:flex-nowrap justify-between items-center pt-2 border-t gap-2 sm:gap-0">
                 <div className="text-xs text-muted-foreground">
                   {format(new Date(budget.startDate * 1000), "MMM dd")} - {format(new Date(budget.endDate * 1000), "MMM dd")}
@@ -820,7 +782,7 @@ export default function BudgetsPage() {
                       <AlertDialogHeader>
                         <AlertDialogTitle>Delete Budget</AlertDialogTitle>
                         <AlertDialogDescription>
-                          Are you sure you want to delete this budget for "{budget.category?.name}"? 
+                          Are you sure you want to delete this budget for "{budget.category?.name}"?
                           This action cannot be undone.
                         </AlertDialogDescription>
                       </AlertDialogHeader>
@@ -849,7 +811,7 @@ export default function BudgetsPage() {
             <Target className="w-10 h-10 sm:w-12 sm:h-12 text-muted-foreground mx-auto mb-3 sm:mb-4" />
             <CardTitle className="mb-1 sm:mb-2 text-base sm:text-lg">No budgets found</CardTitle>
             <CardDescription className="mb-3 sm:mb-4 text-xs sm:text-sm max-w-md mx-auto">
-              {selectedPeriod === "all" 
+              {selectedPeriod === "all"
                 ? "Create your first budget to start tracking your spending goals."
                 : `No ${selectedPeriod} budgets found. Try a different period or create a new budget.`
               }

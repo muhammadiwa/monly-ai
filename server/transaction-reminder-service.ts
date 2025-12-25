@@ -1,11 +1,12 @@
 import { storage } from './storage';
 import { sendSingleBotMessage } from './whatsapp-single-bot';
-import { NotificationLog, InsertNotificationLog } from '@shared/schema';
+import { InsertNotificationLog } from '@shared/schema';
 
 interface TransactionReminderService {
   checkAndSendReminders(): Promise<void>;
+  checkAndSendRemindersForTimezone(timezone: string): Promise<void>;
   sendReminderToUser(userId: string): Promise<void>;
-  hasUserLoggedTransactionToday(userId: string): Promise<boolean>;
+  hasUserLoggedTransactionToday(userId: string, timezone: string): Promise<boolean>;
   getUserWhatsAppNumbers(userId: string): Promise<string[]>;
   logNotification(log: InsertNotificationLog): Promise<void>;
 }
@@ -13,21 +14,20 @@ interface TransactionReminderService {
 class TransactionReminderServiceImpl implements TransactionReminderService {
 
   /**
-   * Check all users and send reminders to those who haven't logged transactions today
+   * Check all users and send reminders (manual trigger - all users)
    */
   async checkAndSendReminders(): Promise<void> {
-    console.log('🔔 Starting transaction reminders check...');
+    console.log('🔔 Starting transaction reminders check (all users)...');
 
     try {
-      // Get all users with transaction reminders enabled
       const usersWithReminders = await storage.getUsersWithTransactionReminders();
-
       console.log(`Found ${usersWithReminders.length} users with transaction reminders enabled`);
 
       for (const user of usersWithReminders) {
         try {
-          // Check if user has logged any transaction today
-          const hasLoggedToday = await this.hasUserLoggedTransactionToday(user.id);
+          const userPrefs = await storage.getUserPreferences(user.id);
+          const timezone = userPrefs?.timezone || 'Asia/Jakarta';
+          const hasLoggedToday = await this.hasUserLoggedTransactionToday(user.id, timezone);
 
           if (!hasLoggedToday) {
             console.log(`📱 Sending reminder to user ${user.id} (${user.email})`);
@@ -47,11 +47,54 @@ class TransactionReminderServiceImpl implements TransactionReminderService {
   }
 
   /**
+   * Send reminders only to users with the specified timezone
+   */
+  async checkAndSendRemindersForTimezone(timezone: string): Promise<void> {
+    console.log(`🔔 Starting transaction reminders for timezone: ${timezone}...`);
+
+    try {
+      const usersWithReminders = await storage.getUsersWithTransactionReminders();
+      console.log(`Found ${usersWithReminders.length} users with transaction reminders enabled`);
+
+      let sentCount = 0;
+      let skippedCount = 0;
+
+      for (const user of usersWithReminders) {
+        try {
+          const userPrefs = await storage.getUserPreferences(user.id);
+          const userTimezone = userPrefs?.timezone || 'Asia/Jakarta';
+
+          // Only process users with matching timezone
+          if (userTimezone !== timezone) {
+            continue;
+          }
+
+          const hasLoggedToday = await this.hasUserLoggedTransactionToday(user.id, userTimezone);
+
+          if (!hasLoggedToday) {
+            console.log(`📱 Sending reminder to user ${user.id} (${user.email}) [${userTimezone}]`);
+            await this.sendReminderToUser(user.id);
+            sentCount++;
+          } else {
+            console.log(`✅ User ${user.id} has already logged transactions today`);
+            skippedCount++;
+          }
+        } catch (error) {
+          console.error(`❌ Error processing reminders for user ${user.id}:`, error);
+        }
+      }
+
+      console.log(`✅ Timezone ${timezone} reminders completed: ${sentCount} sent, ${skippedCount} skipped`);
+    } catch (error) {
+      console.error(`❌ Error in timezone ${timezone} reminders:`, error);
+    }
+  }
+
+  /**
    * Send reminder message to a specific user
    */
   async sendReminderToUser(userId: string): Promise<void> {
     try {
-      // Get user's WhatsApp numbers
       const whatsappNumbers = await this.getUserWhatsAppNumbers(userId);
 
       if (whatsappNumbers.length === 0) {
@@ -59,45 +102,38 @@ class TransactionReminderServiceImpl implements TransactionReminderService {
         return;
       }
 
-      // Get user preferences for language
       const userPrefs = await storage.getUserPreferences(userId);
       const language = userPrefs?.language || 'en';
-
-      // Create reminder message based on language
       const message = this.createReminderMessage(language);
 
-      // Send message to all connected WhatsApp numbers
       for (const whatsappNumber of whatsappNumbers) {
         try {
           const result = await sendSingleBotMessage(whatsappNumber, message);
 
-          // Log the notification
           await this.logNotification({
             userId,
             type: 'transaction_reminder',
             whatsappNumber,
             message,
             status: result.success ? 'sent' : 'failed',
-            sentAt: Date.now(),
+            sentAt: Math.floor(Date.now() / 1000),
             errorMessage: result.success ? undefined : result.message,
           });
 
           if (result.success) {
-            console.log(`✅ Reminder sent successfully to ${whatsappNumber}`);
+            console.log(`✅ Reminder sent to ${whatsappNumber}`);
           } else {
-            console.error(`❌ Failed to send reminder to ${whatsappNumber}: ${result.message}`);
+            console.error(`❌ Failed to send to ${whatsappNumber}: ${result.message}`);
           }
         } catch (error) {
-          console.error(`❌ Error sending reminder to ${whatsappNumber}:`, error);
-
-          // Log the failed notification
+          console.error(`❌ Error sending to ${whatsappNumber}:`, error);
           await this.logNotification({
             userId,
             type: 'transaction_reminder',
             whatsappNumber,
             message,
             status: 'failed',
-            sentAt: Date.now(),
+            sentAt: Math.floor(Date.now() / 1000),
             errorMessage: error instanceof Error ? error.message : 'Unknown error',
           });
         }
@@ -108,17 +144,30 @@ class TransactionReminderServiceImpl implements TransactionReminderService {
   }
 
   /**
-   * Check if user has logged any transaction today
+   * Check if user has logged any transaction today (in their timezone)
    */
-  async hasUserLoggedTransactionToday(userId: string): Promise<boolean> {
+  async hasUserLoggedTransactionToday(userId: string, timezone: string = 'Asia/Jakarta'): Promise<boolean> {
     try {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const todayTimestamp = Math.floor(today.getTime() / 1000);
+      const now = new Date();
 
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      const tomorrowTimestamp = Math.floor(tomorrow.getTime() / 1000);
+      // Get today's date in user's timezone
+      const formatter = new Intl.DateTimeFormat('en-CA', {
+        timeZone: timezone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      });
+
+      const todayStr = formatter.format(now);
+      const [year, month, day] = todayStr.split('-').map(Number);
+
+      // Calculate start/end of day in UTC
+      const tzOffset = this.getTimezoneOffset(timezone);
+      const todayStartUTC = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+      const todayEndUTC = new Date(Date.UTC(year, month - 1, day, 23, 59, 59, 999));
+
+      const todayTimestamp = Math.floor((todayStartUTC.getTime() - tzOffset) / 1000);
+      const tomorrowTimestamp = Math.floor((todayEndUTC.getTime() - tzOffset + 1000) / 1000);
 
       const transactions = await storage.getUserTransactionsInDateRange(
         userId,
@@ -129,13 +178,21 @@ class TransactionReminderServiceImpl implements TransactionReminderService {
       return transactions.length > 0;
     } catch (error) {
       console.error(`Error checking transactions for user ${userId}:`, error);
-      return false; // Assume false to send reminder in case of error
+      return false;
     }
   }
 
   /**
-   * Get all WhatsApp numbers connected to a user
+   * Get timezone offset in milliseconds
    */
+  private getTimezoneOffset(timezone: string): number {
+    const offsets: Record<string, number> = {
+      'UTC': 0,
+      'Asia/Jakarta': 7 * 60 * 60 * 1000, // UTC+7
+    };
+    return offsets[timezone] || offsets['Asia/Jakarta'];
+  }
+
   async getUserWhatsAppNumbers(userId: string): Promise<string[]> {
     try {
       const integrations = await storage.getUserWhatsAppIntegrations(userId);
@@ -148,9 +205,6 @@ class TransactionReminderServiceImpl implements TransactionReminderService {
     }
   }
 
-  /**
-   * Log notification to database
-   */
   async logNotification(log: InsertNotificationLog): Promise<void> {
     try {
       await storage.createNotificationLog(log);
@@ -159,9 +213,6 @@ class TransactionReminderServiceImpl implements TransactionReminderService {
     }
   }
 
-  /**
-   * Create reminder message based on language
-   */
   private createReminderMessage(language: string): string {
     const messages = {
       en: `🔔 *Daily Transaction Reminder*

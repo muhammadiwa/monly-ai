@@ -614,14 +614,12 @@ export default function Settings() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="UTC">🌍 UTC - Coordinated Universal Time</SelectItem>
-                        <SelectItem value="Asia/Jakarta">🇮🇩 Asia/Jakarta - Indonesia Western Time</SelectItem>
-                        <SelectItem value="Asia/Makassar">🇮🇩 Asia/Makassar - Indonesia Central Time</SelectItem>
-                        <SelectItem value="Asia/Jayapura">🇮🇩 Asia/Jayapura - Indonesia Eastern Time</SelectItem>
-                        <SelectItem value="America/New_York">🇺🇸 America/New_York - Eastern Time</SelectItem>
-                        <SelectItem value="America/Los_Angeles">🇺🇸 America/Los_Angeles - Pacific Time</SelectItem>
-                        <SelectItem value="Europe/London">🇬🇧 Europe/London - Greenwich Mean Time</SelectItem>
+                        <SelectItem value="Asia/Jakarta">🇮🇩 Asia/Jakarta - Western Indonesia Time (WIB)</SelectItem>
                       </SelectContent>
                     </Select>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Used for daily transaction reminders at 8 PM
+                    </p>
                   </div>
                 </div>
 

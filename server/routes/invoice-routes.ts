@@ -1,26 +1,25 @@
 import { Router, Response, RequestHandler } from 'express';
 import { requireAuth, AuthRequest } from '../auth';
 import { db } from '../db';
-import { invoices, payments, userSubscriptions, subscriptionPlans, users } from '../../shared/schema';
+import { invoices, payments, users } from '../../shared/schema';
 import { eq, desc } from 'drizzle-orm';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
 const router = Router();
 
-// Type assertion for requireAuth middleware
+// Type-safe middleware
 const authMiddleware = requireAuth as unknown as RequestHandler;
 
 /**
  * GET /api/invoice/list
  * Get user's own invoices
- * Requirements: 4.2, 4.3, 8.1, 8.2
  */
-router.get('/list', authMiddleware, async (req: AuthRequest, res: Response) => {
+router.get('/list', authMiddleware, (async (req, res) => {
     try {
-        const userId = req.user!.id;
+        const authReq = req as unknown as AuthRequest;
+        const userId = authReq.user!.id;
 
-        // Fetch invoices for the current user
         const userInvoices = await db
             .select({
                 id: invoices.id,
@@ -38,44 +37,34 @@ router.get('/list', authMiddleware, async (req: AuthRequest, res: Response) => {
             .where(eq(invoices.userId, userId))
             .orderBy(desc(invoices.createdAt));
 
-        res.json({
-            success: true,
-            data: userInvoices,
-        });
+        res.json({ success: true, data: userInvoices });
     } catch (error) {
         console.error('Error fetching invoice list:', error);
         res.status(500).json({
             success: false,
-            error: {
-                code: 'FETCH_INVOICES_ERROR',
-                message: 'Failed to fetch invoices',
-            },
+            error: { code: 'FETCH_INVOICES_ERROR', message: 'Failed to fetch invoices' },
         });
     }
-});
+}) as RequestHandler);
 
 /**
  * GET /api/invoice/:id
  * Get invoice details (verify ownership)
- * Requirements: 4.2, 4.3, 8.1, 8.2
  */
-router.get('/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
+router.get('/:id', authMiddleware, (async (req, res) => {
     try {
-        const userId = req.user!.id;
+        const authReq = req as unknown as AuthRequest;
+        const userId = authReq.user!.id;
         const invoiceId = parseInt(req.params.id);
 
         if (isNaN(invoiceId)) {
             return res.status(400).json({
                 success: false,
-                error: {
-                    code: 'INVALID_INVOICE_ID',
-                    message: 'Invalid invoice ID',
-                },
+                error: { code: 'INVALID_INVOICE_ID', message: 'Invalid invoice ID' },
             });
         }
 
-        // Fetch invoice with ownership verification
-        const invoice = await db
+        const invoice = db
             .select({
                 id: invoices.id,
                 invoiceNumber: invoices.invoiceNumber,
@@ -98,28 +87,20 @@ router.get('/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
         if (!invoice) {
             return res.status(404).json({
                 success: false,
-                error: {
-                    code: 'INVOICE_NOT_FOUND',
-                    message: 'Invoice not found',
-                },
+                error: { code: 'INVOICE_NOT_FOUND', message: 'Invoice not found' },
             });
         }
 
-        // Verify ownership
         if (invoice.userId !== userId) {
             return res.status(403).json({
                 success: false,
-                error: {
-                    code: 'FORBIDDEN',
-                    message: 'You do not have permission to access this invoice',
-                },
+                error: { code: 'FORBIDDEN', message: 'You do not have permission to access this invoice' },
             });
         }
 
-        // Get payment details
         let payment = null;
         if (invoice.paymentId) {
-            payment = await db
+            payment = db
                 .select({
                     id: payments.id,
                     paymentMethod: payments.paymentMethod,
@@ -133,8 +114,7 @@ router.get('/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
                 .get();
         }
 
-        // Get user details
-        const user = await db
+        const user = db
             .select({
                 id: users.id,
                 email: users.email,
@@ -179,36 +159,29 @@ router.get('/:id', authMiddleware, async (req: AuthRequest, res: Response) => {
         console.error('Error fetching invoice details:', error);
         res.status(500).json({
             success: false,
-            error: {
-                code: 'FETCH_INVOICE_ERROR',
-                message: 'Failed to fetch invoice details',
-            },
+            error: { code: 'FETCH_INVOICE_ERROR', message: 'Failed to fetch invoice details' },
         });
     }
-});
+}) as RequestHandler);
 
 /**
  * GET /api/invoice/:id/download
  * Download invoice PDF (verify ownership)
- * Requirements: 4.2, 4.3, 8.1, 8.2
  */
-router.get('/:id/download', authMiddleware, async (req: AuthRequest, res: Response) => {
+router.get('/:id/download', authMiddleware, (async (req, res) => {
     try {
-        const userId = req.user!.id;
+        const authReq = req as unknown as AuthRequest;
+        const userId = authReq.user!.id;
         const invoiceId = parseInt(req.params.id);
 
         if (isNaN(invoiceId)) {
             return res.status(400).json({
                 success: false,
-                error: {
-                    code: 'INVALID_INVOICE_ID',
-                    message: 'Invalid invoice ID',
-                },
+                error: { code: 'INVALID_INVOICE_ID', message: 'Invalid invoice ID' },
             });
         }
 
-        // Fetch invoice with ownership verification
-        const invoice = await db
+        const invoice = db
             .select({
                 id: invoices.id,
                 invoiceNumber: invoices.invoiceNumber,
@@ -229,26 +202,18 @@ router.get('/:id/download', authMiddleware, async (req: AuthRequest, res: Respon
         if (!invoice) {
             return res.status(404).json({
                 success: false,
-                error: {
-                    code: 'INVOICE_NOT_FOUND',
-                    message: 'Invoice not found',
-                },
+                error: { code: 'INVOICE_NOT_FOUND', message: 'Invoice not found' },
             });
         }
 
-        // Verify ownership
         if (invoice.userId !== userId) {
             return res.status(403).json({
                 success: false,
-                error: {
-                    code: 'FORBIDDEN',
-                    message: 'You do not have permission to access this invoice',
-                },
+                error: { code: 'FORBIDDEN', message: 'You do not have permission to access this invoice' },
             });
         }
 
-        // Get user details
-        const user = await db
+        const user = db
             .select({
                 email: users.email,
                 firstName: users.firstName,
@@ -261,17 +226,13 @@ router.get('/:id/download', authMiddleware, async (req: AuthRequest, res: Respon
         if (!user) {
             return res.status(404).json({
                 success: false,
-                error: {
-                    code: 'USER_NOT_FOUND',
-                    message: 'User not found',
-                },
+                error: { code: 'USER_NOT_FOUND', message: 'User not found' },
             });
         }
 
-        // Get payment details
         let payment = null;
         if (invoice.paymentId) {
-            payment = await db
+            payment = db
                 .select({
                     paymentMethod: payments.paymentMethod,
                     status: payments.status,
@@ -282,15 +243,13 @@ router.get('/:id/download', authMiddleware, async (req: AuthRequest, res: Respon
                 .get();
         }
 
-        // Generate PDF invoice (reuse admin logic)
+        // Generate PDF
         const doc = new jsPDF();
 
-        // Add company header
         doc.setFontSize(20);
         doc.setFont('helvetica', 'bold');
         doc.text('INVOICE', 105, 20, { align: 'center' });
 
-        // Add invoice details
         doc.setFontSize(10);
         doc.setFont('helvetica', 'normal');
         doc.text(`Invoice Number: ${invoice.invoiceNumber}`, 20, 40);
@@ -298,14 +257,12 @@ router.get('/:id/download', authMiddleware, async (req: AuthRequest, res: Respon
         doc.text(`Due Date: ${new Date(invoice.dueAt * 1000).toLocaleDateString()}`, 20, 52);
         doc.text(`Status: ${invoice.status.toUpperCase()}`, 20, 58);
 
-        // Add customer details
         doc.setFont('helvetica', 'bold');
         doc.text('Bill To:', 20, 70);
         doc.setFont('helvetica', 'normal');
         doc.text(`${user.firstName || ''} ${user.lastName || ''}`.trim() || 'User', 20, 76);
         doc.text(user.email || '', 20, 82);
 
-        // Add payment details if available
         if (payment) {
             doc.setFont('helvetica', 'bold');
             doc.text('Payment Details:', 120, 70);
@@ -317,7 +274,6 @@ router.get('/:id/download', authMiddleware, async (req: AuthRequest, res: Respon
             }
         }
 
-        // Add items table
         const items = JSON.parse(invoice.items);
         const tableData = items.map((item: any) => [
             item.description,
@@ -335,41 +291,32 @@ router.get('/:id/download', authMiddleware, async (req: AuthRequest, res: Respon
             styles: { fontSize: 10 },
         });
 
-        // Add total
         const finalY = (doc as any).lastAutoTable.finalY || 100;
         doc.setFont('helvetica', 'bold');
         doc.text(`Total Amount: ${invoice.currency} ${invoice.amount.toLocaleString()}`, 20, finalY + 15);
 
-        // Add payment status
         if (invoice.paidAt) {
             doc.setFont('helvetica', 'normal');
             doc.text(`Paid on: ${new Date(invoice.paidAt * 1000).toLocaleDateString()}`, 20, finalY + 25);
         }
 
-        // Add footer
         doc.setFontSize(8);
         doc.setFont('helvetica', 'italic');
         doc.text('Thank you for your business!', 105, 280, { align: 'center' });
 
-        // Convert PDF to buffer
         const pdfBuffer = Buffer.from(doc.output('arraybuffer'));
 
-        // Set response headers for PDF download
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `attachment; filename="invoice-${invoice.invoiceNumber}.pdf"`);
         res.setHeader('Content-Length', pdfBuffer.length);
-
         res.send(pdfBuffer);
     } catch (error) {
         console.error('Error generating invoice PDF:', error);
         res.status(500).json({
             success: false,
-            error: {
-                code: 'PDF_GENERATION_ERROR',
-                message: 'Failed to generate invoice PDF',
-            },
+            error: { code: 'PDF_GENERATION_ERROR', message: 'Failed to generate invoice PDF' },
         });
     }
-});
+}) as RequestHandler);
 
 export default router;

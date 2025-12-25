@@ -12,6 +12,7 @@ import subscriptionRoutes from './routes/subscription-routes';
 import paymentWebhookRoutes from './routes/payment-webhook';
 import invoiceRoutes from './routes/invoice-routes';
 import { triggerTransactionRemindersManually } from './transaction-reminder-scheduler';
+import { triggerBudgetAlertsManually } from './budget-alert-scheduler';
 import { getHealthMonitor } from './whatsapp-health-monitor';
 import { getSingleBotConnectionState } from './whatsapp-single-bot';
 import multer from "multer";
@@ -58,6 +59,123 @@ const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
 });
+
+// Helper function to calculate budget dates based on period
+function calculateBudgetDates(period: string): { startDate: number; endDate: number } {
+  const now = new Date();
+  let startDate: Date;
+  let endDate: Date;
+
+  switch (period) {
+    case 'weekly':
+      // Monday to Sunday of current week
+      const dayOfWeek = now.getDay();
+      const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+      startDate = new Date(now);
+      startDate.setDate(now.getDate() + diffToMonday);
+      startDate.setHours(0, 0, 0, 0);
+      endDate = new Date(startDate);
+      endDate.setDate(startDate.getDate() + 6);
+      endDate.setHours(23, 59, 59, 999);
+      break;
+
+    case 'yearly':
+      // January 1 to December 31 of current year
+      startDate = new Date(now.getFullYear(), 0, 1, 0, 0, 0, 0);
+      endDate = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
+      break;
+
+    case 'monthly':
+    default:
+      // 1st to last day of current month
+      startDate = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+      endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+      break;
+  }
+
+  return {
+    startDate: Math.floor(startDate.getTime() / 1000),
+    endDate: Math.floor(endDate.getTime() / 1000),
+  };
+}
+
+// Helper function to check and send budget alerts via WhatsApp
+async function checkAndSendBudgetAlert(userId: string, categoryId: number): Promise<void> {
+  try {
+    // Get user preferences to check if budget alerts are enabled
+    const userPrefs = await storage.getUserPreferences(userId);
+    if (!userPrefs?.budgetAlerts) {
+      return; // Budget alerts disabled
+    }
+
+    // Get the budget for this category
+    const budget = await storage.getBudgetByCategory(userId, categoryId);
+    if (!budget) return;
+
+    // Get category info
+    const category = await storage.getCategoryById(categoryId, userId);
+    if (!category) return;
+
+    // Calculate spent amount in current period
+    const spent = await storage.getSpentInPeriod(userId, categoryId, budget.startDate, budget.endDate);
+    const percentage = (spent / budget.amount) * 100;
+
+    // Determine alert type
+    let alertType: 'warning' | 'over' | null = null;
+    if (percentage >= 100) {
+      alertType = 'over';
+    } else if (percentage >= 80) {
+      alertType = 'warning';
+    }
+
+    if (!alertType) return; // No alert needed
+
+    // Get user's WhatsApp integrations
+    const integrations = await storage.getUserWhatsAppIntegrations(userId);
+    const activeIntegrations = integrations.filter(i => i.status === 'active');
+
+    if (activeIntegrations.length === 0) return; // No WhatsApp connected
+
+    // Import WhatsApp sender
+    const { sendSingleBotMessage } = await import('./whatsapp-single-bot');
+
+    // Create alert message
+    const currencySymbol = getCurrencySymbol(userPrefs.defaultCurrency || 'IDR');
+    const message = alertType === 'over'
+      ? `🚨 *Budget Alert - Over Budget!*\n\nYour *${category.name}* budget has been exceeded!\n\n💰 Budget: ${currencySymbol}${budget.amount.toLocaleString()}\n💸 Spent: ${currencySymbol}${spent.toLocaleString()}\n📊 Usage: ${percentage.toFixed(1)}%\n\n⚠️ You've exceeded your budget by ${currencySymbol}${(spent - budget.amount).toLocaleString()}\n\nConsider reviewing your spending in this category.`
+      : `⚠️ *Budget Warning*\n\nYou're approaching your *${category.name}* budget limit!\n\n💰 Budget: ${currencySymbol}${budget.amount.toLocaleString()}\n💸 Spent: ${currencySymbol}${spent.toLocaleString()}\n📊 Usage: ${percentage.toFixed(1)}%\n💵 Remaining: ${currencySymbol}${(budget.amount - spent).toLocaleString()}\n\nBe mindful of your spending to stay within budget.`;
+
+    // Send to all connected WhatsApp numbers
+    for (const integration of activeIntegrations) {
+      try {
+        await sendSingleBotMessage(integration.whatsappNumber, message);
+
+        // Log the notification
+        await storage.createNotificationLog({
+          userId,
+          type: 'budget_alert',
+          whatsappNumber: integration.whatsappNumber,
+          message,
+          status: 'sent',
+          sentAt: Math.floor(Date.now() / 1000),
+        });
+      } catch (error) {
+        console.error(`Failed to send budget alert to ${integration.whatsappNumber}:`, error);
+        await storage.createNotificationLog({
+          userId,
+          type: 'budget_alert',
+          whatsappNumber: integration.whatsappNumber,
+          message,
+          status: 'failed',
+          sentAt: Math.floor(Date.now() / 1000),
+          errorMessage: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
+    }
+  } catch (error) {
+    console.error('Error checking budget alert:', error);
+  }
+}
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Register Admin routes
@@ -500,6 +618,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       const transaction = await storage.createTransaction(transactionData);
+
+      // Check budget alerts for expense transactions
+      if (transactionData.type === 'expense' && transactionData.categoryId) {
+        await checkAndSendBudgetAlert(req.user.id, transactionData.categoryId);
+      }
+
       res.json(transaction);
     } catch (error) {
       console.error("Error creating transaction:", error);
@@ -706,17 +830,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/budgets', requireAuth, async (req: AuthRequest, res: Response) => {
     try {
       if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
+
+      console.log('Creating budget with data:', req.body);
+
+      // Auto-calculate dates based on period
+      const { startDate, endDate } = calculateBudgetDates(req.body.period || 'monthly');
+      console.log('Calculated dates:', { startDate, endDate, period: req.body.period });
+
+      // Get user preferences for default currency if not provided
+      const userPrefs = await storage.getUserPreferences(req.user.id);
+      const currency = req.body.currency || userPrefs?.defaultCurrency || 'USD';
+
       const budgetData = insertBudgetSchema.parse({
         ...req.body,
         userId: req.user.id,
-        startDate: Math.floor((new Date(req.body.startDate)).getTime() / 1000),
-        endDate: Math.floor((new Date(req.body.endDate)).getTime() / 1000),
+        startDate,
+        endDate,
+        currency,
+        isActive: true,
       });
 
+      console.log('Parsed budget data:', budgetData);
+
       const budget = await storage.createBudget(budgetData);
+
+      // Check if budget alerts are enabled and send initial status
+      await checkAndSendBudgetAlert(req.user.id, budget.categoryId);
+
       res.json(budget);
     } catch (error) {
       console.error("Error creating budget:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid budget data", errors: error.errors });
+      }
       res.status(500).json({ message: "Failed to create budget" });
     }
   });
@@ -726,16 +872,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
       const id = parseInt(req.params.id);
 
-      // Parse dan normalize tanggal ke Unix timestamp (seconds) jika ada
-      let updateData = { ...req.body };
-      if (req.body.startDate) {
-        updateData.startDate = Math.floor((new Date(req.body.startDate)).getTime() / 1000);
-      }
-      if (req.body.endDate) {
-        updateData.endDate = Math.floor((new Date(req.body.endDate)).getTime() / 1000);
+      console.log('Updating budget:', id, 'with data:', req.body);
+
+      // Build update data
+      let updateData: Record<string, any> = {};
+
+      // Copy allowed fields
+      if (req.body.categoryId !== undefined) updateData.categoryId = req.body.categoryId;
+      if (req.body.amount !== undefined) updateData.amount = req.body.amount;
+      if (req.body.currency !== undefined) updateData.currency = req.body.currency;
+      if (req.body.period !== undefined) updateData.period = req.body.period;
+      if (req.body.isActive !== undefined) updateData.isActive = req.body.isActive;
+
+      // If period is being updated, recalculate dates
+      if (req.body.period) {
+        const { startDate, endDate } = calculateBudgetDates(req.body.period);
+        updateData.startDate = startDate;
+        updateData.endDate = endDate;
+        console.log('Recalculated dates for period:', req.body.period, { startDate, endDate });
       }
 
       const budget = await storage.updateBudget(id, updateData);
+
+      // Check if budget alerts are enabled and send status update
+      await checkAndSendBudgetAlert(req.user.id, budget.categoryId);
+
       res.json(budget);
     } catch (error) {
       console.error("Error updating budget:", error);
@@ -1985,6 +2146,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({
         success: false,
         error: "Failed to trigger test reminders"
+      });
+    }
+  });
+
+  // Test endpoint for budget alerts (no auth required)
+  app.post("/api/test/trigger-budget-alerts", async (req, res: Response) => {
+    try {
+      console.log('🧪 Test trigger budget alerts called');
+      await triggerBudgetAlertsManually();
+
+      res.json({
+        success: true,
+        message: "Budget alerts triggered successfully"
+      });
+    } catch (error) {
+      console.error("Test trigger budget alerts error:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to trigger budget alerts"
       });
     }
   });
