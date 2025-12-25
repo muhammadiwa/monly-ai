@@ -752,11 +752,11 @@ export class AdminStorage {
         const result = await db.all(mainQuery);
         const userList = result.map((row: any) => ({
             id: row.id,
-            name: `${row.firstName || ''} ${row.lastName || ''}`.trim() || 'N/A',
+            name: `${row.firstName || ''} ${row.lastName || ''}`.trim() || row.email?.split('@')[0] || 'Unknown User',
             email: row.email || 'N/A',
             subscriptionPlan: row.subscriptionPlan || 'free',
             subscriptionPlanDisplay: row.subscriptionPlanDisplay || 'Free',
-            status: row.subscriptionStatus || 'free',
+            status: row.subscriptionStatus || 'free', // Use subscriptionStatus directly
             registrationDate: row.createdAt,
             lastLogin: row.updatedAt,
             transactionCount: row.transactionCount || 0,

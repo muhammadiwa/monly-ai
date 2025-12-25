@@ -24,7 +24,7 @@ export interface UserListItem {
     name: string;
     email: string;
     subscriptionPlan: 'free' | 'premium' | 'business';
-    status: 'active' | 'suspended' | 'deleted';
+    status: 'free' | 'active' | 'cancelled' | 'expired' | 'pending';
     registrationDate: number;
     lastLogin: number;
     transactionCount: number;
@@ -75,15 +75,19 @@ export default function UserTable({
         }
     };
 
-    // Get status badge color
+    // Get status badge color (for subscription status)
     const getStatusBadgeColor = (status: string) => {
-        switch (status) {
+        switch (status.toLowerCase()) {
             case 'active':
                 return 'bg-green-100 text-green-700 border-green-200';
-            case 'suspended':
+            case 'free':
+                return 'bg-slate-100 text-slate-700 border-slate-200';
+            case 'cancelled':
                 return 'bg-orange-100 text-orange-700 border-orange-200';
-            case 'deleted':
+            case 'expired':
                 return 'bg-red-100 text-red-700 border-red-200';
+            case 'pending':
+                return 'bg-yellow-100 text-yellow-700 border-yellow-200';
             default:
                 return 'bg-gray-100 text-gray-700 border-gray-200';
         }
@@ -283,22 +287,22 @@ export default function UserTable({
                                     >
                                         <Eye className="h-4 w-4" />
                                     </Button>
-                                    {user.status === 'active' ? (
+                                    {(user.status === 'active' || user.status === 'free' || user.status === 'pending') ? (
                                         <Button
                                             variant="ghost"
                                             size="sm"
                                             className="h-8 w-8 p-0 hover:bg-orange-50 hover:text-orange-600"
-                                            title="Suspend User"
+                                            title="Cancel Subscription"
                                             onClick={() => handleSuspend(user.id)}
                                         >
                                             <UserX className="h-4 w-4" />
                                         </Button>
-                                    ) : user.status === 'suspended' ? (
+                                    ) : (user.status === 'cancelled' || user.status === 'expired') ? (
                                         <Button
                                             variant="ghost"
                                             size="sm"
                                             className="h-8 w-8 p-0 hover:bg-green-50 hover:text-green-600"
-                                            title="Activate User"
+                                            title="Reactivate Subscription"
                                             onClick={() => handleActivate(user.id)}
                                         >
                                             <UserCheck className="h-4 w-4" />
@@ -310,7 +314,6 @@ export default function UserTable({
                                         className="h-8 w-8 p-0 hover:bg-red-50 hover:text-red-600"
                                         title="Delete User"
                                         onClick={() => handleDelete(user.id)}
-                                        disabled={user.status === 'deleted'}
                                     >
                                         <Trash2 className="h-4 w-4" />
                                     </Button>

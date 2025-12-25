@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { Link } from "wouter";
 import {
-    Bell,
     User,
     LogOut,
     Settings,
@@ -63,44 +62,8 @@ export default function AdminHeader() {
                     </Link>
                 </div>
 
-                {/* Right side - Notifications and User Menu */}
+                {/* Right side - User Menu */}
                 <div className="flex items-center space-x-3">
-                    {/* Notifications */}
-                    <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="relative">
-                                <Bell className="h-5 w-5 text-slate-600" />
-                                <Badge
-                                    variant="destructive"
-                                    className="absolute -top-1 -right-1 h-5 w-5 flex items-center justify-center p-0 text-xs"
-                                >
-                                    3
-                                </Badge>
-                            </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-80">
-                            <DropdownMenuLabel>Notifications</DropdownMenuLabel>
-                            <DropdownMenuSeparator />
-                            <div className="max-h-96 overflow-y-auto">
-                                <div className="p-3 hover:bg-slate-50 cursor-pointer border-b">
-                                    <p className="text-sm font-medium text-slate-900">New user registration</p>
-                                    <p className="text-xs text-slate-500 mt-1">John Doe just signed up</p>
-                                    <p className="text-xs text-slate-400 mt-1">5 minutes ago</p>
-                                </div>
-                                <div className="p-3 hover:bg-slate-50 cursor-pointer border-b">
-                                    <p className="text-sm font-medium text-slate-900">Payment received</p>
-                                    <p className="text-xs text-slate-500 mt-1">Premium subscription payment of $29.99</p>
-                                    <p className="text-xs text-slate-400 mt-1">1 hour ago</p>
-                                </div>
-                                <div className="p-3 hover:bg-slate-50 cursor-pointer">
-                                    <p className="text-sm font-medium text-slate-900">System alert</p>
-                                    <p className="text-xs text-slate-500 mt-1">Database backup completed successfully</p>
-                                    <p className="text-xs text-slate-400 mt-1">2 hours ago</p>
-                                </div>
-                            </div>
-                        </DropdownMenuContent>
-                    </DropdownMenu>
-
                     {/* User Menu */}
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
