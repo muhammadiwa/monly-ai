@@ -189,6 +189,225 @@ router.post('/admin/auth/logout', requireAdminAuth, async (req: AdminAuthRequest
     }
 });
 
+// GET /api/admin/profile - Get admin profile
+router.get('/admin/profile', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        // Fetch admin profile from database
+        const admin = await adminStorage.getAdminById(req.admin.id);
+        if (!admin) {
+            return res.status(404).json({
+                success: false,
+                error: {
+                    code: 'RESOURCE_NOT_FOUND',
+                    message: 'Admin not found'
+                }
+            });
+        }
+
+        res.json({
+            success: true,
+            data: {
+                id: admin.id,
+                email: admin.email,
+                name: admin.name,
+                role: admin.role,
+                lastLogin: admin.lastLogin,
+                createdAt: admin.createdAt,
+            },
+        });
+    } catch (error) {
+        console.error('Error fetching admin profile:', error);
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to fetch admin profile'
+            }
+        });
+    }
+});
+
+// PUT /api/admin/profile - Update admin profile
+router.put('/admin/profile', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        // Validate input
+        const updateSchema = z.object({
+            name: z.string().min(1, 'Name is required').optional(),
+            email: z.string().email('Invalid email format').optional(),
+        });
+
+        const validatedData = updateSchema.parse(req.body);
+
+        // Check if email is already taken by another admin
+        if (validatedData.email) {
+            const existingAdmin = await adminStorage.getAdminByEmail(validatedData.email);
+            if (existingAdmin && existingAdmin.id !== req.admin.id) {
+                return res.status(400).json({
+                    success: false,
+                    error: {
+                        code: 'EMAIL_ALREADY_EXISTS',
+                        message: 'Email is already taken by another admin'
+                    }
+                });
+            }
+        }
+
+        // Update admin profile
+        const updatedAdmin = await adminStorage.updateAdmin(req.admin.id, validatedData);
+
+        // Log admin activity
+        await adminStorage.logAdminActivity({
+            adminId: req.admin.id,
+            action: 'UPDATE_PROFILE',
+            resourceType: 'ADMIN',
+            resourceId: req.admin.id,
+            details: validatedData,
+            ipAddress: req.ip || req.socket.remoteAddress,
+        });
+
+        res.json({
+            success: true,
+            data: {
+                id: updatedAdmin.id,
+                email: updatedAdmin.email,
+                name: updatedAdmin.name,
+                role: updatedAdmin.role,
+            },
+            message: 'Profile updated successfully',
+        });
+    } catch (error) {
+        console.error('Error updating admin profile:', error);
+
+        if (error instanceof z.ZodError) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Invalid input data',
+                    details: error.errors
+                }
+            });
+        }
+
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to update admin profile'
+            }
+        });
+    }
+});
+
+// PUT /api/admin/profile/password - Change admin password
+router.put('/admin/profile/password', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
+    try {
+        if (!req.admin) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'UNAUTHORIZED',
+                    message: 'Admin not authenticated'
+                }
+            });
+        }
+
+        // Validate input
+        const passwordSchema = z.object({
+            currentPassword: z.string().min(1, 'Current password is required'),
+            newPassword: z.string().min(8, 'New password must be at least 8 characters'),
+        });
+
+        const validatedData = passwordSchema.parse(req.body);
+
+        // Get admin from database
+        const admin = await adminStorage.getAdminById(req.admin.id);
+        if (!admin) {
+            return res.status(404).json({
+                success: false,
+                error: {
+                    code: 'RESOURCE_NOT_FOUND',
+                    message: 'Admin not found'
+                }
+            });
+        }
+
+        // Verify current password
+        const isValidPassword = await verifyAdminPassword(validatedData.currentPassword, admin.password);
+        if (!isValidPassword) {
+            return res.status(401).json({
+                success: false,
+                error: {
+                    code: 'INVALID_PASSWORD',
+                    message: 'Current password is incorrect'
+                }
+            });
+        }
+
+        // Hash new password
+        const { hashAdminPassword } = await import('./admin-auth');
+        const hashedPassword = await hashAdminPassword(validatedData.newPassword);
+
+        // Update password
+        await adminStorage.updateAdmin(req.admin.id, { password: hashedPassword });
+
+        // Log admin activity
+        await adminStorage.logAdminActivity({
+            adminId: req.admin.id,
+            action: 'CHANGE_PASSWORD',
+            resourceType: 'ADMIN',
+            resourceId: req.admin.id,
+            ipAddress: req.ip || req.socket.remoteAddress,
+        });
+
+        res.json({
+            success: true,
+            message: 'Password changed successfully',
+        });
+    } catch (error) {
+        console.error('Error changing admin password:', error);
+
+        if (error instanceof z.ZodError) {
+            return res.status(400).json({
+                success: false,
+                error: {
+                    code: 'VALIDATION_ERROR',
+                    message: 'Invalid input data',
+                    details: error.errors
+                }
+            });
+        }
+
+        res.status(500).json({
+            success: false,
+            error: {
+                code: 'INTERNAL_SERVER_ERROR',
+                message: 'Failed to change password'
+            }
+        });
+    }
+});
+
 // GET /api/admin/dashboard/metrics
 router.get('/admin/dashboard/metrics', requireAdminAuth, async (req: AdminAuthRequest, res: Response) => {
     try {

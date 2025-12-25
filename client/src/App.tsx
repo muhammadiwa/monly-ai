@@ -17,7 +17,7 @@ import Goals from "@/pages/goals";
 import Reports from "@/pages/reports";
 import Settings from "@/pages/settings";
 import WhatsAppIntegration from "@/pages/whatsapp-integration";
-import { AdminLogin, AdminDashboard, UserManagement, UserDetails, SubscriptionPlans, SubscriptionList, PaymentList, RevenueAnalytics, SystemSettings, WhatsAppBotConfig } from "@/admin/pages";
+import { AdminLogin, AdminDashboard, AdminProfile, UserManagement, UserDetails, SubscriptionPlans, SubscriptionList, PaymentList, RevenueAnalytics, SystemSettings, WhatsAppBotConfig } from "@/admin/pages";
 import MidtransMonitoring from "@/admin/pages/MidtransMonitoring";
 import { AdminRoute } from "@/admin/components";
 import { useEffect } from "react";
@@ -113,6 +113,11 @@ function Router() {
         <Route path="/admin/settings">
           <AdminRoute>
             <SystemSettings />
+          </AdminRoute>
+        </Route>
+        <Route path="/admin/profile">
+          <AdminRoute>
+            <AdminProfile />
           </AdminRoute>
         </Route>
         <Route path="/admin/*" component={AdminLogin} />
