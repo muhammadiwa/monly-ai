@@ -186,3 +186,6 @@ vite.config.ts.*
 .wwebjs_auth
 
 .kiro
+
+client/src/__tests__
+server/__tests__
