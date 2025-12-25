@@ -20,12 +20,12 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 
-import { 
-  MessageCircle, 
-  Smartphone, 
-  Plus, 
-  Clock, 
-  Trash2, 
+import {
+  MessageCircle,
+  Smartphone,
+  Plus,
+  Clock,
+  Trash2,
   Copy,
   CheckCircle,
   XCircle,
@@ -37,7 +37,7 @@ export default function WhatsAppIntegration() {
   const { toast } = useToast();
   const { user, isAuthenticated } = useAuth();
   const queryClient = useQueryClient();
-  
+
   const [timeRemainingUpdater, setTimeRemainingUpdater] = useState(0);
 
   // Fetch WhatsApp connections
@@ -131,7 +131,7 @@ export default function WhatsAppIntegration() {
 
   const handleCopyCode = async (code: string) => {
     const result = await copyActivationCode(code);
-    
+
     if (result.success) {
       toast({
         title: "✅ Kode Disalin",
@@ -403,58 +403,58 @@ export default function WhatsAppIntegration() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
                 {[
                   {
-                    title: "💰 Pencatatan Keuangan",
-                    description: "Catat pemasukan & pengeluaran dengan mudah",
-                    icon: "💸",
-                    examples: ["keluar 50000 untuk makan", "masuk 500000 dari gaji", "bayar 25000 transport"]
+                    title: "📝 Catat Transaksi (Teks)",
+                    description: "Kirim pesan teks untuk mencatat transaksi",
+                    icon: "💬",
+                    examples: ["Makan siang di McD 75000", "Beli bensin 50000", "Gaji bulan ini 5000000"]
                   },
                   {
-                    title: "📊 Cek Saldo & Laporan",
-                    description: "Lihat saldo dan ringkasan keuangan real-time",
-                    icon: "💰",
-                    examples: ["saldo", "hari ini", "minggu ini", "bulan ini"]
+                    title: "🎤 Catat Transaksi (Suara)",
+                    description: "Kirim voice note untuk mencatat transaksi",
+                    icon: "🎙️",
+                    examples: ["Tekan & tahan mikrofon", "Ucapkan transaksi Anda", "AI akan memproses otomatis"]
+                  },
+                  {
+                    title: "📸 Scan Struk/Nota",
+                    description: "Kirim foto struk untuk pencatatan otomatis",
+                    icon: "🧾",
+                    examples: ["Foto struk belanja", "Foto nota restoran", "AI OCR otomatis"]
+                  },
+                  {
+                    title: "💰 Cek Saldo",
+                    description: "Lihat ringkasan keuangan Anda",
+                    icon: "📊",
+                    examples: ["saldo", "balance", "ringkasan"]
                   },
                   {
                     title: "🎯 Manajemen Budget",
                     description: "Atur dan pantau budget per kategori",
                     icon: "📋",
-                    examples: ["budget check", "budget set makanan 1000000", "anggaran transport 500000"]
+                    examples: ["set budget makan 500000 per bulan", "cek budget saya", "daftar budget", "hapus budget [kategori]"]
                   },
                   {
-                    title: "🏆 Target & Goal",
-                    description: "Buat dan tracking target finansial",
+                    title: "🏆 Goal & Tabungan",
+                    description: "Buat dan kelola target tabungan",
                     icon: "🎯",
-                    examples: ["goal list", "goal add rumah 500000000", "target emergency 15000000"]
+                    examples: ["buat goal emergency fund target 10 juta", "nabung 100000 untuk liburan", "daftar goal", "cek tabungan"]
                   },
                   {
-                    title: "📈 Analisis Kategori",
-                    description: "Analisis pengeluaran per kategori",
-                    icon: "📊",
-                    examples: ["kategori", "analisis pengeluaran", "category breakdown"]
+                    title: "🏷️ Manajemen Kategori",
+                    description: "Kelola kategori transaksi Anda",
+                    icon: "📂",
+                    examples: ["buat kategori [nama] [emoji] [warna]", "daftar kategori", "ubah kategori [lama] menjadi [baru]", "hapus kategori [nama]"]
                   },
                   {
-                    title: "🤖 AI Financial Insights",
-                    description: "Saran dan insight cerdas dari AI",
-                    icon: "🧠",
-                    examples: ["ai insights", "saran keuangan", "tips hemat", "analisa pola"]
+                    title: "🔔 Notifikasi Otomatis",
+                    description: "Pengingat transaksi & alert budget",
+                    icon: "⏰",
+                    examples: ["Pengingat jam 8 malam", "Alert budget 80%", "Alert over budget"]
                   },
                   {
-                    title: "📱 Quick Commands",
-                    description: "Perintah cepat untuk info harian",
-                    icon: "⚡",
-                    examples: ["today", "yesterday", "week summary", "month report"]
-                  },
-                  {
-                    title: "🚨 Smart Alerts",
-                    description: "Notifikasi otomatis budget & target",
-                    icon: "🔔",
-                    examples: ["Auto notification", "Budget warnings", "Goal reminders"]
-                  },
-                  {
-                    title: "📑 Laporan Lengkap",
-                    description: "Laporan detail harian/mingguan/bulanan",
-                    icon: "📋",
-                    examples: ["laporan harian", "report weekly", "summary monthly"]
+                    title: "❓ Bantuan",
+                    description: "Lihat panduan penggunaan bot",
+                    icon: "📖",
+                    examples: ["bantuan", "help", "status"]
                   }
                 ].map((feature, index) => (
                   <div key={index} className="p-3 sm:p-4 bg-gray-50 rounded-lg border hover:bg-gray-100 transition-colors">
@@ -462,7 +462,7 @@ export default function WhatsAppIntegration() {
                     <h4 className="font-medium mb-1 text-sm sm:text-base">{feature.title}</h4>
                     <p className="text-xs sm:text-sm text-gray-600 mb-3">{feature.description}</p>
                     <div className="space-y-1">
-                      <div className="text-xs font-medium text-gray-700">Contoh perintah:</div>
+                      <div className="text-xs font-medium text-gray-700">Contoh:</div>
                       {feature.examples.map((example, idx) => (
                         <code key={idx} className="text-xs bg-gray-200 px-2 py-1 rounded block break-all">
                           {example}

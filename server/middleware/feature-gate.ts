@@ -1,8 +1,8 @@
 import { Response, NextFunction } from 'express';
 import { AuthRequest } from '../auth';
 import { db } from '../db';
-import { users, subscriptionPlans } from '../../shared/schema';
-import { eq } from 'drizzle-orm';
+import { users, subscriptionPlans, transactions } from '../../shared/schema';
+import { eq, sql, and, gte } from 'drizzle-orm';
 import { usageTrackingService, UsageFeature } from '../services/usage-tracking-service';
 
 export type FeatureName =
@@ -286,12 +286,16 @@ export async function checkTransactionLimit(userId: string): Promise<{ allowed: 
         startOfMonth.setHours(0, 0, 0, 0);
         const monthStartTimestamp = Math.floor(startOfMonth.getTime() / 1000);
 
-        const transactionCountResult = await db.execute(
-            `SELECT COUNT(*) as count FROM transactions WHERE user_id = ? AND created_at >= ?`,
-            [userId, monthStartTimestamp]
-        );
+        const transactionCountResult = db
+            .select({ count: sql<number>`COUNT(*)` })
+            .from(transactions)
+            .where(and(
+                eq(transactions.userId, userId),
+                gte(transactions.createdAt, monthStartTimestamp)
+            ))
+            .get();
 
-        const currentCount = (transactionCountResult.rows[0] as any)?.count || 0;
+        const currentCount = transactionCountResult?.count || 0;
 
         return {
             allowed: currentCount < transactionLimit,
