@@ -19,6 +19,7 @@ const router = Router();
 const adminLoginSchema = z.object({
     email: z.string().email('Invalid email format'),
     password: z.string().min(1, 'Password is required'),
+    rememberMe: z.boolean().optional().default(false),
 });
 
 // POST /api/admin/auth/login
@@ -62,13 +63,13 @@ router.post('/admin/auth/login', async (req: AdminAuthRequest, res: Response) =>
             ipAddress: req.ip || req.socket.remoteAddress,
         });
 
-        // Generate token
+        // Generate token with rememberMe flag
         const token = generateAdminToken({
             id: admin.id,
             email: admin.email,
             name: admin.name,
             role: admin.role,
-        });
+        }, validatedData.rememberMe);
 
         res.json({
             success: true,

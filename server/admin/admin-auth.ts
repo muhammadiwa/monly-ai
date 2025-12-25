@@ -27,17 +27,18 @@ export async function verifyAdminPassword(password: string, hashedPassword: stri
 }
 
 // Generate JWT token for admin
-export function generateAdminToken(admin: AdminUser): string {
+export function generateAdminToken(admin: AdminUser, rememberMe: boolean = false): string {
     return jwt.sign(
         {
             id: admin.id,
             email: admin.email,
             name: admin.name,
             role: admin.role,
-            type: 'admin' // Distinguish admin tokens from user tokens
+            type: 'admin', // Distinguish admin tokens from user tokens
+            rememberMe // Include rememberMe flag in token
         },
         ADMIN_JWT_SECRET,
-        { expiresIn: '1h' } // 1 hour expiry for admin tokens
+        { expiresIn: rememberMe ? '7d' : '1h' } // 7 days if remember me, otherwise 1 hour
     );
 }
 

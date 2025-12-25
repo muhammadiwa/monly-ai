@@ -105,6 +105,7 @@ export default function AdminLogin() {
                 body: JSON.stringify({
                     email: formData.email,
                     password: formData.password,
+                    rememberMe: formData.rememberMe,
                 }),
             });
 
@@ -255,14 +256,16 @@ export default function AdminLogin() {
                             </div>
 
                             <div className="flex items-center justify-between">
-                                <label className="flex items-center cursor-pointer">
+                                <label className="flex items-center cursor-pointer group">
                                     <input
                                         type="checkbox"
                                         checked={formData.rememberMe}
                                         onChange={(e) => setFormData({ ...formData, rememberMe: e.target.checked })}
-                                        className="mr-2 cursor-pointer"
+                                        className="mr-2 cursor-pointer w-4 h-4 text-purple-600 bg-white/20 border-white/30 rounded focus:ring-purple-500 focus:ring-2"
                                     />
-                                    <span className="text-sm text-gray-300">Remember me</span>
+                                    <span className="text-sm text-gray-300 group-hover:text-white transition-colors">
+                                        Remember me
+                                    </span>
                                 </label>
                             </div>
 
