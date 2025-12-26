@@ -49,6 +49,7 @@ interface UserSubscription {
     planName: string;
     planDisplayName: string;
     status: string;
+    billingCycle: 'monthly' | 'yearly' | null;
 }
 
 export default function Pricing() {
@@ -219,7 +220,17 @@ export default function Pricing() {
     };
 
     const isCurrentPlan = (planName: string) => {
-        return currentSubscription?.planName?.toLowerCase() === planName.toLowerCase();
+        // Check if plan name matches AND billing cycle matches
+        const isSamePlan = currentSubscription?.planName?.toLowerCase() === planName.toLowerCase();
+        const isSameBillingCycle = currentSubscription?.billingCycle === billingCycle;
+
+        // For free plan, billing cycle doesn't matter
+        if (planName.toLowerCase() === 'free') {
+            return isSamePlan;
+        }
+
+        // For paid plans, both plan name AND billing cycle must match
+        return isSamePlan && isSameBillingCycle;
     };
 
     const canUpgrade = (planName: string) => {
@@ -228,6 +239,7 @@ export default function Pricing() {
 
         const currentPlanName = currentSubscription.planName?.toLowerCase() || 'free';
         const targetPlanName = planName.toLowerCase();
+        const currentBillingCycle = currentSubscription.billingCycle;
 
         // Plan hierarchy from lowest to highest
         const planHierarchy = ['free', 'starter', 'plus', 'pro'];
@@ -235,7 +247,14 @@ export default function Pricing() {
         const targetIndex = planHierarchy.indexOf(targetPlanName);
 
         // Can upgrade if target plan is higher than current plan
-        return targetIndex > currentIndex;
+        if (targetIndex > currentIndex) return true;
+
+        // Same plan but different billing cycle - allow switching
+        if (currentPlanName === targetPlanName && currentBillingCycle !== billingCycle) {
+            return true;
+        }
+
+        return false;
     };
 
     const formatLimit = (limit: number | undefined) => {
@@ -484,7 +503,10 @@ export default function Pricing() {
                                             className={`w-full bg-gradient-to-r ${getPlanColor(plan.name)} hover:opacity-90 text-white`}
                                             onClick={() => handleCheckout(plan)}
                                         >
-                                            {isAuthenticated ? 'Upgrade Now' : 'Subscribe'}
+                                            {/* Check if same plan but different billing cycle */}
+                                            {currentSubscription?.planName?.toLowerCase() === plan.name.toLowerCase()
+                                                ? `Switch to ${billingCycle === 'yearly' ? 'Yearly' : 'Monthly'}`
+                                                : isAuthenticated ? 'Upgrade Now' : 'Subscribe'}
                                         </Button>
                                     ) : (
                                         <Button
@@ -521,6 +543,7 @@ export default function Pricing() {
                 {selectedPlan && (
                     <CheckoutModal
                         plan={selectedPlan}
+                        billingCycle={billingCycle}
                         open={checkoutModalOpen}
                         onClose={() => {
                             setCheckoutModalOpen(false);

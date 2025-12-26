@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -51,6 +51,7 @@ interface Plan {
 
 interface CheckoutModalProps {
     plan: Plan;
+    billingCycle?: 'monthly' | 'yearly';
     open: boolean;
     onClose: () => void;
     onSuccess: (subscriptionId: number) => void;
@@ -58,13 +59,19 @@ interface CheckoutModalProps {
 
 export default function CheckoutModal({
     plan,
+    billingCycle: initialBillingCycle = 'monthly',
     open,
     onClose,
     onSuccess,
 }: CheckoutModalProps) {
     const { toast } = useToast();
-    const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly');
+    const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>(initialBillingCycle);
     const [agreeToTerms, setAgreeToTerms] = useState(false);
+
+    // Update billing cycle when prop changes (e.g., when user switches toggle on pricing page)
+    useEffect(() => {
+        setBillingCycle(initialBillingCycle);
+    }, [initialBillingCycle]);
 
     const checkoutMutation = useMutation({
         mutationFn: async () => {
