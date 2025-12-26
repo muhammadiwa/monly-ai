@@ -1165,6 +1165,7 @@ router.get('/admin/users/:id/activity', requireAdminAuth, async (req: AdminAuthR
 // Subscription Plans CRUD API
 
 // Validation schemas for subscription plans
+// Structure matches seed-subscription-plans.ts and feature-gate.ts
 const createPlanSchema = z.object({
     name: z.string().min(1, 'Plan name is required'),
     displayName: z.string().min(1, 'Display name is required'),
@@ -1172,17 +1173,8 @@ const createPlanSchema = z.object({
     priceMonthly: z.number().min(0, 'Monthly price must be non-negative'),
     priceYearly: z.number().min(0, 'Yearly price must be non-negative'),
     currency: z.string().default('IDR'),
-    features: z.array(z.string()).min(1, 'At least one feature is required'),
-    limits: z.object({
-        transactionLimit: z.number().int(),
-        accountLimit: z.number().int(),
-        budgetLimit: z.number().int(),
-        goalLimit: z.number().int(),
-        aiInsights: z.boolean(),
-        advancedReports: z.boolean(),
-        prioritySupport: z.boolean(),
-        apiAccess: z.boolean(),
-    }),
+    features: z.string(), // JSON string array of feature descriptions
+    limits: z.string(), // JSON string of limits object
     isActive: z.boolean().optional(),
 });
 

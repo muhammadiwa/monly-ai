@@ -26,7 +26,7 @@ import { z } from "zod";
 import session from "express-session";
 import MemoryStore from "memorystore";
 import { getAIClient, getModelForTask, getCurrentProviderInfo } from "./ai-provider";
-import { requireFeature, checkUsageLimit, FeatureName } from './middleware/feature-gate';
+import { requireFeature, checkUsageLimit, FeatureName, checkResourceLimitMiddleware, ResourceLimitType, canUseFeature } from './middleware/feature-gate';
 import { usageTrackingService, UsageFeature } from './services/usage-tracking-service';
 import passport from 'passport';
 import { configureGoogleAuth, generateOAuthToken } from './google-auth';
@@ -35,6 +35,7 @@ import { configureGoogleAuth, generateOAuthToken } from './google-auth';
 const auth = requireAuth as unknown as RequestHandler;
 const featureGate = (feature: FeatureName) => requireFeature(feature) as unknown as RequestHandler;
 const usageLimit = (type: UsageFeature) => checkUsageLimit(type) as unknown as RequestHandler;
+const resourceLimit = (type: ResourceLimitType) => checkResourceLimitMiddleware(type) as unknown as RequestHandler;
 
 // Helper to wrap async route handlers with proper typing
 const asyncHandler = (fn: (req: AuthRequest, res: Response) => Promise<any>): RequestHandler =>
@@ -503,6 +504,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const preferencesData = updateUserPreferencesSchema.parse(req.body);
       console.log('Parsed preferences data:', preferencesData);
 
+      // Check if user is trying to enable WhatsApp notification features
+      const isEnablingWhatsApp = preferencesData.budgetAlerts === true || preferencesData.transactionReminders === true;
+
+      if (isEnablingWhatsApp) {
+        // Check if user has access to whatsapp_notifications feature
+        const hasWhatsAppAccess = await canUseFeature(req.user.id, 'whatsapp_notifications');
+        if (!hasWhatsAppAccess) {
+          return res.status(403).json({
+            error: 'Feature not available in your plan',
+            feature: 'whatsapp_notifications',
+            upgradeRequired: true,
+          });
+        }
+      }
+
       // Check if preferences exist, if not create them first
       let preferences = await storage.getUserPreferences(req.user.id);
       if (!preferences) {
@@ -613,7 +629,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/transactions', auth, async (req: AuthRequest, res: Response) => {
+  app.post('/api/transactions', auth, resourceLimit('transactions'), async (req: AuthRequest, res: Response) => {
     try {
       if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
 
@@ -842,7 +858,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/budgets', auth, async (req: AuthRequest, res: Response) => {
+  app.post('/api/budgets', auth, resourceLimit('budgets'), async (req: AuthRequest, res: Response) => {
     try {
       if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
 
@@ -1196,7 +1212,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/goals', auth, async (req: AuthRequest, res: Response) => {
+  app.post('/api/goals', auth, resourceLimit('goals'), async (req: AuthRequest, res: Response) => {
     try {
       if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
 

@@ -3,11 +3,13 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { isUnauthorizedError } from '@/lib/authUtils';
 import { useToast } from '@/hooks/use-toast';
+import { useSubscription } from '@/hooks/useSubscription';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Avatar } from '@/components/ui/avatar';
-import { Loader2, Send, Bot, X, Minimize2, Maximize2, Mic, MicOff, Camera } from 'lucide-react';
+import { Loader2, Send, Bot, X, Minimize2, Maximize2, Mic, MicOff, Camera, Lock, Sparkles } from 'lucide-react';
+import { Link } from 'wouter';
 import FeatureGate from '@/components/subscription/FeatureGate';
 
 interface Message {
@@ -25,10 +27,15 @@ interface ChatWidgetProps {
 }
 
 export function ChatWidget({ isOpen, onToggle }: ChatWidgetProps) {
+  const { canUseFeature, subscription } = useSubscription();
+  const hasAiChatAccess = canUseFeature('ai_chat');
+
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
-      text: 'Hi! 👋 I\'m Monly AI, your smart financial assistant. Tell me about your expenses and I\'ll automatically track them for you!\n\nTry saying: "I spent $25 on lunch at McDonald\'s"',
+      text: hasAiChatAccess
+        ? 'Hi! 👋 I\'m Monly AI, your smart financial assistant. Tell me about your expenses and I\'ll automatically track them for you!\n\nTry saying: "I spent $25 on lunch at McDonald\'s"'
+        : '👋 Hi! I\'m Monly AI, your smart financial assistant.\n\n🔒 AI Chat is a premium feature. Upgrade your plan to start chatting with me and track your expenses automatically!',
       type: 'ai',
       timestamp: new Date(),
     }
@@ -100,9 +107,21 @@ export function ChatWidget({ isOpen, onToggle }: ChatWidgetProps) {
         return;
       }
 
+      // Parse error message for feature gate errors
+      let errorText = '❌ Sorry, I couldn\'t process your message. Please try again or check your internet connection.';
+
+      if (error instanceof Error) {
+        // Check if it's a feature not available error
+        if (error.message.includes('Feature not available') || error.message.includes('upgradeRequired')) {
+          errorText = '🔒 AI Chat is not available in your current plan. Please upgrade to use this feature.';
+        } else if (error.message.includes('Usage limit reached')) {
+          errorText = '⚠️ You\'ve reached your AI Chat limit for this month. Please upgrade for more messages.';
+        }
+      }
+
       const errorMessage: Message = {
         id: Date.now().toString(),
-        text: '❌ Sorry, I couldn\'t process your message. Please try again or check your internet connection.',
+        text: errorText,
         type: 'ai',
         timestamp: new Date(),
         isError: true,
@@ -502,101 +521,138 @@ export function ChatWidget({ isOpen, onToggle }: ChatWidgetProps) {
 
             {/* Input */}
             <div className="border-t bg-white p-4">
-              <div className="flex gap-2 items-end">
-                <div className="flex-1">
-                  <Input
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyPress={handleKeyPress}
-                    placeholder="Tell me about your expense..."
-                    disabled={sendMessageMutation.isPending}
-                    className="border-gray-300 focus:border-emerald-500 focus:ring-emerald-500 rounded-2xl"
-                  />
-                </div>
-
-                <Button
-                  type="button"
-                  variant={isRecording ? "destructive" : "outline"}
-                  size="icon"
-                  onClick={isRecording ? stopRecording : startRecording}
-                  disabled={sendVoiceMutation.isPending}
-                  className="rounded-full"
-                >
-                  {sendVoiceMutation.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : isRecording ? (
-                    <MicOff className="h-4 w-4" />
-                  ) : (
-                    <Mic className="h-4 w-4" />
-                  )}
-                </Button>
-
-                <FeatureGate feature="receipt_ocr" showUpgradePrompt={true}>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={sendImageMutation.isPending}
-                    className="rounded-full"
-                  >
-                    {sendImageMutation.isPending ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Camera className="h-4 w-4" />
-                    )}
+              {!hasAiChatAccess ? (
+                /* Locked state - compact upgrade prompt */
+                <div className="flex gap-2 items-center">
+                  <div className="flex-1 relative">
+                    <Input
+                      placeholder="Upgrade to chat with AI..."
+                      disabled
+                      className="border-gray-300 rounded-2xl pr-10 opacity-60"
+                    />
+                    <Lock className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  </div>
+                  <Button asChild size="icon" className="bg-gradient-to-r from-purple-500 to-blue-600 hover:from-purple-600 hover:to-blue-700 rounded-full h-10 w-10">
+                    <Link href="/pricing">
+                      <Sparkles className="h-4 w-4" />
+                    </Link>
                   </Button>
+                </div>
+              ) : (
+                /* Normal input state */
+                <>
+                  <div className="flex gap-2 items-end">
+                    <div className="flex-1">
+                      <Input
+                        value={input}
+                        onChange={(e) => setInput(e.target.value)}
+                        onKeyPress={handleKeyPress}
+                        placeholder="Tell me about your expense..."
+                        disabled={sendMessageMutation.isPending}
+                        className="border-gray-300 focus:border-emerald-500 focus:ring-emerald-500 rounded-2xl"
+                      />
+                    </div>
 
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={handleFileUpload}
-                  />
-                </FeatureGate>
+                    <Button
+                      type="button"
+                      variant={isRecording ? "destructive" : "outline"}
+                      size="icon"
+                      onClick={isRecording ? stopRecording : startRecording}
+                      disabled={sendVoiceMutation.isPending}
+                      className="rounded-full"
+                    >
+                      {sendVoiceMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : isRecording ? (
+                        <MicOff className="h-4 w-4" />
+                      ) : (
+                        <Mic className="h-4 w-4" />
+                      )}
+                    </Button>
 
-                <Button
-                  type="button"
-                  onClick={handleSendMessage}
-                  disabled={!input.trim() || sendMessageMutation.isPending}
-                  className="bg-gradient-to-r from-emerald-500 to-blue-600 hover:from-emerald-600 hover:to-blue-700 rounded-full px-4"
-                >
-                  {sendMessageMutation.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Send className="h-4 w-4" />
-                  )}
-                </Button>
-              </div>
+                    <FeatureGate
+                      feature="receipt_ocr"
+                      showUpgradePrompt={false}
+                      fallback={
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          className="rounded-full opacity-50 cursor-not-allowed"
+                          title="Receipt OCR - Upgrade to unlock"
+                          disabled
+                        >
+                          <Camera className="h-4 w-4" />
+                        </Button>
+                      }
+                    >
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={sendImageMutation.isPending}
+                        className="rounded-full"
+                      >
+                        {sendImageMutation.isPending ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Camera className="h-4 w-4" />
+                        )}
+                      </Button>
 
-              {/* Quick Actions */}
-              <div className="flex gap-2 mt-3">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setInput("I spent $25 on lunch")}
-                  className="text-xs text-gray-600 hover:bg-gray-100 rounded-full"
-                >
-                  🍽️ Lunch
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setInput("I paid $50 for gas")}
-                  className="text-xs text-gray-600 hover:bg-gray-100 rounded-full"
-                >
-                  ⛽ Gas
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setInput("I earned $500 from freelancing")}
-                  className="text-xs text-gray-600 hover:bg-gray-100 rounded-full"
-                >
-                  💼 Income
-                </Button>
-              </div>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={handleFileUpload}
+                      />
+                    </FeatureGate>
+
+                    <Button
+                      type="button"
+                      onClick={handleSendMessage}
+                      disabled={!input.trim() || sendMessageMutation.isPending}
+                      className="bg-gradient-to-r from-emerald-500 to-blue-600 hover:from-emerald-600 hover:to-blue-700 rounded-full px-4"
+                    >
+                      {sendMessageMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Send className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
+
+                  {/* Quick Actions */}
+                  <div className="flex gap-2 mt-3">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setInput("I spent $25 on lunch")}
+                      className="text-xs text-gray-600 hover:bg-gray-100 rounded-full"
+                    >
+                      🍽️ Lunch
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setInput("I paid $50 for gas")}
+                      className="text-xs text-gray-600 hover:bg-gray-100 rounded-full"
+                    >
+                      ⛽ Gas
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setInput("I earned $500 from freelancing")}
+                      className="text-xs text-gray-600 hover:bg-gray-100 rounded-full"
+                    >
+                      💼 Income
+                    </Button>
+                  </div>
+                </>
+              )}
             </div>
           </>
         )}

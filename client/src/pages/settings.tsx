@@ -3,6 +3,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { useSubscription } from "@/hooks/useSubscription";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -38,7 +39,8 @@ import {
   XCircle,
   Crown,
   ArrowUpRight,
-  MessageSquare
+  MessageSquare,
+  Sparkles
 } from "lucide-react";
 
 interface UserPreferences {
@@ -64,6 +66,7 @@ interface UserProfile {
 export default function Settings() {
   const { toast } = useToast();
   const { user, isAuthenticated, isLoading, logout } = useAuth();
+  const { canUseFeature } = useSubscription();
   const queryClient = useQueryClient();
 
   const [preferences, setPreferences] = useState<UserPreferences | null>(null);
@@ -737,53 +740,79 @@ export default function Settings() {
                 </p>
               </CardHeader>
               <CardContent className="p-3 sm:p-6 space-y-3">
-                {[
-                  {
-                    id: "budget-alerts",
-                    key: "budgetAlerts" as keyof UserPreferences,
-                    title: "Budget Alerts",
-                    desc: "Get notified when you're close to or exceed your budget",
-                    icon: "💰",
-                    checked: notificationData.budgetAlerts || false
-                  },
-                  {
-                    id: "transaction-reminders",
-                    key: "transactionReminders" as keyof UserPreferences,
-                    title: "Transaction Reminders",
-                    desc: "Daily reminders to log your transactions",
-                    icon: "⏰",
-                    checked: notificationData.transactionReminders || false
-                  }
-                ].map((item) => (
-                  <div key={item.id} className="flex items-center justify-between p-4 bg-white rounded-lg border">
-                    <div className="flex items-center gap-3">
-                      <span className="text-2xl">{item.icon}</span>
-                      <div>
-                        <Label htmlFor={item.id} className="text-base font-medium">{item.title}</Label>
-                        <p className="text-sm text-gray-600">{item.desc}</p>
+                {/* Feature Gate Check for WhatsApp Notifications */}
+                {!canUseFeature('whatsapp_notifications') ? (
+                  <div className="p-6 bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg border border-purple-200">
+                    <div className="flex items-start gap-4">
+                      <div className="p-3 bg-purple-100 rounded-lg">
+                        <Lock className="h-6 w-6 text-purple-600" />
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="text-lg font-semibold text-gray-900 mb-1">Premium Feature</h3>
+                        <p className="text-sm text-gray-600 mb-4">
+                          WhatsApp Notifications is not available in your current plan. Upgrade to receive budget alerts and transaction reminders via WhatsApp.
+                        </p>
+                        <Button
+                          onClick={() => window.location.href = '/pricing'}
+                          className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700"
+                        >
+                          <Sparkles className="h-4 w-4 mr-2" />
+                          Upgrade Plan
+                        </Button>
                       </div>
                     </div>
-                    <Switch
-                      id={item.id}
-                      checked={item.checked}
-                      onCheckedChange={(checked) => {
-                        setNotificationData(prev => ({ ...prev, [item.key]: checked }));
-                        handlePreferenceUpdate(item.key, checked);
-                      }}
-                    />
                   </div>
-                ))}
+                ) : (
+                  <>
+                    {[
+                      {
+                        id: "budget-alerts",
+                        key: "budgetAlerts" as keyof UserPreferences,
+                        title: "Budget Alerts",
+                        desc: "Get notified when you're close to or exceed your budget",
+                        icon: "💰",
+                        checked: notificationData.budgetAlerts || false
+                      },
+                      {
+                        id: "transaction-reminders",
+                        key: "transactionReminders" as keyof UserPreferences,
+                        title: "Transaction Reminders",
+                        desc: "Daily reminders to log your transactions",
+                        icon: "⏰",
+                        checked: notificationData.transactionReminders || false
+                      }
+                    ].map((item) => (
+                      <div key={item.id} className="flex items-center justify-between p-4 bg-white rounded-lg border">
+                        <div className="flex items-center gap-3">
+                          <span className="text-2xl">{item.icon}</span>
+                          <div>
+                            <Label htmlFor={item.id} className="text-base font-medium">{item.title}</Label>
+                            <p className="text-sm text-gray-600">{item.desc}</p>
+                          </div>
+                        </div>
+                        <Switch
+                          id={item.id}
+                          checked={item.checked}
+                          onCheckedChange={(checked) => {
+                            setNotificationData(prev => ({ ...prev, [item.key]: checked }));
+                            handlePreferenceUpdate(item.key, checked);
+                          }}
+                        />
+                      </div>
+                    ))}
 
-                <div className="pt-4">
-                  <Button
-                    variant="outline"
-                    onClick={() => window.location.href = '/whatsapp-integration'}
-                    className="w-full sm:w-auto"
-                  >
-                    <MessageSquare className="h-4 w-4 mr-2" />
-                    Manage WhatsApp Connection
-                  </Button>
-                </div>
+                    <div className="pt-4">
+                      <Button
+                        variant="outline"
+                        onClick={() => window.location.href = '/whatsapp-integration'}
+                        className="w-full sm:w-auto"
+                      >
+                        <MessageSquare className="h-4 w-4 mr-2" />
+                        Manage WhatsApp Connection
+                      </Button>
+                    </div>
+                  </>
+                )}
               </CardContent>
             </Card>
           </TabsContent>

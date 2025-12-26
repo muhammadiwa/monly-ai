@@ -246,7 +246,9 @@ export default function BudgetsPage() {
           });
           window.location.href = "/auth";
         }
-        throw new Error("Failed to create budget");
+        // Parse error response to get actual error message
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to create budget");
       }
       return response.json();
     },
@@ -260,10 +262,10 @@ export default function BudgetsPage() {
         description: "Your budget has been created successfully.",
       });
     },
-    onError: () => {
+    onError: (error: Error) => {
       toast({
         title: "Error",
-        description: "Failed to create budget. Please try again.",
+        description: error.message || "Failed to create budget. Please try again.",
         variant: "destructive",
       });
     },

@@ -4,13 +4,26 @@ import { handleAuthError } from "./authUtils";
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
-    
-    // Handle auth errors globally
-    if (res.status === 401 || res.status === 403) {
+
+    // Handle auth errors globally (only for actual auth issues, not resource limits)
+    if (res.status === 401) {
       handleAuthError({ status: res.status, message: text });
     }
-    
-    throw new Error(`${res.status}: ${text}`);
+
+    // Try to parse JSON error response for better error messages
+    let errorMessage = text;
+    try {
+      const jsonError = JSON.parse(text);
+      if (jsonError.error) {
+        errorMessage = jsonError.error;
+      } else if (jsonError.message) {
+        errorMessage = jsonError.message;
+      }
+    } catch {
+      // Not JSON, use raw text
+    }
+
+    throw new Error(errorMessage);
   }
 }
 
@@ -21,14 +34,14 @@ export async function apiRequest(
 ): Promise<Response> {
   // Get auth token from localStorage
   const authToken = localStorage.getItem('auth-token');
-  
+
   const headers: any = data ? { "Content-Type": "application/json" } : {};
-  
+
   // Add Authorization header if token exists
   if (authToken) {
     headers['Authorization'] = `Bearer ${authToken}`;
   }
-  
+
   const res = await fetch(url, {
     method,
     headers,
@@ -45,29 +58,29 @@ export const getQueryFn: <T>(options: {
   on401: UnauthorizedBehavior;
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
-  async ({ queryKey }) => {
-    // Get auth token from localStorage
-    const authToken = localStorage.getItem('auth-token');
-    
-    const headers: any = {};
-    
-    // Add Authorization header if token exists
-    if (authToken) {
-      headers['Authorization'] = `Bearer ${authToken}`;
-    }
-    
-    const res = await fetch(queryKey.join(""), {
-      credentials: "include",
-      headers,
-    });
+    async ({ queryKey }) => {
+      // Get auth token from localStorage
+      const authToken = localStorage.getItem('auth-token');
 
-    if (unauthorizedBehavior === "returnNull" && res.status === 401) {
-      return null;
-    }
+      const headers: any = {};
 
-    await throwIfResNotOk(res);
-    return await res.json();
-  };
+      // Add Authorization header if token exists
+      if (authToken) {
+        headers['Authorization'] = `Bearer ${authToken}`;
+      }
+
+      const res = await fetch(queryKey.join(""), {
+        credentials: "include",
+        headers,
+      });
+
+      if (unauthorizedBehavior === "returnNull" && res.status === 401) {
+        return null;
+      }
+
+      await throwIfResNotOk(res);
+      return await res.json();
+    };
 
 export const queryClient = new QueryClient({
   defaultOptions: {

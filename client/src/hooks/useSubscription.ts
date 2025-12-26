@@ -9,10 +9,24 @@ export type FeatureName =
     | 'export_data'
     | 'advanced_reports';
 
+export type ResourceLimitType = 'budgets' | 'goals' | 'transactions';
+
 interface UsageStats {
     receiptOCR: { used: number; limit: number };
     aiChat: { used: number; limit: number };
     aiAnalysis: { used: number; limit: number };
+}
+
+interface ResourceLimit {
+    allowed: boolean;
+    limit: number;
+    current: number;
+}
+
+interface ResourceLimits {
+    budgets: ResourceLimit;
+    goals: ResourceLimit;
+    transactions: ResourceLimit;
 }
 
 interface PlanLimits {
@@ -26,9 +40,6 @@ interface PlanLimits {
     exportData: boolean;
     advancedReports: boolean;
     prioritySupport: boolean;
-    apiAccess?: boolean;
-    customReports?: boolean;
-    dedicatedSupport?: boolean;
 }
 
 interface UserSubscription {
@@ -50,9 +61,12 @@ export type UsageLimitType = keyof UsageStats;
 interface UseSubscriptionReturn {
     subscription: UserSubscription | null;
     usage: UsageStats | null;
+    resourceLimits: ResourceLimits | null;
     canUseFeature: (feature: FeatureName) => boolean;
     hasReachedLimit: (limitType: UsageLimitType) => boolean;
+    hasReachedResourceLimit: (resourceType: ResourceLimitType) => boolean;
     getRemainingQuota: (limitType: UsageLimitType) => number;
+    getResourceLimit: (resourceType: ResourceLimitType) => ResourceLimit | null;
     isLoading: boolean;
     error: Error | null;
     refetch: () => void;
@@ -60,7 +74,6 @@ interface UseSubscriptionReturn {
 
 /**
  * Hook for managing subscription and usage data
- * Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7, 5.8
  */
 export function useSubscription(): UseSubscriptionReturn {
     // Fetch current subscription
@@ -76,7 +89,7 @@ export function useSubscription(): UseSubscriptionReturn {
             if (!response.ok) throw new Error('Failed to fetch subscription');
             return response.json();
         },
-        staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+        staleTime: 5 * 60 * 1000,
         retry: 1,
     });
 
@@ -93,36 +106,42 @@ export function useSubscription(): UseSubscriptionReturn {
             if (!response.ok) throw new Error('Failed to fetch usage');
             return response.json();
         },
-        staleTime: 1 * 60 * 1000, // Cache for 1 minute (usage changes more frequently)
+        staleTime: 1 * 60 * 1000,
         retry: 1,
     });
 
     const subscription: UserSubscription | null = subscriptionResponse?.data || null;
     const usage: UsageStats | null = usageResponse?.data || subscription?.usage || null;
+    const resourceLimits: ResourceLimits | null = usageResponse?.data?.resourceLimits || null;
 
     const isLoading = subscriptionLoading || usageLoading;
     const error = subscriptionError || usageError;
 
     /**
-     * Check if user can use a specific feature based on their plan
-     * Requirements: 5.2, 5.3, 5.7
+     * Check if user can use a specific feature based on their plan limits
+     * Only active subscriptions can use premium features
      */
     const canUseFeature = (feature: FeatureName): boolean => {
         if (!subscription) return false;
+
+        // Only active or free status can use features
+        // pending, expired, cancelled subscriptions cannot use premium features
+        if (subscription.status !== 'active' && subscription.status !== 'free') {
+            // For pending/expired/cancelled, check if it's a free-tier feature
+            // Free plan has aiChat: 0, receiptOCR: 0, etc.
+            return false;
+        }
 
         const limits = subscription.limits;
 
         switch (feature) {
             case 'ai_categorization':
-                // AI categorization requires Premium or Business plan
-                return subscription.planName !== 'free';
+                return limits.aiAnalysis > 0 || limits.aiAnalysis === -1;
 
             case 'receipt_ocr':
-                // Check if OCR is available and not at limit
                 return limits.receiptOCR > 0 || limits.receiptOCR === -1;
 
             case 'ai_chat':
-                // Check if AI chat is available and not at limit
                 return limits.aiChat > 0 || limits.aiChat === -1;
 
             case 'whatsapp_notifications':
@@ -140,43 +159,54 @@ export function useSubscription(): UseSubscriptionReturn {
     };
 
     /**
-     * Check if user has reached the limit for a specific usage type
-     * Requirements: 5.1, 5.4
+     * Check if user has reached the limit for a specific usage type (AI features)
      */
     const hasReachedLimit = (limitType: UsageLimitType): boolean => {
-        if (!subscription || !usage) return false;
+        if (!usage) return false;
 
         const usageData = usage[limitType];
         if (!usageData) return false;
 
-        // -1 means unlimited
         if (usageData.limit === -1) return false;
 
-        // Check if used >= limit
         return usageData.used >= usageData.limit;
     };
 
     /**
+     * Check if user has reached resource limit (budgets/goals/transactions)
+     */
+    const hasReachedResourceLimit = (resourceType: ResourceLimitType): boolean => {
+        if (!resourceLimits) return false;
+
+        const limit = resourceLimits[resourceType];
+        if (!limit) return false;
+
+        return !limit.allowed;
+    };
+
+    /**
      * Get remaining quota for a specific usage type
-     * Requirements: 5.5, 5.6
      */
     const getRemainingQuota = (limitType: UsageLimitType): number => {
-        if (!subscription || !usage) return 0;
+        if (!usage) return 0;
 
         const usageData = usage[limitType];
         if (!usageData) return 0;
 
-        // -1 means unlimited
         if (usageData.limit === -1) return Infinity;
 
-        // Calculate remaining
         const remaining = usageData.limit - usageData.used;
         return Math.max(0, remaining);
     };
 
     /**
-     * Refetch both subscription and usage data
+     * Get resource limit info
      */
+    const getResourceLimit = (resourceType: ResourceLimitType): ResourceLimit | null => {
+        if (!resourceLimits) return null;
+        return resourceLimits[resourceType] || null;
+    };
+
     const refetch = () => {
         refetchSubscription();
         refetchUsage();
@@ -185,9 +215,12 @@ export function useSubscription(): UseSubscriptionReturn {
     return {
         subscription,
         usage,
+        resourceLimits,
         canUseFeature,
         hasReachedLimit,
+        hasReachedResourceLimit,
         getRemainingQuota,
+        getResourceLimit,
         isLoading,
         error: error as Error | null,
         refetch,

@@ -223,7 +223,7 @@ export async function canUseFeature(userId: string, feature: FeatureName): Promi
 
 /**
  * Helper function to check transaction limit
- * Requirements: 5.1
+ * NO HARDCODE - limits come from subscription_plans table
  */
 export async function checkTransactionLimit(userId: string): Promise<{ allowed: boolean; limit: number; current: number }> {
     try {
@@ -236,23 +236,39 @@ export async function checkTransactionLimit(userId: string): Promise<{ allowed: 
             .where(eq(users.id, userId))
             .get();
 
-        if (!user || !user.subscriptionPlanId) {
-            // User has no plan (free tier) - assume limit of 0
-            return { allowed: false, limit: 0, current: 0 };
-        }
+        let plan;
 
-        // Get plan details
-        const plan = await db
-            .select()
-            .from(subscriptionPlans)
-            .where(eq(subscriptionPlans.id, user.subscriptionPlanId))
-            .get();
+        if (!user || !user.subscriptionPlanId) {
+            // User has no subscription - get "free" plan from database
+            plan = db
+                .select()
+                .from(subscriptionPlans)
+                .where(eq(subscriptionPlans.name, 'free'))
+                .get();
+        } else {
+            // Get user's subscription plan
+            plan = db
+                .select()
+                .from(subscriptionPlans)
+                .where(eq(subscriptionPlans.id, user.subscriptionPlanId))
+                .get();
+
+            // If plan not found (e.g., deleted), fallback to free plan
+            if (!plan) {
+                plan = db
+                    .select()
+                    .from(subscriptionPlans)
+                    .where(eq(subscriptionPlans.name, 'free'))
+                    .get();
+            }
+        }
 
         if (!plan) {
+            console.error('No plan found for user (including free fallback):', userId);
             return { allowed: false, limit: 0, current: 0 };
         }
 
-        // Parse plan limits
+        // Parse plan limits from database
         const planLimits = JSON.parse(plan.limits);
         const transactionLimit = planLimits.transactions || 0;
 
@@ -262,7 +278,6 @@ export async function checkTransactionLimit(userId: string): Promise<{ allowed: 
         }
 
         // Count user's transactions this month
-        const now = Math.floor(Date.now() / 1000);
         const startOfMonth = new Date();
         startOfMonth.setDate(1);
         startOfMonth.setHours(0, 0, 0, 0);
@@ -288,4 +303,164 @@ export async function checkTransactionLimit(userId: string): Promise<{ allowed: 
         console.error('Error in checkTransactionLimit:', error);
         return { allowed: false, limit: 0, current: 0 };
     }
+}
+
+import { budgets, goals } from '../../shared/schema';
+
+export type ResourceLimitType = 'budgets' | 'goals' | 'transactions';
+
+/**
+ * Helper function to get user's plan limits from database
+ * NO HARDCODE - all limits come from subscription_plans table
+ */
+export async function getUserPlanLimits(userId: string): Promise<{
+    transactions: number;
+    budgets: number;
+    goals: number;
+    aiAnalysis: number;
+    receiptOCR: number;
+    aiChat: number;
+    whatsappNotifications: boolean;
+    exportData: boolean;
+    advancedReports: boolean;
+    prioritySupport: boolean;
+} | null> {
+    try {
+        const user = await db
+            .select({
+                subscriptionPlanId: users.subscriptionPlanId,
+            })
+            .from(users)
+            .where(eq(users.id, userId))
+            .get();
+
+        let plan;
+
+        if (!user || !user.subscriptionPlanId) {
+            // User has no subscription - get "free" plan from database
+            plan = db
+                .select()
+                .from(subscriptionPlans)
+                .where(eq(subscriptionPlans.name, 'free'))
+                .get();
+        } else {
+            // Get user's subscription plan
+            plan = db
+                .select()
+                .from(subscriptionPlans)
+                .where(eq(subscriptionPlans.id, user.subscriptionPlanId))
+                .get();
+
+            // If plan not found (e.g., deleted), fallback to free plan
+            if (!plan) {
+                plan = db
+                    .select()
+                    .from(subscriptionPlans)
+                    .where(eq(subscriptionPlans.name, 'free'))
+                    .get();
+            }
+        }
+
+        if (!plan) {
+            console.error('No plan found for user (including free fallback):', userId);
+            return null;
+        }
+
+        return JSON.parse(plan.limits);
+    } catch (error) {
+        console.error('Error getting user plan limits:', error);
+        return null;
+    }
+}
+
+/**
+ * Check if user can create more of a resource (budget/goal)
+ */
+export async function checkResourceLimit(userId: string, resourceType: ResourceLimitType): Promise<{
+    allowed: boolean;
+    limit: number;
+    current: number;
+}> {
+    try {
+        const limits = await getUserPlanLimits(userId);
+
+        if (!limits) {
+            return { allowed: false, limit: 0, current: 0 };
+        }
+
+        let limit: number;
+        let currentCount: number;
+
+        switch (resourceType) {
+            case 'budgets':
+                limit = limits.budgets;
+                const budgetCountResult = await db
+                    .select({ count: sql<number>`COUNT(*)` })
+                    .from(budgets)
+                    .where(eq(budgets.userId, userId))
+                    .get();
+                currentCount = budgetCountResult?.count || 0;
+                break;
+
+            case 'goals':
+                limit = limits.goals;
+                const goalCountResult = await db
+                    .select({ count: sql<number>`COUNT(*)` })
+                    .from(goals)
+                    .where(eq(goals.userId, userId))
+                    .get();
+                currentCount = goalCountResult?.count || 0;
+                break;
+
+            case 'transactions':
+                return checkTransactionLimit(userId);
+
+            default:
+                return { allowed: false, limit: 0, current: 0 };
+        }
+
+        // -1 means unlimited
+        if (limit === -1) {
+            return { allowed: true, limit: -1, current: currentCount };
+        }
+
+        return {
+            allowed: currentCount < limit,
+            limit,
+            current: currentCount,
+        };
+    } catch (error) {
+        console.error('Error in checkResourceLimit:', error);
+        return { allowed: false, limit: 0, current: 0 };
+    }
+}
+
+/**
+ * Middleware to check resource limits before creating
+ */
+export function checkResourceLimitMiddleware(resourceType: ResourceLimitType) {
+    return async (req: AuthRequest, res: Response, next: NextFunction) => {
+        try {
+            const userId = req.user?.id;
+            if (!userId) {
+                return res.status(401).json({ error: 'Unauthorized' });
+            }
+
+            const { allowed, limit, current } = await checkResourceLimit(userId, resourceType);
+
+            if (!allowed) {
+                return res.status(403).json({
+                    error: `You have reached your ${resourceType} limit`,
+                    limit,
+                    current,
+                    upgradeRequired: true,
+                });
+            }
+
+            next();
+        } catch (error) {
+            console.error('Error in checkResourceLimitMiddleware:', error);
+            return res.status(500).json({ error: 'Internal server error' });
+        }
+    };
 }

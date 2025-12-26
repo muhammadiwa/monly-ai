@@ -1312,6 +1312,7 @@ export class AdminStorage {
     }
 
     // Create subscription plan
+    // Accepts features and limits as either JSON strings or objects/arrays
     async createPlan(data: {
         name: string;
         displayName: string;
@@ -1319,11 +1320,21 @@ export class AdminStorage {
         priceMonthly: number;
         priceYearly: number;
         currency: string;
-        features: any[];
-        limits: any;
+        features: string | any[];
+        limits: string | any;
         isActive?: boolean;
     }): Promise<any> {
         const now = Math.floor(Date.now() / 1000);
+
+        // Handle features - can be JSON string or array
+        const featuresStr = typeof data.features === 'string'
+            ? data.features
+            : JSON.stringify(data.features);
+
+        // Handle limits - can be JSON string or object
+        const limitsStr = typeof data.limits === 'string'
+            ? data.limits
+            : JSON.stringify(data.limits);
 
         const planData = {
             name: data.name,
@@ -1332,8 +1343,8 @@ export class AdminStorage {
             priceMonthly: data.priceMonthly,
             priceYearly: data.priceYearly,
             currency: data.currency,
-            features: JSON.stringify(data.features),
-            limits: JSON.stringify(data.limits),
+            features: featuresStr,
+            limits: limitsStr,
             isActive: data.isActive !== undefined ? data.isActive : true,
             createdAt: now,
             updatedAt: now,
@@ -1362,6 +1373,7 @@ export class AdminStorage {
     }
 
     // Update subscription plan
+    // Accepts features and limits as either JSON strings or objects/arrays
     async updatePlan(planId: number, updates: {
         name?: string;
         displayName?: string;
@@ -1369,8 +1381,8 @@ export class AdminStorage {
         priceMonthly?: number;
         priceYearly?: number;
         currency?: string;
-        features?: any[];
-        limits?: any;
+        features?: string | any[];
+        limits?: string | any;
         isActive?: boolean;
     }): Promise<any> {
         const now = Math.floor(Date.now() / 1000);
@@ -1386,8 +1398,18 @@ export class AdminStorage {
         if (updates.priceMonthly !== undefined) updateData.priceMonthly = updates.priceMonthly;
         if (updates.priceYearly !== undefined) updateData.priceYearly = updates.priceYearly;
         if (updates.currency !== undefined) updateData.currency = updates.currency;
-        if (updates.features !== undefined) updateData.features = JSON.stringify(updates.features);
-        if (updates.limits !== undefined) updateData.limits = JSON.stringify(updates.limits);
+        // Handle features - can be JSON string or array
+        if (updates.features !== undefined) {
+            updateData.features = typeof updates.features === 'string'
+                ? updates.features
+                : JSON.stringify(updates.features);
+        }
+        // Handle limits - can be JSON string or object
+        if (updates.limits !== undefined) {
+            updateData.limits = typeof updates.limits === 'string'
+                ? updates.limits
+                : JSON.stringify(updates.limits);
+        }
         if (updates.isActive !== undefined) updateData.isActive = updates.isActive;
 
         await db

@@ -3,9 +3,10 @@ import { requireAuth, AuthRequest } from '../auth';
 import { AdminStorage } from '../admin/admin-storage';
 import { midtransService } from '../services/midtrans-service';
 import { usageTrackingService } from '../services/usage-tracking-service';
+import { checkResourceLimit } from '../middleware/feature-gate';
 import { db } from '../db';
 import { userSubscriptions, subscriptionPlans, users, payments } from '../../shared/schema';
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, and } from 'drizzle-orm';
 
 const router = Router();
 const adminStorage = new AdminStorage();
@@ -34,12 +35,14 @@ router.get('/plans', (async (_req, res: Response) => {
 /**
  * GET /api/subscription/current
  * Get current user's subscription details
+ * Only returns ACTIVE subscriptions - pending/expired/cancelled are not considered current
  */
 router.get('/current', authMiddleware, (async (req, res: Response) => {
     try {
         const authReq = req as unknown as AuthRequest;
         const userId = authReq.user!.id;
 
+        // Only get ACTIVE subscription - pending subscriptions are not yet paid
         const subscription = db
             .select({
                 id: userSubscriptions.id,
@@ -59,11 +62,15 @@ router.get('/current', authMiddleware, (async (req, res: Response) => {
             })
             .from(userSubscriptions)
             .innerJoin(subscriptionPlans, eq(userSubscriptions.planId, subscriptionPlans.id))
-            .where(eq(userSubscriptions.userId, userId))
+            .where(and(
+                eq(userSubscriptions.userId, userId),
+                eq(userSubscriptions.status, 'active')
+            ))
             .orderBy(desc(userSubscriptions.createdAt))
             .limit(1)
             .get();
 
+        // If no active subscription, return free plan
         if (!subscription) {
             const freePlan = db
                 .select()
@@ -320,7 +327,7 @@ router.post('/cancel', authMiddleware, (async (req, res: Response) => {
 
 /**
  * GET /api/subscription/usage
- * Get current usage statistics
+ * Get current usage statistics including resource limits
  */
 router.get('/usage', authMiddleware, (async (req, res: Response) => {
     try {
@@ -329,7 +336,24 @@ router.get('/usage', authMiddleware, (async (req, res: Response) => {
 
         const usage = await usageTrackingService.getUsage(userId);
 
-        res.json({ success: true, data: usage });
+        // Get resource limits (budgets, goals, transactions)
+        const [budgetsLimit, goalsLimit, transactionsLimit] = await Promise.all([
+            checkResourceLimit(userId, 'budgets'),
+            checkResourceLimit(userId, 'goals'),
+            checkResourceLimit(userId, 'transactions'),
+        ]);
+
+        res.json({
+            success: true,
+            data: {
+                ...usage,
+                resourceLimits: {
+                    budgets: budgetsLimit,
+                    goals: goalsLimit,
+                    transactions: transactionsLimit,
+                }
+            }
+        });
     } catch (error) {
         console.error('Error fetching usage stats:', error);
         res.status(500).json({

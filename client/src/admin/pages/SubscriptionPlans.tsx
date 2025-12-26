@@ -40,14 +40,17 @@ interface SubscriptionPlan {
     currency: string;
     features: string[]; // Already parsed JSON array
     limits: {
-        transactionLimit: number;
-        accountLimit: number;
-        budgetLimit: number;
-        goalLimit: number;
-        aiInsights: boolean;
+        // New structure matching seeder and feature-gate
+        transactions: number;
+        budgets: number;
+        goals: number;
+        aiAnalysis: number;
+        receiptOCR: number;
+        aiChat: number;
+        whatsappNotifications: boolean;
+        exportData: boolean;
         advancedReports: boolean;
         prioritySupport: boolean;
-        apiAccess: boolean;
     };
     isActive: boolean;
     createdAt: number;
@@ -308,37 +311,76 @@ export default function SubscriptionPlans() {
                                         <div className="mb-6">
                                             <h4 className="text-sm font-semibold text-slate-700 mb-3">Limits</h4>
                                             <div className="grid grid-cols-2 gap-3">
-                                                {limits.transactionLimit !== undefined && (
+                                                {limits.transactions !== undefined && (
                                                     <div className="bg-slate-50 rounded-lg p-3">
-                                                        <div className="text-xs text-slate-500 mb-1">Transactions</div>
+                                                        <div className="text-xs text-slate-500 mb-1">Transactions/mo</div>
                                                         <div className="text-sm font-semibold text-slate-900">
-                                                            {limits.transactionLimit === -1 ? 'Unlimited' : limits.transactionLimit}
+                                                            {limits.transactions === -1 ? 'Unlimited' : limits.transactions}
                                                         </div>
                                                     </div>
                                                 )}
-                                                {limits.accountLimit !== undefined && (
-                                                    <div className="bg-slate-50 rounded-lg p-3">
-                                                        <div className="text-xs text-slate-500 mb-1">Accounts</div>
-                                                        <div className="text-sm font-semibold text-slate-900">
-                                                            {limits.accountLimit === -1 ? 'Unlimited' : limits.accountLimit}
-                                                        </div>
-                                                    </div>
-                                                )}
-                                                {limits.budgetLimit !== undefined && (
+                                                {limits.budgets !== undefined && (
                                                     <div className="bg-slate-50 rounded-lg p-3">
                                                         <div className="text-xs text-slate-500 mb-1">Budgets</div>
                                                         <div className="text-sm font-semibold text-slate-900">
-                                                            {limits.budgetLimit === -1 ? 'Unlimited' : limits.budgetLimit}
+                                                            {limits.budgets === -1 ? 'Unlimited' : limits.budgets}
                                                         </div>
                                                     </div>
                                                 )}
-                                                {limits.goalLimit !== undefined && (
+                                                {limits.goals !== undefined && (
                                                     <div className="bg-slate-50 rounded-lg p-3">
                                                         <div className="text-xs text-slate-500 mb-1">Goals</div>
                                                         <div className="text-sm font-semibold text-slate-900">
-                                                            {limits.goalLimit === -1 ? 'Unlimited' : limits.goalLimit}
+                                                            {limits.goals === -1 ? 'Unlimited' : limits.goals}
                                                         </div>
                                                     </div>
+                                                )}
+                                                {limits.aiChat !== undefined && (
+                                                    <div className="bg-slate-50 rounded-lg p-3">
+                                                        <div className="text-xs text-slate-500 mb-1">AI Chat/mo</div>
+                                                        <div className="text-sm font-semibold text-slate-900">
+                                                            {limits.aiChat === -1 ? 'Unlimited' : limits.aiChat === 0 ? 'Disabled' : limits.aiChat}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                {limits.receiptOCR !== undefined && (
+                                                    <div className="bg-slate-50 rounded-lg p-3">
+                                                        <div className="text-xs text-slate-500 mb-1">Receipt OCR/mo</div>
+                                                        <div className="text-sm font-semibold text-slate-900">
+                                                            {limits.receiptOCR === -1 ? 'Unlimited' : limits.receiptOCR === 0 ? 'Disabled' : limits.receiptOCR}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                {limits.aiAnalysis !== undefined && (
+                                                    <div className="bg-slate-50 rounded-lg p-3">
+                                                        <div className="text-xs text-slate-500 mb-1">AI Analysis/mo</div>
+                                                        <div className="text-sm font-semibold text-slate-900">
+                                                            {limits.aiAnalysis === -1 ? 'Unlimited' : limits.aiAnalysis === 0 ? 'Disabled' : limits.aiAnalysis}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            {/* Feature toggles */}
+                                            <div className="mt-3 flex flex-wrap gap-2">
+                                                {limits.whatsappNotifications && (
+                                                    <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200">
+                                                        <Check className="h-3 w-3 mr-1" />WhatsApp
+                                                    </Badge>
+                                                )}
+                                                {limits.exportData && (
+                                                    <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
+                                                        <Check className="h-3 w-3 mr-1" />Export
+                                                    </Badge>
+                                                )}
+                                                {limits.advancedReports && (
+                                                    <Badge variant="outline" className="text-xs bg-purple-50 text-purple-700 border-purple-200">
+                                                        <Check className="h-3 w-3 mr-1" />Reports
+                                                    </Badge>
+                                                )}
+                                                {limits.prioritySupport && (
+                                                    <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">
+                                                        <Check className="h-3 w-3 mr-1" />Priority
+                                                    </Badge>
                                                 )}
                                             </div>
                                         </div>

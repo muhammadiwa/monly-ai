@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useForm, useFieldArray } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -25,9 +25,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Plus, X, Package } from "lucide-react";
+import { Loader2, Package } from "lucide-react";
 
-// Form validation schema
+// Form validation schema - matches seed-subscription-plans.ts structure
 const planFormSchema = z.object({
     name: z.string()
         .min(1, "Plan name is required")
@@ -39,36 +39,22 @@ const planFormSchema = z.object({
     description: z.string()
         .max(500, "Description must be less than 500 characters")
         .optional(),
-    priceMonthly: z.number()
-        .min(0, "Monthly price must be 0 or greater")
-        .max(1000000000, "Monthly price is too large"),
-    priceYearly: z.number()
-        .min(0, "Yearly price must be 0 or greater")
-        .max(1000000000, "Yearly price is too large"),
-    currency: z.string()
-        .min(3, "Currency code is required")
-        .max(3, "Currency code must be 3 characters")
-        .default("IDR"),
-    features: z.array(z.object({
-        value: z.string().min(1, "Feature cannot be empty"),
-    })).min(1, "At least one feature is required"),
+    priceMonthly: z.number().min(0, "Monthly price must be 0 or greater"),
+    priceYearly: z.number().min(0, "Yearly price must be 0 or greater"),
+    currency: z.string().min(3).max(3).default("IDR"),
+    featuresList: z.string().min(1, "At least one feature description is required"),
+    // Limits - matches feature-gate.ts structure
     limits: z.object({
-        transactionLimit: z.number()
-            .int("Transaction limit must be an integer")
-            .min(-1, "Transaction limit must be -1 (unlimited) or greater"),
-        accountLimit: z.number()
-            .int("Account limit must be an integer")
-            .min(-1, "Account limit must be -1 (unlimited) or greater"),
-        budgetLimit: z.number()
-            .int("Budget limit must be an integer")
-            .min(-1, "Budget limit must be -1 (unlimited) or greater"),
-        goalLimit: z.number()
-            .int("Goal limit must be an integer")
-            .min(-1, "Goal limit must be -1 (unlimited) or greater"),
-        aiInsights: z.boolean(),
+        transactions: z.number().int().min(-1),
+        budgets: z.number().int().min(-1),
+        goals: z.number().int().min(-1),
+        aiAnalysis: z.number().int().min(-1),
+        receiptOCR: z.number().int().min(-1),
+        aiChat: z.number().int().min(-1),
+        whatsappNotifications: z.boolean(),
+        exportData: z.boolean(),
         advancedReports: z.boolean(),
         prioritySupport: z.boolean(),
-        apiAccess: z.boolean(),
     }),
     isActive: z.boolean().default(true),
 });
@@ -85,17 +71,8 @@ interface SubscriptionPlan {
         yearly: number;
     };
     currency: string;
-    features: string[];
-    limits: {
-        transactionLimit: number;
-        accountLimit: number;
-        budgetLimit: number;
-        goalLimit: number;
-        aiInsights: boolean;
-        advancedReports: boolean;
-        prioritySupport: boolean;
-        apiAccess: boolean;
-    };
+    features: string[] | string;
+    limits: any;
     isActive: boolean;
     createdAt: number;
     updatedAt: number;
@@ -108,6 +85,19 @@ interface PlanFormModalProps {
     mode: "create" | "edit";
 }
 
+const defaultLimits = {
+    transactions: 50,
+    budgets: 1,
+    goals: 1,
+    aiAnalysis: 0,
+    receiptOCR: 0,
+    aiChat: 0,
+    whatsappNotifications: false,
+    exportData: false,
+    advancedReports: false,
+    prioritySupport: false,
+};
+
 export default function PlanFormModal({
     open,
     onOpenChange,
@@ -118,7 +108,6 @@ export default function PlanFormModal({
     const queryClient = useQueryClient();
     const [isSubmitting, setIsSubmitting] = useState(false);
 
-    // Initialize form with default values
     const form = useForm<PlanFormValues>({
         resolver: zodResolver(planFormSchema),
         defaultValues: {
@@ -128,29 +117,29 @@ export default function PlanFormModal({
             priceMonthly: 0,
             priceYearly: 0,
             currency: "IDR",
-            features: [{ value: "" }],
-            limits: {
-                transactionLimit: -1,
-                accountLimit: -1,
-                budgetLimit: -1,
-                goalLimit: -1,
-                aiInsights: false,
-                advancedReports: false,
-                prioritySupport: false,
-                apiAccess: false,
-            },
+            featuresList: "",
+            limits: defaultLimits,
             isActive: true,
         },
     });
 
-    const { fields, append, remove } = useFieldArray({
-        control: form.control,
-        name: "features",
-    });
-
-    // Reset form when plan changes or modal opens/closes
     useEffect(() => {
         if (open && plan && mode === "edit") {
+            let parsedLimits = defaultLimits;
+            let parsedFeatures: string[] = [];
+
+            try {
+                parsedLimits = typeof plan.limits === 'string' ? JSON.parse(plan.limits) : plan.limits;
+            } catch (e) {
+                console.error('Failed to parse limits:', e);
+            }
+
+            try {
+                parsedFeatures = typeof plan.features === 'string' ? JSON.parse(plan.features) : plan.features;
+            } catch (e) {
+                console.error('Failed to parse features:', e);
+            }
+
             form.reset({
                 name: plan.name,
                 displayName: plan.displayName,
@@ -158,8 +147,19 @@ export default function PlanFormModal({
                 priceMonthly: plan.price.monthly,
                 priceYearly: plan.price.yearly,
                 currency: plan.currency,
-                features: plan.features.map(f => ({ value: f })),
-                limits: plan.limits,
+                featuresList: Array.isArray(parsedFeatures) ? parsedFeatures.join('\n') : '',
+                limits: {
+                    transactions: parsedLimits.transactions ?? 50,
+                    budgets: parsedLimits.budgets ?? 1,
+                    goals: parsedLimits.goals ?? 1,
+                    aiAnalysis: parsedLimits.aiAnalysis ?? 0,
+                    receiptOCR: parsedLimits.receiptOCR ?? 0,
+                    aiChat: parsedLimits.aiChat ?? 0,
+                    whatsappNotifications: parsedLimits.whatsappNotifications ?? false,
+                    exportData: parsedLimits.exportData ?? false,
+                    advancedReports: parsedLimits.advancedReports ?? false,
+                    prioritySupport: parsedLimits.prioritySupport ?? false,
+                },
                 isActive: plan.isActive,
             });
         } else if (open && mode === "create") {
@@ -170,29 +170,19 @@ export default function PlanFormModal({
                 priceMonthly: 0,
                 priceYearly: 0,
                 currency: "IDR",
-                features: [{ value: "" }],
-                limits: {
-                    transactionLimit: -1,
-                    accountLimit: -1,
-                    budgetLimit: -1,
-                    goalLimit: -1,
-                    aiInsights: false,
-                    advancedReports: false,
-                    prioritySupport: false,
-                    apiAccess: false,
-                },
+                featuresList: "",
+                limits: defaultLimits,
                 isActive: true,
             });
         }
     }, [open, plan, mode, form]);
 
-    // Create plan mutation
     const createMutation = useMutation({
         mutationFn: async (data: PlanFormValues) => {
             const adminToken = localStorage.getItem('admin-token');
-            if (!adminToken) {
-                throw new Error('No admin token');
-            }
+            if (!adminToken) throw new Error('No admin token');
+
+            const featuresArray = data.featuresList.split('\n').filter(f => f.trim());
 
             const payload = {
                 name: data.name,
@@ -201,7 +191,7 @@ export default function PlanFormModal({
                 priceMonthly: data.priceMonthly,
                 priceYearly: data.priceYearly,
                 currency: data.currency,
-                features: JSON.stringify(data.features.map(f => f.value)),
+                features: JSON.stringify(featuresArray),
                 limits: JSON.stringify(data.limits),
                 isActive: data.isActive,
             };
@@ -219,36 +209,26 @@ export default function PlanFormModal({
                 const error = await res.json();
                 throw new Error(error.error?.message || 'Failed to create plan');
             }
-
             return res.json();
         },
         onSuccess: () => {
-            toast({
-                title: "Plan Created",
-                description: "The subscription plan has been created successfully.",
-            });
+            toast({ title: "Plan Created", description: "The subscription plan has been created successfully." });
             queryClient.invalidateQueries({ queryKey: ["/api/admin/plans"] });
             onOpenChange(false);
             form.reset();
         },
         onError: (error: Error) => {
-            toast({
-                title: "Creation Failed",
-                description: error.message,
-                variant: "destructive",
-            });
+            toast({ title: "Creation Failed", description: error.message, variant: "destructive" });
         },
     });
 
-    // Update plan mutation
     const updateMutation = useMutation({
         mutationFn: async (data: PlanFormValues) => {
             if (!plan) throw new Error('No plan to update');
-
             const adminToken = localStorage.getItem('admin-token');
-            if (!adminToken) {
-                throw new Error('No admin token');
-            }
+            if (!adminToken) throw new Error('No admin token');
+
+            const featuresArray = data.featuresList.split('\n').filter(f => f.trim());
 
             const payload = {
                 displayName: data.displayName,
@@ -256,7 +236,7 @@ export default function PlanFormModal({
                 priceMonthly: data.priceMonthly,
                 priceYearly: data.priceYearly,
                 currency: data.currency,
-                features: JSON.stringify(data.features.map(f => f.value)),
+                features: JSON.stringify(featuresArray),
                 limits: JSON.stringify(data.limits),
                 isActive: data.isActive,
             };
@@ -274,27 +254,18 @@ export default function PlanFormModal({
                 const error = await res.json();
                 throw new Error(error.error?.message || 'Failed to update plan');
             }
-
             return res.json();
         },
         onSuccess: () => {
-            toast({
-                title: "Plan Updated",
-                description: "The subscription plan has been updated successfully.",
-            });
+            toast({ title: "Plan Updated", description: "The subscription plan has been updated successfully." });
             queryClient.invalidateQueries({ queryKey: ["/api/admin/plans"] });
             onOpenChange(false);
         },
         onError: (error: Error) => {
-            toast({
-                title: "Update Failed",
-                description: error.message,
-                variant: "destructive",
-            });
+            toast({ title: "Update Failed", description: error.message, variant: "destructive" });
         },
     });
 
-    // Handle form submission
     const onSubmit = async (data: PlanFormValues) => {
         setIsSubmitting(true);
         try {
@@ -319,7 +290,7 @@ export default function PlanFormModal({
                     <DialogDescription>
                         {mode === "create"
                             ? "Create a new subscription plan with pricing, features, and limits."
-                            : "Update the subscription plan details. Changes will apply to new subscriptions only."}
+                            : "Update the subscription plan details."}
                     </DialogDescription>
                 </DialogHeader>
 
@@ -328,7 +299,6 @@ export default function PlanFormModal({
                         {/* Basic Information */}
                         <div className="space-y-4">
                             <h3 className="text-lg font-semibold text-slate-900">Basic Information</h3>
-
                             <div className="grid grid-cols-2 gap-4">
                                 <FormField
                                     control={form.control}
@@ -337,20 +307,13 @@ export default function PlanFormModal({
                                         <FormItem>
                                             <FormLabel>Plan Name (Internal)</FormLabel>
                                             <FormControl>
-                                                <Input
-                                                    placeholder="e.g., premium"
-                                                    {...field}
-                                                    disabled={mode === "edit"}
-                                                />
+                                                <Input placeholder="e.g., starter" {...field} disabled={mode === "edit"} />
                                             </FormControl>
-                                            <FormDescription>
-                                                Lowercase, no spaces (used in code)
-                                            </FormDescription>
+                                            <FormDescription>Lowercase, no spaces</FormDescription>
                                             <FormMessage />
                                         </FormItem>
                                     )}
                                 />
-
                                 <FormField
                                     control={form.control}
                                     name="displayName"
@@ -358,17 +321,13 @@ export default function PlanFormModal({
                                         <FormItem>
                                             <FormLabel>Display Name</FormLabel>
                                             <FormControl>
-                                                <Input placeholder="e.g., Premium Plan" {...field} />
+                                                <Input placeholder="e.g., Starter Plan" {...field} />
                                             </FormControl>
-                                            <FormDescription>
-                                                Name shown to users
-                                            </FormDescription>
                                             <FormMessage />
                                         </FormItem>
                                     )}
                                 />
                             </div>
-
                             <FormField
                                 control={form.control}
                                 name="description"
@@ -376,12 +335,7 @@ export default function PlanFormModal({
                                     <FormItem>
                                         <FormLabel>Description</FormLabel>
                                         <FormControl>
-                                            <Textarea
-                                                placeholder="Describe the plan benefits..."
-                                                className="resize-none"
-                                                rows={3}
-                                                {...field}
-                                            />
+                                            <Textarea placeholder="Plan description..." rows={2} {...field} />
                                         </FormControl>
                                         <FormMessage />
                                     </FormItem>
@@ -392,7 +346,6 @@ export default function PlanFormModal({
                         {/* Pricing */}
                         <div className="space-y-4">
                             <h3 className="text-lg font-semibold text-slate-900">Pricing</h3>
-
                             <div className="grid grid-cols-3 gap-4">
                                 <FormField
                                     control={form.control}
@@ -401,18 +354,12 @@ export default function PlanFormModal({
                                         <FormItem>
                                             <FormLabel>Monthly Price</FormLabel>
                                             <FormControl>
-                                                <Input
-                                                    type="number"
-                                                    placeholder="0"
-                                                    {...field}
-                                                    onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
-                                                />
+                                                <Input type="number" {...field} onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)} />
                                             </FormControl>
                                             <FormMessage />
                                         </FormItem>
                                     )}
                                 />
-
                                 <FormField
                                     control={form.control}
                                     name="priceYearly"
@@ -420,18 +367,12 @@ export default function PlanFormModal({
                                         <FormItem>
                                             <FormLabel>Yearly Price</FormLabel>
                                             <FormControl>
-                                                <Input
-                                                    type="number"
-                                                    placeholder="0"
-                                                    {...field}
-                                                    onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
-                                                />
+                                                <Input type="number" {...field} onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)} />
                                             </FormControl>
                                             <FormMessage />
                                         </FormItem>
                                     )}
                                 />
-
                                 <FormField
                                     control={form.control}
                                     name="currency"
@@ -448,128 +389,68 @@ export default function PlanFormModal({
                             </div>
                         </div>
 
-                        {/* Features */}
+                        {/* Features Description */}
                         <div className="space-y-4">
-                            <div className="flex items-center justify-between">
-                                <h3 className="text-lg font-semibold text-slate-900">Features</h3>
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => append({ value: "" })}
-                                >
-                                    <Plus className="h-4 w-4 mr-2" />
-                                    Add Feature
-                                </Button>
-                            </div>
-
-                            <div className="space-y-2">
-                                {fields.map((field, index) => (
-                                    <FormField
-                                        key={field.id}
-                                        control={form.control}
-                                        name={`features.${index}.value`}
-                                        render={({ field }) => (
-                                            <FormItem>
-                                                <div className="flex gap-2">
-                                                    <FormControl>
-                                                        <Input placeholder="e.g., Unlimited transactions" {...field} />
-                                                    </FormControl>
-                                                    {fields.length > 1 && (
-                                                        <Button
-                                                            type="button"
-                                                            variant="ghost"
-                                                            size="icon"
-                                                            onClick={() => remove(index)}
-                                                        >
-                                                            <X className="h-4 w-4" />
-                                                        </Button>
-                                                    )}
-                                                </div>
-                                                <FormMessage />
-                                            </FormItem>
-                                        )}
-                                    />
-                                ))}
-                            </div>
+                            <h3 className="text-lg font-semibold text-slate-900">Features (Display)</h3>
+                            <FormField
+                                control={form.control}
+                                name="featuresList"
+                                render={({ field }) => (
+                                    <FormItem>
+                                        <FormLabel>Feature List</FormLabel>
+                                        <FormControl>
+                                            <Textarea
+                                                placeholder="One feature per line, e.g.:&#10;50 transaksi per bulan&#10;1 kategori budget&#10;AI Chat (20 pesan/bulan)"
+                                                rows={5}
+                                                {...field}
+                                            />
+                                        </FormControl>
+                                        <FormDescription>Enter one feature per line (shown to users)</FormDescription>
+                                        <FormMessage />
+                                    </FormItem>
+                                )}
+                            />
                         </div>
 
-                        {/* Limits */}
+                        {/* Resource Limits */}
                         <div className="space-y-4">
-                            <h3 className="text-lg font-semibold text-slate-900">Limits</h3>
-                            <p className="text-sm text-slate-600">Use -1 for unlimited</p>
-
-                            <div className="grid grid-cols-2 gap-4">
+                            <h3 className="text-lg font-semibold text-slate-900">Resource Limits</h3>
+                            <p className="text-sm text-slate-600">Use -1 for unlimited, 0 to disable</p>
+                            <div className="grid grid-cols-3 gap-4">
                                 <FormField
                                     control={form.control}
-                                    name="limits.transactionLimit"
+                                    name="limits.transactions"
                                     render={({ field }) => (
                                         <FormItem>
-                                            <FormLabel>Transaction Limit</FormLabel>
+                                            <FormLabel>Transactions/month</FormLabel>
                                             <FormControl>
-                                                <Input
-                                                    type="number"
-                                                    placeholder="-1"
-                                                    {...field}
-                                                    onChange={(e) => field.onChange(parseInt(e.target.value) || -1)}
-                                                />
+                                                <Input type="number" {...field} onChange={(e) => field.onChange(parseInt(e.target.value) || 0)} />
                                             </FormControl>
                                             <FormMessage />
                                         </FormItem>
                                     )}
                                 />
-
                                 <FormField
                                     control={form.control}
-                                    name="limits.accountLimit"
+                                    name="limits.budgets"
                                     render={({ field }) => (
                                         <FormItem>
-                                            <FormLabel>Account Limit</FormLabel>
+                                            <FormLabel>Budgets</FormLabel>
                                             <FormControl>
-                                                <Input
-                                                    type="number"
-                                                    placeholder="-1"
-                                                    {...field}
-                                                    onChange={(e) => field.onChange(parseInt(e.target.value) || -1)}
-                                                />
+                                                <Input type="number" {...field} onChange={(e) => field.onChange(parseInt(e.target.value) || 0)} />
                                             </FormControl>
                                             <FormMessage />
                                         </FormItem>
                                     )}
                                 />
-
                                 <FormField
                                     control={form.control}
-                                    name="limits.budgetLimit"
+                                    name="limits.goals"
                                     render={({ field }) => (
                                         <FormItem>
-                                            <FormLabel>Budget Limit</FormLabel>
+                                            <FormLabel>Goals</FormLabel>
                                             <FormControl>
-                                                <Input
-                                                    type="number"
-                                                    placeholder="-1"
-                                                    {...field}
-                                                    onChange={(e) => field.onChange(parseInt(e.target.value) || -1)}
-                                                />
-                                            </FormControl>
-                                            <FormMessage />
-                                        </FormItem>
-                                    )}
-                                />
-
-                                <FormField
-                                    control={form.control}
-                                    name="limits.goalLimit"
-                                    render={({ field }) => (
-                                        <FormItem>
-                                            <FormLabel>Goal Limit</FormLabel>
-                                            <FormControl>
-                                                <Input
-                                                    type="number"
-                                                    placeholder="-1"
-                                                    {...field}
-                                                    onChange={(e) => field.onChange(parseInt(e.target.value) || -1)}
-                                                />
+                                                <Input type="number" {...field} onChange={(e) => field.onChange(parseInt(e.target.value) || 0)} />
                                             </FormControl>
                                             <FormMessage />
                                         </FormItem>
@@ -578,90 +459,112 @@ export default function PlanFormModal({
                             </div>
                         </div>
 
-                        {/* Feature Flags */}
+                        {/* AI Feature Limits */}
+                        <div className="space-y-4">
+                            <h3 className="text-lg font-semibold text-slate-900">AI Feature Limits (per month)</h3>
+                            <div className="grid grid-cols-3 gap-4">
+                                <FormField
+                                    control={form.control}
+                                    name="limits.aiChat"
+                                    render={({ field }) => (
+                                        <FormItem>
+                                            <FormLabel>AI Chat Messages</FormLabel>
+                                            <FormControl>
+                                                <Input type="number" {...field} onChange={(e) => field.onChange(parseInt(e.target.value) || 0)} />
+                                            </FormControl>
+                                            <FormMessage />
+                                        </FormItem>
+                                    )}
+                                />
+                                <FormField
+                                    control={form.control}
+                                    name="limits.receiptOCR"
+                                    render={({ field }) => (
+                                        <FormItem>
+                                            <FormLabel>Receipt OCR Scans</FormLabel>
+                                            <FormControl>
+                                                <Input type="number" {...field} onChange={(e) => field.onChange(parseInt(e.target.value) || 0)} />
+                                            </FormControl>
+                                            <FormMessage />
+                                        </FormItem>
+                                    )}
+                                />
+                                <FormField
+                                    control={form.control}
+                                    name="limits.aiAnalysis"
+                                    render={({ field }) => (
+                                        <FormItem>
+                                            <FormLabel>AI Analysis</FormLabel>
+                                            <FormControl>
+                                                <Input type="number" {...field} onChange={(e) => field.onChange(parseInt(e.target.value) || 0)} />
+                                            </FormControl>
+                                            <FormMessage />
+                                        </FormItem>
+                                    )}
+                                />
+                            </div>
+                        </div>
+
+                        {/* Feature Access Toggles */}
                         <div className="space-y-4">
                             <h3 className="text-lg font-semibold text-slate-900">Feature Access</h3>
-
                             <div className="grid grid-cols-2 gap-4">
                                 <FormField
                                     control={form.control}
-                                    name="limits.aiInsights"
+                                    name="limits.whatsappNotifications"
                                     render={({ field }) => (
                                         <FormItem className="flex items-center justify-between rounded-lg border p-4">
-                                            <div className="space-y-0.5">
-                                                <FormLabel className="text-base">AI Insights</FormLabel>
-                                                <FormDescription>
-                                                    Enable AI-powered financial insights
-                                                </FormDescription>
+                                            <div>
+                                                <FormLabel className="text-base">WhatsApp Notifications</FormLabel>
+                                                <FormDescription>Send alerts via WhatsApp</FormDescription>
                                             </div>
                                             <FormControl>
-                                                <Switch
-                                                    checked={field.value}
-                                                    onCheckedChange={field.onChange}
-                                                />
+                                                <Switch checked={field.value} onCheckedChange={field.onChange} />
                                             </FormControl>
                                         </FormItem>
                                     )}
                                 />
-
+                                <FormField
+                                    control={form.control}
+                                    name="limits.exportData"
+                                    render={({ field }) => (
+                                        <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                                            <div>
+                                                <FormLabel className="text-base">Export Data</FormLabel>
+                                                <FormDescription>Export to CSV/PDF</FormDescription>
+                                            </div>
+                                            <FormControl>
+                                                <Switch checked={field.value} onCheckedChange={field.onChange} />
+                                            </FormControl>
+                                        </FormItem>
+                                    )}
+                                />
                                 <FormField
                                     control={form.control}
                                     name="limits.advancedReports"
                                     render={({ field }) => (
                                         <FormItem className="flex items-center justify-between rounded-lg border p-4">
-                                            <div className="space-y-0.5">
+                                            <div>
                                                 <FormLabel className="text-base">Advanced Reports</FormLabel>
-                                                <FormDescription>
-                                                    Access to detailed analytics
-                                                </FormDescription>
+                                                <FormDescription>Detailed analytics</FormDescription>
                                             </div>
                                             <FormControl>
-                                                <Switch
-                                                    checked={field.value}
-                                                    onCheckedChange={field.onChange}
-                                                />
+                                                <Switch checked={field.value} onCheckedChange={field.onChange} />
                                             </FormControl>
                                         </FormItem>
                                     )}
                                 />
-
                                 <FormField
                                     control={form.control}
                                     name="limits.prioritySupport"
                                     render={({ field }) => (
                                         <FormItem className="flex items-center justify-between rounded-lg border p-4">
-                                            <div className="space-y-0.5">
+                                            <div>
                                                 <FormLabel className="text-base">Priority Support</FormLabel>
-                                                <FormDescription>
-                                                    Faster response times
-                                                </FormDescription>
+                                                <FormDescription>Faster response times</FormDescription>
                                             </div>
                                             <FormControl>
-                                                <Switch
-                                                    checked={field.value}
-                                                    onCheckedChange={field.onChange}
-                                                />
-                                            </FormControl>
-                                        </FormItem>
-                                    )}
-                                />
-
-                                <FormField
-                                    control={form.control}
-                                    name="limits.apiAccess"
-                                    render={({ field }) => (
-                                        <FormItem className="flex items-center justify-between rounded-lg border p-4">
-                                            <div className="space-y-0.5">
-                                                <FormLabel className="text-base">API Access</FormLabel>
-                                                <FormDescription>
-                                                    Programmatic access to data
-                                                </FormDescription>
-                                            </div>
-                                            <FormControl>
-                                                <Switch
-                                                    checked={field.value}
-                                                    onCheckedChange={field.onChange}
-                                                />
+                                                <Switch checked={field.value} onCheckedChange={field.onChange} />
                                             </FormControl>
                                         </FormItem>
                                     )}
@@ -669,52 +572,30 @@ export default function PlanFormModal({
                             </div>
                         </div>
 
-                        {/* Status */}
+                        {/* Active Status */}
                         <FormField
                             control={form.control}
                             name="isActive"
                             render={({ field }) => (
                                 <FormItem className="flex items-center justify-between rounded-lg border p-4">
-                                    <div className="space-y-0.5">
-                                        <FormLabel className="text-base">Active Status</FormLabel>
-                                        <FormDescription>
-                                            Inactive plans are hidden from new subscriptions
-                                        </FormDescription>
+                                    <div>
+                                        <FormLabel className="text-base">Active</FormLabel>
+                                        <FormDescription>Plan is available for purchase</FormDescription>
                                     </div>
                                     <FormControl>
-                                        <Switch
-                                            checked={field.value}
-                                            onCheckedChange={field.onChange}
-                                        />
+                                        <Switch checked={field.value} onCheckedChange={field.onChange} />
                                     </FormControl>
                                 </FormItem>
                             )}
                         />
 
                         <DialogFooter>
-                            <Button
-                                type="button"
-                                variant="outline"
-                                onClick={() => onOpenChange(false)}
-                                disabled={isSubmitting}
-                            >
+                            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                                 Cancel
                             </Button>
-                            <Button
-                                type="submit"
-                                disabled={isSubmitting}
-                                className="bg-blue-600 hover:bg-blue-700"
-                            >
-                                {isSubmitting ? (
-                                    <>
-                                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                        {mode === "create" ? "Creating..." : "Updating..."}
-                                    </>
-                                ) : (
-                                    <>
-                                        {mode === "create" ? "Create Plan" : "Update Plan"}
-                                    </>
-                                )}
+                            <Button type="submit" disabled={isSubmitting}>
+                                {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                {mode === "create" ? "Create Plan" : "Update Plan"}
                             </Button>
                         </DialogFooter>
                     </form>
@@ -723,5 +604,3 @@ export default function PlanFormModal({
         </Dialog>
     );
 }
-
-export type { PlanFormModalProps };
