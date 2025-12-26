@@ -6,6 +6,7 @@
 import type { Express, Response, RequestHandler } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
+import { adminStorage } from "./admin/admin-storage";
 import { analyzeTransactionText, processReceiptImage } from "./openai";
 import { insertTransactionSchema, insertBudgetSchema, insertCategorySchema, insertGoalSchema, updateUserPreferencesSchema } from "@shared/schema";
 import { requireAuth, hashPassword, verifyPassword, generateToken, type AuthRequest } from "./auth";
@@ -2282,6 +2283,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
         success: false,
         status: "error",
         timestamp: new Date().toISOString()
+      });
+    }
+  });
+
+  /**
+   * Google Auth Enabled Status (Public)
+   * GET /api/system/settings/google-auth-enabled
+   * Returns whether Google OAuth login is enabled
+   */
+  app.get("/api/system/settings/google-auth-enabled", async (req, res) => {
+    try {
+      // Get google_oauth.enabled setting from database
+      const setting = await adminStorage.getSystemSettingByKey('google_oauth.enabled');
+
+      // parseSettingValue already converts to boolean, so just use the value directly
+      // Default to false if setting not found
+      const enabled = setting?.value === true;
+
+      res.json({
+        success: true,
+        enabled: enabled
+      });
+    } catch (error) {
+      console.error('Error checking Google auth status:', error);
+      // Default to false on error
+      res.json({
+        success: true,
+        enabled: false
       });
     }
   });

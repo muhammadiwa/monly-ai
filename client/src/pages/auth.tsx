@@ -24,6 +24,8 @@ export default function Auth() {
   const [isLogin, setIsLogin] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [googleAuthEnabled, setGoogleAuthEnabled] = useState(false);
+  const [checkingGoogleAuth, setCheckingGoogleAuth] = useState(true);
 
   const [formData, setFormData] = useState({
     email: "",
@@ -31,6 +33,25 @@ export default function Auth() {
     name: "",
     confirmPassword: ""
   });
+
+  // Check if Google OAuth is enabled
+  useEffect(() => {
+    const checkGoogleAuth = async () => {
+      try {
+        const response = await fetch('/api/system/settings/google-auth-enabled');
+        if (response.ok) {
+          const data = await response.json();
+          setGoogleAuthEnabled(data.enabled);
+        }
+      } catch (error) {
+        console.error('Error checking Google auth status:', error);
+      } finally {
+        setCheckingGoogleAuth(false);
+      }
+    };
+
+    checkGoogleAuth();
+  }, []);
 
   // Handle OAuth callback
   useEffect(() => {
@@ -47,17 +68,56 @@ export default function Auth() {
           : "Terjadi kesalahan saat login.",
         variant: "destructive",
       });
+      // Clean URL without reloading
       window.history.replaceState({}, '', '/auth');
       return;
     }
 
     if (token && oauth === 'google') {
+      // Store token
       localStorage.setItem('auth-token', token);
-      toast({
-        title: "Login Berhasil!",
-        description: "Anda berhasil masuk dengan Google.",
-      });
-      window.location.href = "/dashboard";
+
+      // Fetch user data immediately before redirecting
+      const fetchUserData = async () => {
+        try {
+          const response = await fetch('/api/auth/user', {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+            },
+          });
+
+          if (response.ok) {
+            const userData = await response.json();
+            localStorage.setItem('auth-user', JSON.stringify(userData));
+
+            toast({
+              title: "Login Berhasil!",
+              description: "Anda berhasil masuk dengan Google.",
+            });
+
+            // Clean URL and redirect
+            window.history.replaceState({}, '', '/auth');
+
+            // Use setTimeout to ensure state is updated before redirect
+            setTimeout(() => {
+              window.location.href = "/dashboard";
+            }, 100);
+          } else {
+            throw new Error('Failed to fetch user data');
+          }
+        } catch (err) {
+          console.error('Error fetching user data:', err);
+          localStorage.removeItem('auth-token');
+          toast({
+            title: "Login Gagal",
+            description: "Gagal mengambil data pengguna. Silakan coba lagi.",
+            variant: "destructive",
+          });
+          window.history.replaceState({}, '', '/auth');
+        }
+      };
+
+      fetchUserData();
     }
   }, [toast]);
 
@@ -227,19 +287,30 @@ export default function Auth() {
           </CardHeader>
 
           <CardContent>
-            <Button type="button" variant="outline" onClick={handleGoogleLogin} className="w-full mb-4 h-11 border-gray-300 hover:bg-gray-50">
-              <GoogleIcon />
-              <span className="ml-2">{isLogin ? "Masuk dengan Google" : "Daftar dengan Google"}</span>
-            </Button>
+            {/* Google OAuth Button - Only show on LOGIN tab if enabled */}
+            {isLogin && googleAuthEnabled && !checkingGoogleAuth && (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleGoogleLogin}
+                  className="w-full mb-4 h-11 border-gray-300 hover:bg-gray-50"
+                >
+                  <GoogleIcon />
+                  <span className="ml-2">Masuk dengan Google</span>
+                </Button>
 
-            <div className="relative mb-4">
-              <div className="absolute inset-0 flex items-center">
-                <span className="w-full border-t border-gray-300" />
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-white px-2 text-gray-500">atau</span>
-              </div>
-            </div>
+                <div className="relative mb-4">
+                  <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t border-gray-300" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-white px-2 text-gray-500">atau</span>
+                  </div>
+                </div>
+              </>
+            )}
+
             <form onSubmit={handleSubmit} className="space-y-4">
               {!isLogin && (
                 <div className="space-y-2">

@@ -4305,7 +4305,9 @@ router.get('/admin/settings/google-oauth', requireAdminAuth, async (req: AdminAu
         if (googleOAuthConfig.hasClientSecret === undefined) {
             googleOAuthConfig.hasClientSecret = false;
         }
-        googleOAuthConfig.enabled = googleOAuthConfig.hasClientId && googleOAuthConfig.hasClientSecret;
+        // Keep enabled value from database, don't override it
+        // enabled is controlled by admin toggle, not by credential presence
+        const isConfigured = googleOAuthConfig.hasClientId && googleOAuthConfig.hasClientSecret;
 
         // Log admin activity
         await adminStorage.logAdminActivity({
@@ -4324,6 +4326,7 @@ router.get('/admin/settings/google-oauth', requireAdminAuth, async (req: AdminAu
                 hasClientSecret: googleOAuthConfig.hasClientSecret,
                 callbackUrl: googleOAuthConfig.callbackUrl,
                 enabled: googleOAuthConfig.enabled,
+                isConfigured: isConfigured,
                 source: 'database',
             },
         });

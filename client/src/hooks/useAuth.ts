@@ -1,6 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState, useEffect } from "react";
-import { clearAuthData, redirectToLogin, handleAuthError, getAuthToken } from "@/lib/authUtils";
+import {
+  clearAuthData,
+  handleAuthError,
+  getAuthToken,
+  hasValidAuthData,
+  recoverFromInvalidAuth
+} from "@/lib/authUtils";
 
 export function useAuth() {
   const [authUser, setAuthUser] = useState(null);
@@ -11,20 +17,24 @@ export function useAuth() {
   useEffect(() => {
     const checkAuth = () => {
       try {
-        // Check for auth token and user
-        const authToken = getAuthToken();
-        const storedAuthUser = localStorage.getItem('auth-user');
-        
-        if (authToken && storedAuthUser) {
-          setAuthUser(JSON.parse(storedAuthUser));
+        // Validate auth data completeness
+        if (hasValidAuthData()) {
+          const storedAuthUser = localStorage.getItem('auth-user');
+          setAuthUser(JSON.parse(storedAuthUser!));
           setHasToken(true);
         } else {
-          // If no token, user is not authenticated
-          setAuthUser(null);
-          setHasToken(false);
+          // Check if we have token but no user data (OAuth flow)
+          const authToken = getAuthToken();
+          if (authToken) {
+            setHasToken(true);
+          } else {
+            setAuthUser(null);
+            setHasToken(false);
+          }
         }
       } catch (error) {
         console.error("Error checking auth:", error);
+        recoverFromInvalidAuth();
         setAuthUser(null);
         setHasToken(false);
       } finally {
@@ -38,8 +48,10 @@ export function useAuth() {
   // Get user from API if we have a token
   const { data: apiUser, isLoading: isApiLoading, error } = useQuery({
     queryKey: ["/api/auth/user"],
-    retry: false,
+    retry: 1, // Retry once for OAuth flow
+    retryDelay: 500, // Wait 500ms before retry
     enabled: hasToken, // Only run query if we have a token
+    staleTime: 5 * 60 * 1000, // Consider data fresh for 5 minutes
     queryFn: async () => {
       const authToken = getAuthToken();
       if (!authToken) {
@@ -54,7 +66,7 @@ export function useAuth() {
       });
 
       if (res.status === 401 || res.status === 403 || res.status === 404) {
-        // Token is invalid, expired, or user not found - handle auth error
+        // Token is invalid, expired, or user not found
         handleAuthError({ status: res.status });
         throw new Error('Authentication failed');
       }
@@ -63,13 +75,22 @@ export function useAuth() {
         throw new Error(`HTTP ${res.status}`);
       }
 
-      return res.json();
+      const userData = await res.json();
+
+      // Update localStorage with fresh user data
+      if (userData) {
+        localStorage.setItem('auth-user', JSON.stringify(userData));
+        setAuthUser(userData);
+      }
+
+      return userData;
     }
   });
 
   // Handle auth errors
   useEffect(() => {
     if (error && hasToken) {
+      console.error('Auth error:', error);
       handleAuthError(error);
       setAuthUser(null);
       setHasToken(false);

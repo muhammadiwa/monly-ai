@@ -2881,6 +2881,10 @@ export class AdminStorage {
             case 'number':
                 return String(value);
             case 'boolean':
+                // Handle string "false"/"true" and actual boolean values
+                if (typeof value === 'string') {
+                    return value.toLowerCase() === 'true' ? 'true' : 'false';
+                }
                 return value ? 'true' : 'false';
             case 'json':
                 return JSON.stringify(value);

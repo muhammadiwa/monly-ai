@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/useAuth";
 import Layout from "@/components/layout/layout";
+import ProtectedRoute from "@/components/ProtectedRoute";
 import NotFound from "@/pages/not-found";
 import Landing from "@/pages/landing";
 import Auth from "@/pages/auth";
@@ -23,7 +24,7 @@ import MidtransMonitoring from "@/admin/pages/MidtransMonitoring";
 import { AdminRoute } from "@/admin/components";
 import { useEffect } from "react";
 
-// Simple redirect component
+// Simple redirect component for authenticated users on /auth
 function RedirectToDashboard() {
   useEffect(() => {
     window.location.href = "/dashboard";
@@ -39,27 +40,14 @@ function RedirectToDashboard() {
   );
 }
 
-// Redirect to auth if not authenticated
-function RedirectToAuth() {
-  useEffect(() => {
-    window.location.href = "/auth";
-  }, []);
-
-  return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <div className="text-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-        <p className="text-gray-600">Redirecting to login...</p>
-      </div>
-    </div>
-  );
-}
-
 function Router() {
-  const { isAuthenticated, isLoading } = useAuth();
-
-  // Check if current path is admin route
+  // Check if current path is admin route FIRST before calling useAuth
   const isAdminRoute = window.location.pathname.startsWith('/admin');
+
+  // Only call useAuth for non-admin routes
+  const { isAuthenticated, isLoading } = isAdminRoute
+    ? { isAuthenticated: false, isLoading: false }
+    : useAuth();
 
   // If admin route, don't check user auth
   if (isAdminRoute) {
@@ -127,6 +115,7 @@ function Router() {
     );
   }
 
+  // Show loading state while checking authentication
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -138,6 +127,7 @@ function Router() {
     );
   }
 
+  // Public routes (accessible without authentication)
   if (!isAuthenticated) {
     return (
       <Switch>
@@ -148,33 +138,98 @@ function Router() {
     );
   }
 
+  // Authenticated routes
   return (
     <Switch>
-      <Route path="/auth">
-        {isAuthenticated ? <RedirectToDashboard /> : <Auth />}
-      </Route>
+      {/* Redirect authenticated users from /auth to dashboard */}
+      <Route path="/auth" component={RedirectToDashboard} />
+
+      {/* Public landing page (accessible even when authenticated) */}
       <Route path="/" component={Landing} />
-      <Route path="*">
-        {!isAuthenticated ? (
-          <RedirectToAuth />
-        ) : (
+
+      {/* Protected routes - wrapped with ProtectedRoute for consistency */}
+      <Route path="/dashboard">
+        <ProtectedRoute>
           <Layout>
-            <Switch>
-              <Route path="/dashboard" component={Dashboard} />
-              <Route path="/transactions" component={Transactions} />
-              <Route path="/categories" component={Categories} />
-              <Route path="/chat" component={ChatAI} />
-              <Route path="/budgets" component={Budgets} />
-              <Route path="/goals" component={Goals} />
-              <Route path="/reports" component={Reports} />
-              <Route path="/pricing" component={Pricing} />
-              <Route path="/whatsapp-integration" component={WhatsAppIntegration} />
-              <Route path="/settings" component={Settings} />
-              <Route component={NotFound} />
-            </Switch>
+            <Dashboard />
           </Layout>
-        )}
+        </ProtectedRoute>
       </Route>
+
+      <Route path="/transactions">
+        <ProtectedRoute>
+          <Layout>
+            <Transactions />
+          </Layout>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/categories">
+        <ProtectedRoute>
+          <Layout>
+            <Categories />
+          </Layout>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/chat">
+        <ProtectedRoute>
+          <Layout>
+            <ChatAI />
+          </Layout>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/budgets">
+        <ProtectedRoute>
+          <Layout>
+            <Budgets />
+          </Layout>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/goals">
+        <ProtectedRoute>
+          <Layout>
+            <Goals />
+          </Layout>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/reports">
+        <ProtectedRoute>
+          <Layout>
+            <Reports />
+          </Layout>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/pricing">
+        <ProtectedRoute>
+          <Layout>
+            <Pricing />
+          </Layout>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/whatsapp-integration">
+        <ProtectedRoute>
+          <Layout>
+            <WhatsAppIntegration />
+          </Layout>
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/settings">
+        <ProtectedRoute>
+          <Layout>
+            <Settings />
+          </Layout>
+        </ProtectedRoute>
+      </Route>
+
+      {/* 404 for any other routes */}
+      <Route component={NotFound} />
     </Switch>
   );
 }
