@@ -121,8 +121,6 @@ async function seedSubscriptionPlans() {
                 "Scan struk unlimited",
                 "AI Chat unlimited",
                 "AI Analisis unlimited",
-                "Laporan kustom",
-                "API Access",
                 "Dukungan prioritas 24/7",
             ]),
             limits: JSON.stringify({
@@ -136,8 +134,6 @@ async function seedSubscriptionPlans() {
                 exportData: true,
                 advancedReports: true,
                 prioritySupport: true,
-                apiAccess: true,
-                customReports: true,
             }),
             isActive: true,
             createdAt: now,

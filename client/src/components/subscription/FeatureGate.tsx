@@ -75,8 +75,6 @@ export default function FeatureGate({
         whatsapp_notifications: 'WhatsApp Notifications',
         export_data: 'Data Export',
         advanced_reports: 'Advanced Reports',
-        api_access: 'API Access',
-        custom_reports: 'Custom Reports',
     };
 
     const featureName = featureDisplayNames[feature] || feature;

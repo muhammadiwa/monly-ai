@@ -7,9 +7,7 @@ export type FeatureName =
     | 'ai_chat'
     | 'whatsapp_notifications'
     | 'export_data'
-    | 'advanced_reports'
-    | 'api_access'
-    | 'custom_reports';
+    | 'advanced_reports';
 
 interface UsageStats {
     receiptOCR: { used: number; limit: number };
@@ -135,12 +133,6 @@ export function useSubscription(): UseSubscriptionReturn {
 
             case 'advanced_reports':
                 return Boolean(limits.advancedReports);
-
-            case 'api_access':
-                return Boolean(limits.apiAccess);
-
-            case 'custom_reports':
-                return Boolean(limits.customReports);
 
             default:
                 return false;

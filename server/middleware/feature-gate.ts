@@ -11,9 +11,7 @@ export type FeatureName =
     | 'ai_chat'
     | 'whatsapp_notifications'
     | 'export_data'
-    | 'advanced_reports'
-    | 'api_access'
-    | 'custom_reports';
+    | 'advanced_reports';
 
 /**
  * Middleware to check if user can access a feature based on their subscription plan
@@ -100,16 +98,6 @@ export function requireFeature(feature: FeatureName) {
                     // Check if plan has advanced reports
                     hasFeature = planFeatures.includes('advanced_reports') ||
                         planLimits.advancedReports === true;
-                    break;
-                case 'api_access':
-                    // Check if plan has API access
-                    hasFeature = planFeatures.includes('api_access') ||
-                        planLimits.apiAccess === true;
-                    break;
-                case 'custom_reports':
-                    // Check if plan has custom reports
-                    hasFeature = planFeatures.includes('custom_reports') ||
-                        planLimits.customReports === true;
                     break;
                 default:
                     hasFeature = false;
@@ -224,12 +212,6 @@ export async function canUseFeature(userId: string, feature: FeatureName): Promi
             case 'advanced_reports':
                 return planFeatures.includes('advanced_reports') ||
                     planLimits.advancedReports === true;
-            case 'api_access':
-                return planFeatures.includes('api_access') ||
-                    planLimits.apiAccess === true;
-            case 'custom_reports':
-                return planFeatures.includes('custom_reports') ||
-                    planLimits.customReports === true;
             default:
                 return false;
         }
