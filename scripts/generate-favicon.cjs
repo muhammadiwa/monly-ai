@@ -22,8 +22,39 @@ try {
 const svgPath = path.join(__dirname, '../client/public/favicon.svg');
 const publicDir = path.join(__dirname, '../client/public');
 
+// Check if all icons already exist
+function checkExistingIcons() {
+    const requiredIcons = [
+        'favicon.ico',
+        'apple-touch-icon.png',
+        'og-image.png',
+        'icon-192.png',
+        'icon-512.png'
+    ];
+
+    const allExist = requiredIcons.every(icon =>
+        fs.existsSync(path.join(publicDir, icon))
+    );
+
+    return allExist;
+}
+
 async function generateIcons() {
     try {
+        // Check if SVG source exists
+        if (!fs.existsSync(svgPath)) {
+            console.error('❌ favicon.svg not found at:', svgPath);
+            console.log('ℹ️  Please create client/public/favicon.svg first');
+            process.exit(1);
+        }
+
+        // Check if icons already exist
+        if (checkExistingIcons()) {
+            console.log('✅ All icons already exist. Skipping generation.');
+            console.log('ℹ️  To regenerate, delete the existing icon files first.');
+            process.exit(0);
+        }
+
         console.log('📦 Generating favicon and icons...\n');
 
         // Read SVG
