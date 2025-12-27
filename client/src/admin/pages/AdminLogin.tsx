@@ -109,6 +109,13 @@ export default function AdminLogin() {
                 }),
             });
 
+            // Check if response is JSON
+            const contentType = response.headers.get('content-type');
+            if (!contentType || !contentType.includes('application/json')) {
+                const text = await response.text();
+                throw new Error(`Server returned HTML instead of JSON. This usually means the API endpoint is not available. Response: ${text.substring(0, 200)}`);
+            }
+
             const data = await response.json();
 
             if (!response.ok) {
