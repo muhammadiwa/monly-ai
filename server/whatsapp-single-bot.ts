@@ -484,7 +484,30 @@ const handleIncomingMessage = async (message: any): Promise<void> => {
         return;
       }
 
-      // Process as transaction text
+      // Pre-filter: Check if message looks like a transaction before calling AI
+      // Import helper functions from whatsapp-service
+      const { isLikelyTransaction, handleCasualMessage } = await import('./whatsapp-service');
+      const transactionLikelihood = isLikelyTransaction(messageText);
+
+      if (transactionLikelihood === 'unlikely') {
+        await handleCasualMessage(message, messageText);
+        return;
+      }
+
+      if (transactionLikelihood === 'ambiguous') {
+        await message.reply(
+          `🤔 *Apakah ini transaksi?*\n\n` +
+          `Pesan Anda: "${message.body}"\n\n` +
+          `Jika ini transaksi, silakan kirim ulang dengan format:\n` +
+          `• "Beli [item] [jumlah]"\n` +
+          `• "Bayar [item] [jumlah]"\n` +
+          `• "Terima [sumber] [jumlah]"\n\n` +
+          `Atau ketik *"bantuan"* untuk panduan lengkap.`
+        );
+        return;
+      }
+
+      // Process as transaction text (only for likely transactions)
       await processTextMessage(message, messageUserId);
     }
     // Handle voice messages

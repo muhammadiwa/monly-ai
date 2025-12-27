@@ -773,7 +773,30 @@ export const registerMessageHandlers = (userId: string): boolean => {
           return;
         }
 
-        // Process as transaction text
+        // Pre-filter: Check if message looks like a transaction before calling AI
+        const transactionLikelihood = isLikelyTransaction(messageText);
+
+        if (transactionLikelihood === 'unlikely') {
+          // Handle casual/greeting messages without calling AI
+          await handleCasualMessage(message, messageText);
+          return;
+        }
+
+        if (transactionLikelihood === 'ambiguous') {
+          // For ambiguous messages, ask for clarification
+          await message.reply(
+            `🤔 *Apakah ini transaksi?*\n\n` +
+            `Pesan Anda: "${message.body}"\n\n` +
+            `Jika ini transaksi, silakan kirim ulang dengan format:\n` +
+            `• "Beli [item] [jumlah]"\n` +
+            `• "Bayar [item] [jumlah]"\n` +
+            `• "Terima [sumber] [jumlah]"\n\n` +
+            `Atau ketik *"bantuan"* untuk panduan lengkap.`
+          );
+          return;
+        }
+
+        // Process as transaction text (only for likely transactions)
         await processTextMessage(message, messageUserId);
       }
 
@@ -886,6 +909,158 @@ const handleActivationCode = async (message: any, code: string, whatsappNumber: 
     console.error('Error processing activation:', error);
     await message.reply('❌ Terjadi kesalahan saat memproses aktivasi. Silakan coba lagi.');
   }
+};
+
+/**
+ * Pre-filter function to determine if a message is likely a transaction
+ * Returns: 'likely' | 'unlikely' | 'ambiguous'
+ */
+export const isLikelyTransaction = (messageText: string): 'likely' | 'unlikely' | 'ambiguous' => {
+  const text = messageText.toLowerCase().trim();
+
+  // UNLIKELY: Greetings and casual messages (no amount indicators)
+  const casualPatterns = [
+    /^(halo|hai|hi|hello|hey|selamat\s+(pagi|siang|sore|malam))$/i,
+    /^(ok|oke|okay|siap|baik|mantap|sip|iya|ya|yup|yoi|yap)$/i,
+    /^(terima\s*kasih|makasih|thanks|thank\s*you|thx|tq)$/i,
+    /^(maaf|sorry|sori)$/i,
+    /^(gimana|bagaimana|apa\s*kabar|how\s*are\s*you)$/i,
+    /^(bye|dadah|sampai\s*jumpa|see\s*you)$/i,
+    /^(wkwk|haha|hihi|lol|😂|🤣|😁|👍|🙏)+$/i,
+    /^.{1,3}$/i, // Very short messages (1-3 chars)
+  ];
+
+  for (const pattern of casualPatterns) {
+    if (pattern.test(text)) {
+      return 'unlikely';
+    }
+  }
+
+  // LIKELY: Contains amount indicators (numbers with currency/unit)
+  const amountPatterns = [
+    /\d+\s*(rb|ribu|jt|juta|k|m|miliar)/i, // Indonesian amounts
+    /rp\.?\s*\d+/i, // Rupiah prefix
+    /\$\s*\d+/i, // Dollar prefix
+    /\d{4,}/i, // Large numbers (4+ digits, likely amounts)
+    /\d+[.,]\d{3}/i, // Numbers with thousand separators
+  ];
+
+  const hasAmount = amountPatterns.some(pattern => pattern.test(text));
+
+  // LIKELY: Contains transaction keywords WITH amounts
+  const transactionKeywords = [
+    'beli', 'bayar', 'byr', 'transfer', 'tf', 'kirim', 'terima', 'dapat',
+    'gaji', 'salary', 'bonus', 'income', 'pendapatan', 'pemasukan',
+    'makan', 'lunch', 'dinner', 'breakfast', 'sarapan',
+    'bensin', 'parkir', 'tol', 'transport', 'grab', 'gojek', 'ojol',
+    'belanja', 'shopping', 'groceries', 'supermarket', 'minimarket',
+    'listrik', 'air', 'internet', 'pulsa', 'token', 'tagihan',
+    'sewa', 'rent', 'cicilan', 'kredit', 'hutang', 'pinjam',
+    'jual', 'sell', 'sold', 'laku'
+  ];
+
+  const hasTransactionKeyword = transactionKeywords.some(keyword =>
+    text.includes(keyword)
+  );
+
+  if (hasAmount && hasTransactionKeyword) {
+    return 'likely';
+  }
+
+  if (hasAmount) {
+    // Has amount but no clear transaction keyword - still likely
+    return 'likely';
+  }
+
+  // AMBIGUOUS: Has transaction keyword but no amount
+  if (hasTransactionKeyword) {
+    return 'ambiguous';
+  }
+
+  // Questions are usually not transactions
+  if (text.includes('?') || text.startsWith('apa') || text.startsWith('kenapa') ||
+    text.startsWith('mengapa') || text.startsWith('bagaimana') || text.startsWith('kapan') ||
+    text.startsWith('dimana') || text.startsWith('siapa')) {
+    return 'unlikely';
+  }
+
+  // Default: ambiguous for longer messages, unlikely for short ones
+  if (text.length < 10) {
+    return 'unlikely';
+  }
+
+  return 'ambiguous';
+};
+
+/**
+ * Handle casual/greeting messages without calling AI
+ */
+export const handleCasualMessage = async (message: any, messageText: string) => {
+  const text = messageText.toLowerCase().trim();
+
+  // Greetings
+  if (/^(halo|hai|hi|hello|hey)$/i.test(text)) {
+    await message.reply(
+      `👋 *Halo!*\n\n` +
+      `Saya Monly Bot, asisten keuangan Anda.\n\n` +
+      `Untuk mencatat transaksi, kirim pesan seperti:\n` +
+      `• "Makan siang 50000"\n` +
+      `• "Gaji bulan ini 5jt"\n\n` +
+      `Ketik *"bantuan"* untuk panduan lengkap.`
+    );
+    return;
+  }
+
+  // Time-based greetings
+  if (/^selamat\s+(pagi|siang|sore|malam)$/i.test(text)) {
+    const greeting = text.includes('pagi') ? 'pagi' :
+      text.includes('siang') ? 'siang' :
+        text.includes('sore') ? 'sore' : 'malam';
+    await message.reply(
+      `🌟 *Selamat ${greeting} juga!*\n\n` +
+      `Ada transaksi yang ingin dicatat hari ini?\n\n` +
+      `Ketik *"bantuan"* untuk panduan penggunaan.`
+    );
+    return;
+  }
+
+  // Thank you messages
+  if (/^(terima\s*kasih|makasih|thanks|thank\s*you|thx|tq)$/i.test(text)) {
+    await message.reply(
+      `🙏 *Sama-sama!*\n\n` +
+      `Senang bisa membantu. Jika ada transaksi lain, langsung kirim saja ya!`
+    );
+    return;
+  }
+
+  // Acknowledgments
+  if (/^(ok|oke|okay|siap|baik|mantap|sip|iya|ya|yup|yoi|yap)$/i.test(text)) {
+    // Don't reply to simple acknowledgments to avoid spam
+    return;
+  }
+
+  // Emojis only - check if message has no alphanumeric characters (likely just emojis/symbols)
+  if (!/[a-zA-Z0-9]/.test(text) && text.length > 0) {
+    // Don't reply to emoji-only messages
+    return;
+  }
+
+  // Very short messages
+  if (text.length <= 3) {
+    // Don't reply to very short messages
+    return;
+  }
+
+  // Default response for other casual messages
+  await message.reply(
+    `🤖 *Hai!*\n\n` +
+    `Saya adalah bot pencatat keuangan. Untuk mencatat transaksi, kirim pesan dengan format:\n\n` +
+    `📝 *Contoh:*\n` +
+    `• "Beli kopi 25000"\n` +
+    `• "Bayar listrik 150rb"\n` +
+    `• "Gaji 5jt"\n\n` +
+    `Ketik *"bantuan"* untuk panduan lengkap.`
+  );
 };
 
 // Helper function to get user ID from WhatsApp number
