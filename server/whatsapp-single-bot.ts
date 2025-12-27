@@ -4,6 +4,7 @@ import qrcode from 'qrcode';
 import OpenAI from 'openai';
 import { analyzeTransactionText, processReceiptImage } from './openai';
 import { storage } from './storage';
+import { existsSync } from 'fs';
 
 // Helper function to get timezone from environment
 function getTimezone(): string {
@@ -24,10 +25,66 @@ interface SingleBotConnection {
   lastReconnectTime: number;
   autoReconnect: boolean;
   maxReconnectAttempts: number;
+  lastError: string | null;
 }
 
 // Store single WhatsApp connection
 let botConnection: SingleBotConnection | null = null;
+
+/**
+ * Auto-detect Chromium executable path
+ */
+function findChromiumPath(): string | undefined {
+  // Check env variable first
+  if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+    return process.env.PUPPETEER_EXECUTABLE_PATH;
+  }
+
+  // Common Chromium/Chrome paths
+  const possiblePaths = [
+    '/snap/bin/chromium',
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+  ];
+
+  for (const chromePath of possiblePaths) {
+    if (existsSync(chromePath)) {
+      console.log(`🔍 Auto-detected Chromium: ${chromePath}`);
+      return chromePath;
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Get Puppeteer configuration
+ */
+function getPuppeteerConfig() {
+  const chromePath = findChromiumPath();
+
+  const config: any = {
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--single-process'
+    ],
+    headless: true,
+  };
+
+  if (chromePath) {
+    config.executablePath = chromePath;
+  }
+
+  return config;
+}
 
 /**
  * Initialize single WhatsApp bot for all users
@@ -42,9 +99,7 @@ export const initializeSingleWhatsAppBot = (): SingleBotConnection => {
   // Create a new client with local authentication
   const client = new Client({
     authStrategy: new LocalAuth({ clientId: 'monly-bot' }),
-    puppeteer: {
-      args: ['--no-sandbox']
-    }
+    puppeteer: getPuppeteerConfig()
   });
 
   // Create connection object
@@ -55,7 +110,8 @@ export const initializeSingleWhatsAppBot = (): SingleBotConnection => {
     reconnectAttempts: 0,
     lastReconnectTime: 0,
     autoReconnect: true,
-    maxReconnectAttempts: 5
+    maxReconnectAttempts: 5,
+    lastError: null
   };
 
   // ============================================
@@ -205,41 +261,53 @@ export const initializeSingleWhatsAppBot = (): SingleBotConnection => {
   // Initialize the client with retry logic and timeout
   const initializeWithRetry = async (attempt = 1) => {
     try {
-      // Set a timeout for initialization (60 seconds)
+      // Set a timeout for initialization (90 seconds)
       const initTimeout = setTimeout(() => {
         if (botConnection && botConnection.status === 'initializing') {
-          console.warn('⚠️ WhatsApp Bot initialization timeout - may need manual connection');
-          // Don't change status to disconnected, let it continue trying
-          // The QR code event might still fire
+          console.error('❌ WhatsApp Bot initialization timeout (90s)');
+          botConnection.status = 'disconnected';
+          botConnection.lastError = 'Initialization timeout - Chromium browser failed to start';
         }
-      }, 60000);
+      }, 90000);
 
       await client.initialize();
       clearTimeout(initTimeout);
       console.log('✅ Monly WhatsApp Bot initialized successfully');
       botConnection!.reconnectAttempts = 0;
+      botConnection!.lastError = null;
     } catch (error) {
-      console.error(`❌ Failed to initialize WhatsApp Bot (attempt ${attempt}):`, error);
-
-      // Only mark as disconnected if we've exhausted retries
       const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(`❌ Failed to initialize WhatsApp Bot (attempt ${attempt}):`, errorMessage);
 
-      // Handle specific errors
+      // Store error
+      if (botConnection) {
+        botConnection.lastError = errorMessage;
+      }
+
+      // Handle browser launch errors - don't retry
+      if (errorMessage.includes('Failed to launch the browser') ||
+        errorMessage.includes('cannot open shared object file')) {
+        console.error('❌ Chromium browser error - check system dependencies');
+        botConnection!.status = 'disconnected';
+        return;
+      }
+
+      // Handle network errors - retry
       if (errorMessage.includes('ERR_INSUFFICIENT_RESOURCES') ||
         errorMessage.includes('net::ERR_') ||
         errorMessage.includes('Target closed') ||
         errorMessage.includes('Protocol error')) {
 
-        if (attempt < 3) { // Retry up to 3 times for network errors
+        if (attempt < 3) {
           console.log(`🔄 Retrying WhatsApp Bot initialization in ${attempt * 10} seconds...`);
           setTimeout(() => {
             initializeWithRetry(attempt + 1);
-          }, attempt * 10000); // Exponential backoff: 10s, 20s, 30s
+          }, attempt * 10000);
           return;
         }
       }
 
-      // If max retries reached or other error, mark as failed
+      // Mark as failed
       console.error('❌ Failed to initialize WhatsApp Bot after all retries');
       botConnection!.status = 'disconnected';
     }
@@ -250,6 +318,7 @@ export const initializeSingleWhatsAppBot = (): SingleBotConnection => {
     console.error('❌ WhatsApp Bot initialization error:', err);
     if (botConnection) {
       botConnection.status = 'disconnected';
+      botConnection.lastError = err instanceof Error ? err.message : String(err);
     }
   });
 
@@ -350,14 +419,16 @@ export const getSingleBotConnectionState = () => {
     return {
       connected: false,
       status: 'disconnected',
-      qrCode: null
+      qrCode: null,
+      lastError: null
     };
   }
 
   return {
     connected: botConnection.status === 'ready' || botConnection.status === 'authenticated',
     status: botConnection.status,
-    qrCode: botConnection.qrCode
+    qrCode: botConnection.qrCode,
+    lastError: botConnection.lastError
   };
 };
 
