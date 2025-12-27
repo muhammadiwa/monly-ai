@@ -33,6 +33,7 @@ let botConnection: SingleBotConnection | null = null;
 
 /**
  * Auto-detect Chromium executable path
+ * Skip Snap Chromium karena punya sandbox restrictions di headless server
  */
 function findChromiumPath(): string | undefined {
   // Check env variable first
@@ -40,16 +41,19 @@ function findChromiumPath(): string | undefined {
     return process.env.PUPPETEER_EXECUTABLE_PATH;
   }
 
-  // Common Chromium/Chrome paths
+  // Common Chromium/Chrome paths (SKIP Snap karena tidak support headless dengan baik)
   const possiblePaths = [
-    '/snap/bin/chromium',
+    // Linux - APT (non-snap)
     '/usr/bin/chromium',
     '/usr/bin/chromium-browser',
     '/usr/bin/google-chrome',
     '/usr/bin/google-chrome-stable',
+    // macOS
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    // Windows
     'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
     'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    // NOTE: /snap/bin/chromium TIDAK diinclude karena punya SingletonLock issue
   ];
 
   for (const chromePath of possiblePaths) {
@@ -59,6 +63,8 @@ function findChromiumPath(): string | undefined {
     }
   }
 
+  // Tidak ada system Chromium, akan pakai bundled Puppeteer Chromium
+  console.log('📱 Using bundled Puppeteer Chromium (recommended for servers)');
   return undefined;
 }
 
