@@ -15,11 +15,13 @@ interface DashboardMetrics {
     };
     subscriptions: {
         total: number;
-        byPlan: {
-            free: number;
-            premium: number;
-            business: number;
-        };
+        byPlan: Array<{
+            planId: number;
+            planName: string;
+            displayName: string;
+            count: number;
+            revenue: number;
+        }>;
         churnRate: number;
         conversionRate: number;
     };
@@ -27,10 +29,7 @@ interface DashboardMetrics {
         mrr: number;
         totalRevenue: number;
         revenueGrowth: number;
-        revenueByPlan: {
-            premium: number;
-            business: number;
-        };
+        revenueByPlan: Record<string, number>;
     };
     system: {
         databaseSize: number;
@@ -255,45 +254,68 @@ export default function AdminDashboard() {
                     })}
                 </div>
 
-                {/* Subscription Breakdown */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <Card className="border-slate-200 hover:shadow-lg transition-all duration-300 hover:scale-105">
-                        <CardHeader className="bg-gradient-to-r from-slate-50 to-white border-b border-slate-100">
-                            <CardTitle className="text-sm font-semibold text-slate-700">Free Plan</CardTitle>
-                        </CardHeader>
-                        <CardContent className="pt-6">
-                            <div className="text-3xl font-bold text-slate-900 mb-2">
-                                {(metrics.subscriptions?.byPlan?.free ?? 0).toLocaleString()}
-                            </div>
-                            <p className="text-sm text-slate-500 font-medium">subscribers</p>
-                        </CardContent>
-                    </Card>
-                    <Card className="border-purple-200 hover:shadow-lg hover:shadow-purple-100 transition-all duration-300 hover:scale-105">
-                        <CardHeader className="bg-gradient-to-r from-purple-50 to-white border-b border-purple-100">
-                            <CardTitle className="text-sm font-semibold text-purple-700">Premium Plan</CardTitle>
-                        </CardHeader>
-                        <CardContent className="pt-6">
-                            <div className="text-3xl font-bold text-purple-900 mb-2">
-                                {(metrics.subscriptions?.byPlan?.premium ?? 0).toLocaleString()}
-                            </div>
-                            <p className="text-sm text-slate-600 font-medium mt-1">
-                                {formatCurrency(metrics.revenue?.revenueByPlan?.premium ?? 0)} revenue
-                            </p>
-                        </CardContent>
-                    </Card>
-                    <Card className="border-blue-200 hover:shadow-lg hover:shadow-blue-100 transition-all duration-300 hover:scale-105">
-                        <CardHeader className="bg-gradient-to-r from-blue-50 to-white border-b border-blue-100">
-                            <CardTitle className="text-sm font-semibold text-blue-700">Business Plan</CardTitle>
-                        </CardHeader>
-                        <CardContent className="pt-6">
-                            <div className="text-3xl font-bold text-blue-900 mb-2">
-                                {(metrics.subscriptions?.byPlan?.business ?? 0).toLocaleString()}
-                            </div>
-                            <p className="text-sm text-slate-600 font-medium mt-1">
-                                {formatCurrency(metrics.revenue?.revenueByPlan?.business ?? 0)} revenue
-                            </p>
-                        </CardContent>
-                    </Card>
+                {/* Subscription Breakdown - Dynamic from Database */}
+                <div className={`grid grid-cols-1 gap-6 ${metrics.subscriptions?.byPlan?.length === 1 ? 'md:grid-cols-1' :
+                        metrics.subscriptions?.byPlan?.length === 2 ? 'md:grid-cols-2' :
+                            'md:grid-cols-3'
+                    }`}>
+                    {metrics.subscriptions?.byPlan?.map((plan, index) => {
+                        // Determine card styling based on plan name
+                        const isFree = plan.planName === 'free';
+                        const isPremium = plan.planName === 'premium';
+                        const isBusiness = plan.planName === 'business';
+
+                        const borderColor = isFree ? 'border-slate-200' :
+                            isPremium ? 'border-purple-200' :
+                                isBusiness ? 'border-blue-200' :
+                                    'border-green-200';
+
+                        const shadowColor = isFree ? '' :
+                            isPremium ? 'hover:shadow-purple-100' :
+                                isBusiness ? 'hover:shadow-blue-100' :
+                                    'hover:shadow-green-100';
+
+                        const headerBg = isFree ? 'bg-gradient-to-r from-slate-50 to-white border-b border-slate-100' :
+                            isPremium ? 'bg-gradient-to-r from-purple-50 to-white border-b border-purple-100' :
+                                isBusiness ? 'bg-gradient-to-r from-blue-50 to-white border-b border-blue-100' :
+                                    'bg-gradient-to-r from-green-50 to-white border-b border-green-100';
+
+                        const titleColor = isFree ? 'text-slate-700' :
+                            isPremium ? 'text-purple-700' :
+                                isBusiness ? 'text-blue-700' :
+                                    'text-green-700';
+
+                        const valueColor = isFree ? 'text-slate-900' :
+                            isPremium ? 'text-purple-900' :
+                                isBusiness ? 'text-blue-900' :
+                                    'text-green-900';
+
+                        return (
+                            <Card
+                                key={plan.planId}
+                                className={`${borderColor} hover:shadow-lg ${shadowColor} transition-all duration-300 hover:scale-105`}
+                            >
+                                <CardHeader className={headerBg}>
+                                    <CardTitle className={`text-sm font-semibold ${titleColor}`}>
+                                        {plan.displayName}
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent className="pt-6">
+                                    <div className={`text-3xl font-bold ${valueColor} mb-2`}>
+                                        {plan.count.toLocaleString()}
+                                    </div>
+                                    <p className="text-sm text-slate-500 font-medium">
+                                        {plan.count === 1 ? 'subscriber' : 'subscribers'}
+                                    </p>
+                                    {plan.revenue > 0 && (
+                                        <p className="text-sm text-slate-600 font-medium mt-2">
+                                            {formatCurrency(plan.revenue)} revenue
+                                        </p>
+                                    )}
+                                </CardContent>
+                            </Card>
+                        );
+                    })}
                 </div>
 
                 {/* Charts Section */}

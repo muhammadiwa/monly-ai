@@ -202,21 +202,33 @@ export const initializeSingleWhatsAppBot = (): SingleBotConnection => {
     }
   });
 
-  // Initialize the client with retry logic
+  // Initialize the client with retry logic and timeout
   const initializeWithRetry = async (attempt = 1) => {
     try {
+      // Set a timeout for initialization (60 seconds)
+      const initTimeout = setTimeout(() => {
+        if (botConnection && botConnection.status === 'initializing') {
+          console.warn('⚠️ WhatsApp Bot initialization timeout - may need manual connection');
+          // Don't change status to disconnected, let it continue trying
+          // The QR code event might still fire
+        }
+      }, 60000);
+
       await client.initialize();
+      clearTimeout(initTimeout);
       console.log('✅ Monly WhatsApp Bot initialized successfully');
       botConnection!.reconnectAttempts = 0;
     } catch (error) {
       console.error(`❌ Failed to initialize WhatsApp Bot (attempt ${attempt}):`, error);
-      botConnection!.status = 'disconnected';
+
+      // Only mark as disconnected if we've exhausted retries
+      const errorMessage = error instanceof Error ? error.message : String(error);
 
       // Handle specific errors
-      const errorMessage = error instanceof Error ? error.message : String(error);
       if (errorMessage.includes('ERR_INSUFFICIENT_RESOURCES') ||
         errorMessage.includes('net::ERR_') ||
-        errorMessage.includes('Target closed')) {
+        errorMessage.includes('Target closed') ||
+        errorMessage.includes('Protocol error')) {
 
         if (attempt < 3) { // Retry up to 3 times for network errors
           console.log(`🔄 Retrying WhatsApp Bot initialization in ${attempt * 10} seconds...`);
@@ -228,11 +240,18 @@ export const initializeSingleWhatsAppBot = (): SingleBotConnection => {
       }
 
       // If max retries reached or other error, mark as failed
-      console.error('❌ Failed to initialize WhatsApp Bot: Connection failed');
+      console.error('❌ Failed to initialize WhatsApp Bot after all retries');
+      botConnection!.status = 'disconnected';
     }
   };
 
-  initializeWithRetry();
+  // Start initialization in background
+  initializeWithRetry().catch(err => {
+    console.error('❌ WhatsApp Bot initialization error:', err);
+    if (botConnection) {
+      botConnection.status = 'disconnected';
+    }
+  });
 
   return botConnection;
 };

@@ -45,74 +45,104 @@ if [ -f "$OUTPUT_FILE" ]; then
     echo ""
     echo "✅ Secrets updated in $OUTPUT_FILE"
 else
-    # Create new .env file from template
-    if [ -f ".env.production.example" ]; then
-        cp .env.production.example "$OUTPUT_FILE"
-        echo "✅ Copied from .env.production.example"
-    else
-        # Create minimal .env
-        cat > "$OUTPUT_FILE" << EOF
-# MonlyAI Environment Configuration
-# Generated: $(date)
+    # Create new .env file with all variables
+    cat > "$OUTPUT_FILE" << 'EOF'
+# =============================================================================
+# MONLY AI - Environment Configuration
+# =============================================================================
 
-# Database
+# -----------------------------------------------------------------------------
+# DATABASE CONFIGURATION
+# -----------------------------------------------------------------------------
 DATABASE_URL=file:./database.sqlite
 
-# Server
-NODE_ENV=production
-PORT=5000
+# -----------------------------------------------------------------------------
+# AI PROVIDER CONFIGURATION
+# -----------------------------------------------------------------------------
+# Pilih provider AI: "openai", "openrouter", atau "megallm"
+AI_PROVIDER=openrouter
 
-# Security
-SESSION_SECRET=$SESSION_SECRET
-JWT_SECRET=$JWT_SECRET
-
-# Admin Credentials (CHANGE THESE!)
-ADMIN_EMAIL=admin@monly.com
-ADMIN_PASSWORD=change-this-password
-
-# AI Provider (pilih: openai, openrouter, atau megallm)
-AI_PROVIDER=openai
-
-# OpenAI - GANTI DENGAN API KEY ANDA
+# OpenAI Configuration (jika AI_PROVIDER=openai)
+# Dapatkan API key di: https://platform.openai.com/api-keys
 OPENAI_API_KEY=sk-xxx
 
-# OpenRouter (optional)
-# OPENROUTER_API_KEY=sk-or-v1-xxx
+# OpenRouter Configuration (jika AI_PROVIDER=openrouter)
+# Dapatkan API key di: https://openrouter.ai/keys
+OPENROUTER_API_KEY=sk-or-v1-xxx
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
 
-# MegaLLM (optional)
-# MEGALLM_API_KEY=your-key
-# MEGALLM_BASE_URL=https://api.megallm.app/v1
+# MegaLLM Configuration (jika AI_PROVIDER=megallm)
+# Dapatkan API key di: https://megallm.app atau https://ai.megallm.io
+MEGALLM_API_KEY=sk-mega-xxx
+MEGALLM_BASE_URL=https://ai.megallm.io/v1
 
-# AI Models
-AI_MODEL_CHAT=gpt-4o-mini
-AI_MODEL_ANALYSIS=gpt-4o-mini
-AI_MODEL_VISION=gpt-4o-mini
-AI_MODEL_FALLBACK=gpt-3.5-turbo
+# Model per task (sesuaikan format dengan provider yang dipilih)
+# OpenRouter: gunakan format "provider/model" (e.g., openai/gpt-4o-mini)
+# MegaLLM/OpenAI: gunakan nama model langsung (e.g., gpt-4o-mini)
+AI_MODEL_CHAT=xiaomi/mimo-v2-flash:free
+AI_MODEL_ANALYSIS=xiaomi/mimo-v2-flash:free
+AI_MODEL_VISION=openai/gpt-4o-mini
+AI_MODEL_FALLBACK=xiaomi/mimo-v2-flash:free
 
-# Midtrans Payment Gateway
+# -----------------------------------------------------------------------------
+# AUTHENTICATION & SECURITY
+# -----------------------------------------------------------------------------
+SESSION_SECRET=PLACEHOLDER_SESSION_SECRET
+JWT_SECRET=PLACEHOLDER_JWT_SECRET
+
+# -----------------------------------------------------------------------------
+# SERVER CONFIGURATION
+# -----------------------------------------------------------------------------
+NODE_ENV=production
+PORT=5000
+TZ=Asia/Jakarta
+
+# Domain untuk production
+DOMAIN=http://your-domain.com
+
+# CORS Configuration
+CORS_ORIGIN=http://your-domain.com
+
+# -----------------------------------------------------------------------------
+# OPTIONAL: WHATSAPP INTEGRATION
+# -----------------------------------------------------------------------------
+WHATSAPP_ENABLED=false
+WHATSAPP_AUTO_INIT=true
+
+# -----------------------------------------------------------------------------
+# OPTIONAL: RATE LIMITING
+# -----------------------------------------------------------------------------
+RATE_LIMIT_ENABLED=true
+RATE_LIMIT_MAX_REQUESTS=100
+RATE_LIMIT_WINDOW_MS=900000
+
+# -----------------------------------------------------------------------------
+# OPTIONAL: LOGGING
+# -----------------------------------------------------------------------------
+LOG_LEVEL=info
+
+# -----------------------------------------------------------------------------
+# MIDTRANS PAYMENT GATEWAY
+# -----------------------------------------------------------------------------
 MIDTRANS_SERVER_KEY=your-midtrans-server-key
 MIDTRANS_CLIENT_KEY=your-midtrans-client-key
 MIDTRANS_IS_PRODUCTION=false
+MIDTRANS_WEBHOOK_URL=http://your-domain.com/api/webhooks/midtrans
 
-# Google OAuth (optional)
+# -----------------------------------------------------------------------------
+# GOOGLE OAUTH (OPTIONAL)
+# -----------------------------------------------------------------------------
 # GOOGLE_CLIENT_ID=your-google-client-id
 # GOOGLE_CLIENT_SECRET=your-google-client-secret
-# GOOGLE_REDIRECT_URI=http://localhost:5000/api/auth/google/callback
-
-# Email (optional)
-# SMTP_HOST=smtp.gmail.com
-# SMTP_PORT=587
-# SMTP_USER=your-email@gmail.com
-# SMTP_PASS=your-app-password
-# EMAIL_FROM=noreply@monly.com
+# GOOGLE_CALLBACK_URL=http://your-domain.com/api/auth/google/callback
 EOF
-        echo "✅ Created new $OUTPUT_FILE"
-    fi
     
-    # Update secrets in the new file
-    sed -i.bak "s/^SESSION_SECRET=.*/SESSION_SECRET=$SESSION_SECRET/" "$OUTPUT_FILE"
-    sed -i.bak "s/^JWT_SECRET=.*/JWT_SECRET=$JWT_SECRET/" "$OUTPUT_FILE"
+    # Replace placeholders with generated secrets
+    sed -i.bak "s/PLACEHOLDER_SESSION_SECRET/$SESSION_SECRET/" "$OUTPUT_FILE"
+    sed -i.bak "s/PLACEHOLDER_JWT_SECRET/$JWT_SECRET/" "$OUTPUT_FILE"
     rm -f "$OUTPUT_FILE.bak"
+    
+    echo "✅ Created new $OUTPUT_FILE with generated secrets"
 fi
 
 echo ""
@@ -124,9 +154,10 @@ echo "⚠️  IMPORTANT: Keep these secrets safe and never commit them to git!"
 echo ""
 echo "📋 Next steps:"
 echo "1. Edit $OUTPUT_FILE and fill in required values:"
-echo "   - ADMIN_EMAIL and ADMIN_PASSWORD"
-echo "   - OPENAI_API_KEY (or other AI provider)"
+echo "   - AI_PROVIDER (openai, openrouter, atau megallm)"
+echo "   - API keys untuk provider yang dipilih"
 echo "   - MIDTRANS_SERVER_KEY and MIDTRANS_CLIENT_KEY"
+echo "   - DOMAIN (your production domain)"
 echo "2. Run: npm run migrate (to create database)"
 echo "3. Run: npm run seed:admin (to create admin user)"
 echo "4. Run: npm run seed:plans (to create subscription plans)"

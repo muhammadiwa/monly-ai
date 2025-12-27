@@ -184,7 +184,13 @@ export class AdminStorage {
     // Get subscription metrics
     async getSubscriptionMetrics(): Promise<{
         total: number;
-        byPlan: Record<string, number>;
+        byPlan: Array<{
+            planId: number;
+            planName: string;
+            displayName: string;
+            count: number;
+            revenue: number;
+        }>;
         churnRate: number;
         conversionRate: number;
     }> {
@@ -198,21 +204,45 @@ export class AdminStorage {
             .where(eq(userSubscriptions.status, 'active'));
         const total = totalResult[0]?.count || 0;
 
-        // Subscriptions by plan
+        // Subscriptions by plan with revenue
         const byPlanResult = await db
             .select({
+                planId: subscriptionPlans.id,
                 planName: subscriptionPlans.name,
-                count: sql<number>`COUNT(*)`,
+                displayName: subscriptionPlans.displayName,
+                count: sql<number>`COUNT(DISTINCT ${userSubscriptions.id})`,
             })
             .from(userSubscriptions)
             .innerJoin(subscriptionPlans, eq(userSubscriptions.planId, subscriptionPlans.id))
             .where(eq(userSubscriptions.status, 'active'))
-            .groupBy(subscriptionPlans.name);
+            .groupBy(subscriptionPlans.id, subscriptionPlans.name, subscriptionPlans.displayName);
 
-        const byPlan: Record<string, number> = {};
-        byPlanResult.forEach(row => {
-            byPlan[row.planName] = row.count;
+        // Get revenue by plan
+        const revenueByPlanResult = await db
+            .select({
+                planId: subscriptionPlans.id,
+                total: sql<number>`COALESCE(SUM(${payments.amount}), 0)`,
+            })
+            .from(payments)
+            .innerJoin(userSubscriptions, eq(payments.subscriptionId, userSubscriptions.id))
+            .innerJoin(subscriptionPlans, eq(userSubscriptions.planId, subscriptionPlans.id))
+            .where(eq(payments.status, 'paid'))
+            .groupBy(subscriptionPlans.id);
+
+        // Create revenue map
+        const revenueMap = new Map<number, number>();
+        revenueByPlanResult.forEach(row => {
+            revenueMap.set(row.planId, row.total);
         });
+
+        // Combine subscription counts with revenue
+        const byPlan = byPlanResult.map(row => ({
+            planId: row.planId,
+            planName: row.planName,
+            displayName: row.displayName,
+            count: row.count,
+            revenue: revenueMap.get(row.planId) || 0,
+        }));
 
         // Churn rate (cancelled in last 30 days / total active at start of period)
         const cancelledLast30DaysResult = await db

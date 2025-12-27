@@ -78,19 +78,26 @@ app.use((req, res, next) => {
   }, () => {
     log(`serving on port ${port}`);
 
-    // Initialize single WhatsApp bot for all users
-    log('🤖 Initializing WhatsApp Bot...');
-    try {
-      initializeSingleWhatsAppBot();
-      log('✅ WhatsApp Bot initialization started');
+    // Initialize single WhatsApp bot for all users (optional - can be triggered manually from admin panel)
+    const autoInitWhatsApp = process.env.WHATSAPP_AUTO_INIT !== 'false'; // Default true unless explicitly disabled
 
-      // Start health monitoring
-      log('🏥 Starting WhatsApp health monitor...');
-      const healthMonitor = getHealthMonitor();
-      healthMonitor.start();
-      log('✅ WhatsApp health monitor started');
-    } catch (error) {
-      log(`❌ WhatsApp Bot initialization failed: ${error}`);
+    if (autoInitWhatsApp) {
+      log('🤖 Auto-initializing WhatsApp Bot...');
+      try {
+        initializeSingleWhatsAppBot();
+        log('✅ WhatsApp Bot initialization started');
+
+        // Start health monitoring
+        log('🏥 Starting WhatsApp health monitor...');
+        const healthMonitor = getHealthMonitor();
+        healthMonitor.start();
+        log('✅ WhatsApp health monitor started');
+      } catch (error) {
+        log(`❌ WhatsApp Bot initialization failed: ${error}`);
+      }
+    } else {
+      log('⏸️ WhatsApp Bot auto-initialization disabled (WHATSAPP_AUTO_INIT=false)');
+      log('💡 Bot can be started manually from Admin Panel → WhatsApp Bot Config');
     }
 
     // Start transaction reminder scheduler
