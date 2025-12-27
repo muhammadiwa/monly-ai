@@ -95,7 +95,6 @@ export default function CheckoutModal({
             // Store orderId in localStorage for verification when user returns
             if (data.data?.orderId) {
                 localStorage.setItem('pending_order_id', data.data.orderId);
-                console.log('Stored pending order ID:', data.data.orderId);
             }
 
             if (data.data?.paymentUrl) {
@@ -105,7 +104,6 @@ export default function CheckoutModal({
             }
         },
         onError: (error: Error) => {
-            console.error('Checkout error:', error);
             toast({
                 title: "Checkout Failed",
                 description: error.message || "Failed to initiate checkout. Please try again.",

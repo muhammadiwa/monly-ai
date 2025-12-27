@@ -243,13 +243,6 @@ export default function Reports() {
     const currentMonth = currentDate.getMonth();
     const currentYear = currentDate.getFullYear();
 
-    console.log('Budget calculation for:', {
-      month: currentMonth + 1, // +1 for human readable
-      year: currentYear,
-      budgetsCount: budgets.length,
-      transactionsCount: Array.isArray(transactions) ? transactions.length : 0
-    });
-
     return budgets.map((budget: any) => {
       // Filter transactions for current month only
       const budgetTransactions = (transactions as any[]).filter((transaction: any) => {
@@ -272,14 +265,6 @@ export default function Reports() {
       } else if (percentage > 80) {
         status = 'warning';
       }
-
-      console.log(`Budget ${budget.category?.name}:`, {
-        budgetAmount: budget.amount,
-        spent,
-        percentage: percentage.toFixed(1),
-        transactions: budgetTransactions.length,
-        status
-      });
 
       return {
         ...budget,
@@ -350,8 +335,6 @@ export default function Reports() {
                       } : null,
                       data: processedData
                     };
-
-                    console.log('Exporting data:', exportData);
 
                     const dateRangeText = dateRange?.from && dateRange?.to
                       ? `from ${format(dateRange.from, 'MMM dd')} to ${format(dateRange.to, 'MMM dd, yyyy')}`

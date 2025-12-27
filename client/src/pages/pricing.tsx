@@ -159,8 +159,7 @@ export default function Pricing() {
         setCheckoutModalOpen(true);
     };
 
-    const handleCheckoutSuccess = (subscriptionId: number) => {
-        console.log('Subscription created:', subscriptionId);
+    const handleCheckoutSuccess = () => {
         toast({
             title: "Redirecting to Payment",
             description: "Please complete your payment to activate your subscription",

@@ -142,8 +142,6 @@ export default function WhatsAppBotConfig() {
             return res.json();
         },
         onSuccess: (data) => {
-            console.log('Connect response:', data);
-
             if (data.success) {
                 if (data.data.qrCode) {
                     toast({
@@ -200,8 +198,6 @@ export default function WhatsAppBotConfig() {
             return res.json();
         },
         onSuccess: (data) => {
-            console.log('Disconnect response:', data);
-
             if (data.success) {
                 toast({
                     title: "Bot Disconnected",
@@ -249,7 +245,6 @@ export default function WhatsAppBotConfig() {
             return res.json();
         },
         onSuccess: (data) => {
-            console.log('Test message response:', data);
             toast({
                 title: "Test Message Sent",
                 description: `Message successfully sent to ${data.data?.phoneNumber || 'the recipient'}.`,

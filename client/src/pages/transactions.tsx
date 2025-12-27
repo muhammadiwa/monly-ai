@@ -46,14 +46,6 @@ export default function Transactions() {
     const daysInMonth = new Date(year, month, 0).getDate();
     const endDate = `${year}-${month.toString().padStart(2, '0')}-${daysInMonth.toString().padStart(2, '0')}`;
 
-    console.log('Setting date range:', {
-      now: now.toDateString(),
-      currentMonth: month,
-      daysInMonth,
-      startDate,
-      endDate
-    });
-
     return {
       start: startDate, // Tanggal 1 bulan ini
       end: endDate      // Tanggal akhir bulan ini
@@ -189,15 +181,6 @@ export default function Transactions() {
       return 0;
     }
   }) || [];
-
-  // Debug logging (moved after filteredTransactions definition)
-  useEffect(() => {
-    if (transactions && Array.isArray(transactions)) {
-      console.log('Transactions data updated:', transactions.length, 'transactions');
-      console.log('Current date range:', dateRange);
-      console.log('Filtered transactions:', filteredTransactions.length, 'transactions');
-    }
-  }, [transactions, dateRange, filteredTransactions.length]);
 
   // Pagination
   const totalPages = Math.ceil(filteredTransactions.length / itemsPerPage);

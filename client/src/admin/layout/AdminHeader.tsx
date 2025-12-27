@@ -32,7 +32,6 @@ export default function AdminHeader() {
 
     const handleLogout = () => {
         // Will be implemented with admin auth
-        console.log("Logout clicked");
     };
 
     return (

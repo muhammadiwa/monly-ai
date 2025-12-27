@@ -4,10 +4,10 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { useQuery } from '@tanstack/react-query';
-import { 
-  Target, 
-  Trophy, 
-  Clock, 
+import {
+  Target,
+  Trophy,
+  Clock,
   TrendingUp,
   TrendingDown,
   CheckCircle,
@@ -47,7 +47,7 @@ export default function GoalAchievementForecasts({ currency, showBalance }: Goal
   const [showBoostModal, setShowBoostModal] = useState(false);
   const [selectedGoal, setSelectedGoal] = useState<any>(null);
   const [selectedForecast, setSelectedForecast] = useState<GoalAchievementForecast | null>(null);
-  
+
   const { data: forecastData, isLoading, error, refetch } = useQuery({
     queryKey: ['/api/ai/goal-forecasts'],
     queryFn: () => {
@@ -177,7 +177,7 @@ export default function GoalAchievementForecasts({ currency, showBalance }: Goal
             {forecasts.map((forecast) => {
               const progressPercentage = getProgressPercentage(forecast.currentAmount, forecast.targetAmount);
               const remainingAmount = forecast.targetAmount - forecast.currentAmount;
-              
+
               return (
                 <div key={forecast.goalId} className="border rounded-lg p-4 space-y-4">
                   {/* Header */}
@@ -190,8 +190,8 @@ export default function GoalAchievementForecasts({ currency, showBalance }: Goal
                         <h3 className="font-semibold text-gray-900">{forecast.goalName}</h3>
                         <div className="flex items-center gap-2">
                           {getStatusIcon(forecast.status)}
-                          <Badge 
-                            variant="secondary" 
+                          <Badge
+                            variant="secondary"
                             className={`${getStatusColor(forecast.status)} text-white text-xs`}
                           >
                             {getStatusLabel(forecast.status)}
@@ -244,7 +244,7 @@ export default function GoalAchievementForecasts({ currency, showBalance }: Goal
                       <span className="text-sm font-medium text-blue-900">Monthly Savings Analysis</span>
                     </div>
                     <div className="text-sm text-blue-700">
-                      Based on your current savings rate of {showBalance ? formatCurrency(forecast.expectedSavingPerMonth, currency) : '••••••'}/month, 
+                      Based on your current savings rate of {showBalance ? formatCurrency(forecast.expectedSavingPerMonth, currency) : '••••••'}/month,
                       you're {Math.abs(forecast.deviation) > 1 ? (forecast.deviation > 0 ? `${forecast.deviation.toFixed(1)} months ahead` : `${Math.abs(forecast.deviation).toFixed(1)} months behind`) : 'on track'} of schedule.
                     </div>
                   </div>
@@ -262,9 +262,9 @@ export default function GoalAchievementForecasts({ currency, showBalance }: Goal
 
                   {/* Action Buttons */}
                   <div className="flex flex-col sm:flex-row gap-2">
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
+                    <Button
+                      variant="outline"
+                      size="sm"
                       className="flex-1 border-purple-200 text-purple-700 hover:bg-purple-50"
                       onClick={() => {
                         fetch(`/api/goals/${forecast.goalId}`, {
@@ -277,24 +277,19 @@ export default function GoalAchievementForecasts({ currency, showBalance }: Goal
                             if (!res.ok) {
                               throw new Error(`Error: ${res.status} ${res.statusText}`);
                             }
-                            console.log('Response headers:', Array.from(res.headers.entries()));
                             return res.text().then(text => {
-                              console.log('Raw response:', text);
                               try {
                                 return JSON.parse(text);
                               } catch (e) {
-                                console.error('JSON parse error:', e);
                                 throw new Error(`Invalid JSON response: ${text.slice(0, 100)}`);
                               }
                             });
                           })
                           .then(data => {
-                            console.log('Parsed data:', data);
                             setSelectedGoal(data);
                             setShowEditModal(true);
                           })
-                          .catch(err => {
-                            console.error('Error fetching goal details:', err);
+                          .catch(() => {
                             toast({
                               title: "Error",
                               description: "Failed to load goal details. Please try again.",
@@ -306,16 +301,11 @@ export default function GoalAchievementForecasts({ currency, showBalance }: Goal
                       <Calendar className="h-4 w-4 mr-2" />
                       <span className="whitespace-nowrap">Adjust Goal</span>
                     </Button>
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
+                    <Button
+                      variant="outline"
+                      size="sm"
                       className="flex-1 border-green-200 text-green-700 hover:bg-green-50"
                       onClick={() => {
-                        // First check our debug endpoint
-                        fetch('/api/debug')
-                          .then(res => res.json())
-                          .then(data => console.log('Debug API check:', data))
-                          .catch(err => console.error('Debug API error:', err));
                         fetch(`/api/goals/${forecast.goalId}`, {
                           credentials: 'include',
                           headers: {
@@ -326,25 +316,20 @@ export default function GoalAchievementForecasts({ currency, showBalance }: Goal
                             if (!res.ok) {
                               throw new Error(`Error: ${res.status} ${res.statusText}`);
                             }
-                            console.log('Response headers (boost):', Array.from(res.headers.entries()));
                             return res.text().then(text => {
-                              console.log('Raw response (boost):', text);
                               try {
                                 return JSON.parse(text);
                               } catch (e) {
-                                console.error('JSON parse error (boost):', e);
                                 throw new Error(`Invalid JSON response: ${text.slice(0, 100)}`);
                               }
                             });
                           })
                           .then(data => {
-                            console.log('Parsed data (boost):', data);
                             setSelectedGoal(data);
                             setSelectedForecast(forecast);
                             setShowBoostModal(true);
                           })
-                          .catch(err => {
-                            console.error('Error fetching goal details:', err);
+                          .catch(() => {
                             toast({
                               title: "Error",
                               description: "Failed to load goal details. Please try again.",
@@ -365,7 +350,7 @@ export default function GoalAchievementForecasts({ currency, showBalance }: Goal
       </CardContent>
 
       {/* Create Goal Modal */}
-      <CreateGoalModal 
+      <CreateGoalModal
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}
         onGoalCreated={() => {

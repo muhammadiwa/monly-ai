@@ -51,11 +51,7 @@ export function useAdminAuth() {
     const storedAdminUser = getStoredAdminUser();
     const hasToken = !!adminToken;
 
-    // Debug logging
-    console.log('[useAdminAuth] Initial state:', {
-        hasToken,
-        storedAdminUser: storedAdminUser?.email,
-    });
+
 
     // Fetch admin user from API to verify token is still valid
     const { data: apiAdmin, isLoading: isApiLoading, error, isError } = useQuery<AdminAuthResponse>({
@@ -65,7 +61,6 @@ export function useAdminAuth() {
         refetchInterval: 5 * 60 * 1000, // Refresh every 5 minutes to keep session alive
         staleTime: 4 * 60 * 1000, // Consider data fresh for 4 minutes
         queryFn: async () => {
-            console.log('[useAdminAuth] Fetching admin from API...');
             const token = getAdminToken();
             if (!token) {
                 throw new Error('No admin token');
@@ -108,7 +103,6 @@ export function useAdminAuth() {
     // Handle auth errors - clear data and don't redirect (let AdminRoute handle it)
     useEffect(() => {
         if (isError && hasToken) {
-            console.error('[useAdminAuth] Auth error:', error);
             clearAdminAuthData();
         }
     }, [isError, error, hasToken]);
@@ -144,8 +138,7 @@ export function useAdminAuth() {
             // Redirect to login
             redirectToAdminLogin();
         },
-        onError: (error) => {
-            console.error('Logout error:', error);
+        onError: () => {
             // Even if logout fails on server, clear local data
             clearAdminAuthData();
             queryClient.clear();
@@ -165,15 +158,6 @@ export function useAdminAuth() {
     // Authenticated if we have token and admin data (either from API or localStorage)
     // If API returned error, we're not authenticated
     const isAuthenticated = hasToken && !!admin && !isError;
-
-    // Debug logging
-    console.log('[useAdminAuth] Computed state:', {
-        isLoading,
-        isAuthenticated,
-        isApiLoading,
-        isError,
-        hasAdmin: !!admin,
-    });
 
     const logout = () => {
         logoutMutation.mutate();

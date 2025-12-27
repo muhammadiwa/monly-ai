@@ -7,10 +7,10 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { format, addMonths } from 'date-fns';
-import { 
-  DollarSign, 
-  TrendingUp, 
-  ArrowRight, 
+import {
+  DollarSign,
+  TrendingUp,
+  ArrowRight,
   Calculator,
   Target
 } from 'lucide-react';
@@ -65,25 +65,25 @@ export default function BoostSavingsModal({
   // Recalculate with new savings rate
   const calculateNewTimeline = () => {
     if (!goal || !forecast) return { months: 0, date: new Date() };
-    
+
     const remainingAmount = goal.targetAmount - goal.currentAmount;
     const additionalMonthly = parseFloat(additionalAmount) || 0;
     const extraBoost = parseFloat(extraBoostAmount) || 0;
-    
+
     const newMonthlySavings = forecast.expectedSavingPerMonth + additionalMonthly;
     const adjustedRemaining = remainingAmount - extraBoost;
-    
+
     if (newMonthlySavings <= 0) return { months: 999, date: new Date(9999, 0, 1) };
-    
+
     const newMonthsToGoal = adjustedRemaining / newMonthlySavings;
     const newTargetDate = addMonths(new Date(), Math.ceil(newMonthsToGoal));
-    
+
     return { months: newMonthsToGoal, date: newTargetDate };
   };
-  
+
   const newTimeline = calculateNewTimeline();
   const timeReduction = forecast ? forecast.monthsToGoal - newTimeline.months : 0;
-  
+
   const formatMonths = (months: number) => {
     if (months < 1) return `${Math.ceil(months * 30)} days`;
     if (months < 12) return `${months.toFixed(1)} months`;
@@ -94,7 +94,7 @@ export default function BoostSavingsModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!goal) {
       toast({
         title: "Error",
@@ -110,8 +110,7 @@ export default function BoostSavingsModal({
       // Handle one-time boost to current amount
       if (parseFloat(extraBoostAmount) > 0) {
         const authToken = localStorage.getItem('auth-token');
-        console.log('Sending boost request to goal ID:', goal.id, 'with amount:', parseFloat(extraBoostAmount));
-        
+
         try {
           const boostResponse = await fetch(`/api/goals/${goal.id}/boost`, {
             method: 'POST',
@@ -129,19 +128,18 @@ export default function BoostSavingsModal({
           console.log('Boost response status:', boostResponse.status);
           const responseText = await boostResponse.text();
           console.log('Boost raw response:', responseText);
-          
+
           if (!boostResponse.ok) {
             let errorMsg = 'Failed to boost goal';
             try {
               const error = JSON.parse(responseText);
               errorMsg = error.message || errorMsg;
             } catch (e) {
-              console.error('Error parsing boost error response:', e);
+              // Error parsing response
             }
             throw new Error(errorMsg);
           }
         } catch (err) {
-          console.error('Error during boost request:', err);
           throw err;
         }
       }
@@ -150,7 +148,7 @@ export default function BoostSavingsModal({
       if (parseFloat(additionalAmount) > 0) {
         const authToken = localStorage.getItem('auth-token');
         console.log('Sending savings plan request to goal ID:', goal.id, 'with amount:', parseFloat(additionalAmount), 'frequency:', recurringFrequency);
-        
+
         try {
           const savingsPlanResponse = await fetch(`/api/goals/${goal.id}/savings-plan`, {
             method: 'POST',
@@ -170,19 +168,18 @@ export default function BoostSavingsModal({
           console.log('Savings plan response status:', savingsPlanResponse.status);
           const responseText = await savingsPlanResponse.text();
           console.log('Savings plan raw response:', responseText);
-          
+
           if (!savingsPlanResponse.ok) {
             let errorMsg = 'Failed to set up savings plan';
             try {
               const error = JSON.parse(responseText);
               errorMsg = error.message || errorMsg;
             } catch (e) {
-              console.error('Error parsing savings plan error response:', e);
+              // Error parsing response
             }
             throw new Error(errorMsg);
           }
         } catch (err) {
-          console.error('Error during savings plan request:', err);
           throw err;
         }
       }
@@ -191,11 +188,10 @@ export default function BoostSavingsModal({
         title: "Savings Boosted",
         description: `Your savings strategy for ${goal.name} has been updated.`,
       });
-      
+
       onBoostSaved();
       onClose();
     } catch (error) {
-      console.error('Error boosting savings:', error);
       toast({
         title: "Failed to Update Savings",
         description: error instanceof Error ? error.message : "An unexpected error occurred. Please try again.",
@@ -363,7 +359,7 @@ export default function BoostSavingsModal({
                   <Calculator className="h-4 w-4 mr-2" />
                   New Timeline Calculation
                 </h3>
-                
+
                 <div className="flex items-center gap-3">
                   <div className="p-3 bg-white rounded-lg flex-1 text-center">
                     <div className="text-sm text-gray-500 mb-1">Current Timeline</div>
@@ -419,7 +415,7 @@ export default function BoostSavingsModal({
             <Button
               type="submit"
               disabled={
-                isLoading || 
+                isLoading ||
                 (parseFloat(additionalAmount) <= 0 && parseFloat(extraBoostAmount) <= 0)
               }
               className="flex-1 bg-green-600 hover:bg-green-700"
