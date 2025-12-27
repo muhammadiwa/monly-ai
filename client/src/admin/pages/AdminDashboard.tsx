@@ -163,39 +163,39 @@ export default function AdminDashboard() {
     const metricCards = [
         {
             title: "Total Users",
-            value: metrics.users.total.toLocaleString(),
-            change: formatPercentage(metrics.users.growthRate),
+            value: (metrics.users?.total ?? 0).toLocaleString(),
+            change: formatPercentage(metrics.users?.growthRate ?? 0),
             icon: Users,
             color: "text-blue-600",
             bgColor: "bg-blue-50",
-            subtitle: `${metrics.users.active} active users`,
+            subtitle: `${metrics.users?.active ?? 0} active users`,
         },
         {
             title: "Monthly Revenue (MRR)",
-            value: formatCurrency(metrics.revenue.mrr),
-            change: formatPercentage(metrics.revenue.revenueGrowth),
+            value: formatCurrency(metrics.revenue?.mrr ?? 0),
+            change: formatPercentage(metrics.revenue?.revenueGrowth ?? 0),
             icon: DollarSign,
             color: "text-green-600",
             bgColor: "bg-green-50",
-            subtitle: `Total: ${formatCurrency(metrics.revenue.totalRevenue)}`,
+            subtitle: `Total: ${formatCurrency(metrics.revenue?.totalRevenue ?? 0)}`,
         },
         {
             title: "Active Subscriptions",
-            value: metrics.subscriptions.total.toLocaleString(),
-            change: `${metrics.subscriptions.conversionRate.toFixed(1)}% conversion`,
+            value: (metrics.subscriptions?.total ?? 0).toLocaleString(),
+            change: `${(metrics.subscriptions?.conversionRate ?? 0).toFixed(1)}% conversion`,
             icon: CreditCard,
             color: "text-purple-600",
             bgColor: "bg-purple-50",
-            subtitle: `${metrics.subscriptions.churnRate.toFixed(1)}% churn rate`,
+            subtitle: `${(metrics.subscriptions?.churnRate ?? 0).toFixed(1)}% churn rate`,
         },
         {
             title: "System Health",
-            value: `${metrics.system.uptime.toFixed(1)}%`,
-            change: `${metrics.system.apiResponseTime}ms response`,
+            value: `${(metrics.system?.uptime ?? 0).toFixed(1)}%`,
+            change: `${metrics.system?.apiResponseTime ?? 0}ms response`,
             icon: Activity,
             color: "text-orange-600",
             bgColor: "bg-orange-50",
-            subtitle: `${metrics.system.errorRate.toFixed(2)}% error rate`,
+            subtitle: `${(metrics.system?.errorRate ?? 0).toFixed(2)}% error rate`,
         },
     ];
 
@@ -263,7 +263,7 @@ export default function AdminDashboard() {
                         </CardHeader>
                         <CardContent className="pt-6">
                             <div className="text-3xl font-bold text-slate-900 mb-2">
-                                {metrics.subscriptions.byPlan.free.toLocaleString()}
+                                {(metrics.subscriptions?.byPlan?.free ?? 0).toLocaleString()}
                             </div>
                             <p className="text-sm text-slate-500 font-medium">subscribers</p>
                         </CardContent>
@@ -274,10 +274,10 @@ export default function AdminDashboard() {
                         </CardHeader>
                         <CardContent className="pt-6">
                             <div className="text-3xl font-bold text-purple-900 mb-2">
-                                {metrics.subscriptions.byPlan.premium.toLocaleString()}
+                                {(metrics.subscriptions?.byPlan?.premium ?? 0).toLocaleString()}
                             </div>
                             <p className="text-sm text-slate-600 font-medium mt-1">
-                                {formatCurrency(metrics.revenue.revenueByPlan.premium)} revenue
+                                {formatCurrency(metrics.revenue?.revenueByPlan?.premium ?? 0)} revenue
                             </p>
                         </CardContent>
                     </Card>
@@ -287,10 +287,10 @@ export default function AdminDashboard() {
                         </CardHeader>
                         <CardContent className="pt-6">
                             <div className="text-3xl font-bold text-blue-900 mb-2">
-                                {metrics.subscriptions.byPlan.business.toLocaleString()}
+                                {(metrics.subscriptions?.byPlan?.business ?? 0).toLocaleString()}
                             </div>
                             <p className="text-sm text-slate-600 font-medium mt-1">
-                                {formatCurrency(metrics.revenue.revenueByPlan.business)} revenue
+                                {formatCurrency(metrics.revenue?.revenueByPlan?.business ?? 0)} revenue
                             </p>
                         </CardContent>
                     </Card>
