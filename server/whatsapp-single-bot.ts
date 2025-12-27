@@ -33,38 +33,43 @@ let botConnection: SingleBotConnection | null = null;
 
 /**
  * Auto-detect Chromium executable path
- * Skip Snap Chromium karena punya sandbox restrictions di headless server
+ * Di Linux server, lebih baik pakai bundled Puppeteer Chromium
+ * karena system Chromium (terutama Snap) punya banyak restrictions
  */
 function findChromiumPath(): string | undefined {
-  // Check env variable first
+  // Check env variable first - user bisa override jika perlu
   if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+    console.log(`📱 Using custom Chromium: ${process.env.PUPPETEER_EXECUTABLE_PATH}`);
     return process.env.PUPPETEER_EXECUTABLE_PATH;
   }
 
-  // Common Chromium/Chrome paths (SKIP Snap karena tidak support headless dengan baik)
-  const possiblePaths = [
-    // Linux - APT (non-snap)
-    '/usr/bin/chromium',
-    '/usr/bin/chromium-browser',
-    '/usr/bin/google-chrome',
-    '/usr/bin/google-chrome-stable',
-    // macOS
-    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-    // Windows
-    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-    // NOTE: /snap/bin/chromium TIDAK diinclude karena punya SingletonLock issue
-  ];
+  // Di Linux server, JANGAN pakai system Chromium karena:
+  // - Snap Chromium punya SingletonLock issue
+  // - APT chromium-browser biasanya symlink ke Snap
+  // Lebih baik pakai bundled Puppeteer Chromium
 
-  for (const chromePath of possiblePaths) {
-    if (existsSync(chromePath)) {
-      console.log(`🔍 Auto-detected Chromium: ${chromePath}`);
-      return chromePath;
+  // Hanya auto-detect di Windows/macOS (development)
+  if (process.platform === 'win32') {
+    const windowsPaths = [
+      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+      'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    ];
+    for (const chromePath of windowsPaths) {
+      if (existsSync(chromePath)) {
+        console.log(`🔍 Auto-detected Chrome: ${chromePath}`);
+        return chromePath;
+      }
+    }
+  } else if (process.platform === 'darwin') {
+    const macPath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+    if (existsSync(macPath)) {
+      console.log(`🔍 Auto-detected Chrome: ${macPath}`);
+      return macPath;
     }
   }
 
-  // Tidak ada system Chromium, akan pakai bundled Puppeteer Chromium
-  console.log('📱 Using bundled Puppeteer Chromium (recommended for servers)');
+  // Linux atau tidak ditemukan - pakai bundled Puppeteer Chromium
+  console.log('📱 Using bundled Puppeteer Chromium');
   return undefined;
 }
 
