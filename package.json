@@ -19,6 +19,7 @@
     "migrate:rollback": "tsx server/migrate.ts rollback",
     "seed:admin": "tsx server/seed-admin-data.ts",
     "seed:plans": "tsx server/seed-subscription-plans.ts",
+    "generate:favicon": "node scripts/generate-favicon.js",
     "whatsapp:rollback": "powershell -ExecutionPolicy Bypass -File scripts/rollback-whatsapp.ps1",
     "whatsapp:rollback:unix": "bash scripts/rollback-whatsapp.sh",
     "whatsapp:health": "curl http://localhost:5000/api/system/whatsapp-health"

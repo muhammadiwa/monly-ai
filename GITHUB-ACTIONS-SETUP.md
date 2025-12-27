@@ -14,7 +14,7 @@ Di VPS, jalankan:
 
 ```bash
 # Login ke VPS
-ssh root@43.156.75.101
+ssh ubuntu@43.156.75.101
 
 # Generate SSH key khusus untuk GitHub Actions
 ssh-keygen -t ed25519 -C "github-actions@monly-ai" -f ~/.ssh/github_actions_key
@@ -73,7 +73,7 @@ b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAAAMwAAAAtzc2gtZW
 
 ```bash
 # Login ke VPS
-ssh root@43.156.75.101
+ssh ubuntu@43.156.75.101
 
 # Pastikan directory ada
 cd /var/www/html/monly-ai
